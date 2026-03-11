@@ -119,6 +119,7 @@ impl ServerState {
                             let dist = (other_p.position - pos).abs();
                             // Reduced capture range from 15 to 10
                             if dist.max_element() <= 10
+                                && is_within_board(other_p.position, board_size) // Boundary check
                                 && is_valid_chess_move(p_type, pos, other_p.position, true, board_size)
                                 && (p_type == PieceType::Knight || !is_move_blocked(pos, other_p.position, &game.pieces)) {
                                 if other_p.piece_type == PieceType::King {
@@ -143,6 +144,7 @@ impl ServerState {
                         // First, check for Kings
                         for player in game.players.values() {
                             if let Some(king) = game.pieces.get(&player.king_id) {
+                                if !is_within_board(king.position, board_size) { continue; } // Boundary check
                                 let d = (king.position - pos).as_vec2().length();
                                 // Reduced hunt range from 18 to 12
                                 if d < 12.0 {
@@ -157,6 +159,7 @@ impl ServerState {
                         if nearest_p_pos.is_none() {
                             for other_p in game.pieces.values() {
                                 if other_p.owner_id.is_some() {
+                                    if !is_within_board(other_p.position, board_size) { continue; } // Boundary check
                                     let d = (other_p.position - pos).as_vec2().length();
                                     // Reduced hunt range from 18 to 12
                                     if d < 12.0 && d < min_dist {
@@ -269,6 +272,8 @@ impl ServerState {
                             if let Some(cp_id) = captured_player_id {
                                 game.players.remove(&cp_id);
                                 self.record_player_removal(cp_id, &mut game).await;
+                                // NPCs don't have a kill count, but we could add it to piece if we wanted.
+                                // For now just removing the player is enough.
                             }
                         }
                     }

@@ -42,79 +42,64 @@ impl Renderer {
         ghost_pieces: &HashMap<Uuid, Piece>,
         camera_pos: (f64, f64) // Pixel coords in world
     ) {
-        let player_king = state.players.get(&player_id)
-            .and_then(|p| state.pieces.get(&p.king_id));
-        
-        // King pos for FoW center
-        let king_pos = player_king.map(|k| k.position).unwrap_or_else(|| {
-            state.players.values().next()
-                .and_then(|p| state.pieces.get(&p.king_id))
-                .map(|k| k.position)
-                .unwrap_or(IVec2::new(state.board_size / 2, state.board_size / 2))
-        });
-        
-        let piece_count = state.pieces.values().filter(|p| p.owner_id == Some(player_id)).count();
-        let zoom_factor = (piece_count as f64).sqrt().max(1.0);
-        let view_radius_squares = if player_id == Uuid::nil() { 100 } else { (15.0 * zoom_factor) as i32 }; 
-        let view_radius_px = (view_radius_squares as f64 + 0.5) * self.tile_size;
-
-        // Expanded grid rendering for zoom context
-        let render_radius = if self.zoom < 0.2 { 
-            state.board_size 
-        } else { 
-            view_radius_squares + (5.0 / self.zoom) as i32 
-        }.min(state.board_size);
-
-        // Background (White Fog)
-        self.ctx.set_fill_style(&JsValue::from_str("#ffffff"));
+        // Background (Off-board color)
+        self.ctx.set_fill_style(&JsValue::from_str("#e2e8f0"));
         self.ctx.fill_rect(0.0, 0.0, self.width, self.height);
         
         // Offset mapping world -> screen
         let offset_x = self.width / 2.0 - camera_pos.0;
         let offset_y = self.height / 2.0 - camera_pos.1;
 
-        // Optimized Checkerboard (within view radius)
-        self.ctx.set_fill_style(&JsValue::from_str("#f4f4f4"));
-        for x in (king_pos.x - view_radius_squares - 2)..(king_pos.x + view_radius_squares + 3) {
-            for y in (king_pos.y - view_radius_squares - 2)..(king_pos.y + view_radius_squares + 3) {
-                if is_within_board(IVec2::new(x, y), state.board_size) && (x + y) % 2 != 0 {
+        // Draw Board Background
+        self.ctx.set_fill_style(&JsValue::from_str("#ffffff"));
+        self.ctx.fill_rect(offset_x, offset_y, state.board_size as f64 * self.tile_size, state.board_size as f64 * self.tile_size);
+
+        // Calculate visible range for optimizations
+        let start_x = ((-offset_x) / self.tile_size).floor() as i32;
+        let end_x = ((self.width - offset_x) / self.tile_size).ceil() as i32;
+        let start_y = ((-offset_y) / self.tile_size).floor() as i32;
+        let end_y = ((self.height - offset_y) / self.tile_size).ceil() as i32;
+
+        let start_x = start_x.clamp(0, state.board_size);
+        let end_x = end_x.clamp(0, state.board_size);
+        let start_y = start_y.clamp(0, state.board_size);
+        let end_y = end_y.clamp(0, state.board_size);
+
+        // Checkerboard
+        self.ctx.set_fill_style(&JsValue::from_str("#f8fafc"));
+        for x in start_x..end_x {
+            for y in start_y..end_y {
+                if (x + y) % 2 != 0 {
                     self.ctx.fill_rect(x as f64 * self.tile_size + offset_x, y as f64 * self.tile_size + offset_y, self.tile_size, self.tile_size);
                 }
             }
         }
 
-        // Optimized Grid Lines (rendered over a larger area)
-        self.ctx.set_stroke_style(&JsValue::from_str("#eee"));
+        // Grid Lines
+        self.ctx.set_stroke_style(&JsValue::from_str("#cbd5e1"));
         self.ctx.set_line_width(1.0);
         self.ctx.begin_path();
         
-        let min_x = (king_pos.x - render_radius).max(0);
-        let max_x = (king_pos.x + render_radius).min(state.board_size);
-        let min_y = (king_pos.y - render_radius).max(0);
-        let max_y = (king_pos.y + render_radius).min(state.board_size);
-
-        for x in min_x..=max_x {
-            self.ctx.move_to(x as f64 * self.tile_size + offset_x, min_y as f64 * self.tile_size + offset_y);
-            self.ctx.line_to(x as f64 * self.tile_size + offset_x, max_y as f64 * self.tile_size + offset_y);
+        for x in start_x..=end_x {
+            self.ctx.move_to(x as f64 * self.tile_size + offset_x, start_y as f64 * self.tile_size + offset_y);
+            self.ctx.line_to(x as f64 * self.tile_size + offset_x, end_y as f64 * self.tile_size + offset_y);
         }
-        for y in min_y..=max_y {
-            self.ctx.move_to(min_x as f64 * self.tile_size + offset_x, y as f64 * self.tile_size + offset_y);
-            self.ctx.line_to(max_x as f64 * self.tile_size + offset_x, y as f64 * self.tile_size + offset_y);
+        for y in start_y..=end_y {
+            self.ctx.move_to(start_x as f64 * self.tile_size + offset_x, y as f64 * self.tile_size + offset_y);
+            self.ctx.line_to(end_x as f64 * self.tile_size + offset_x, y as f64 * self.tile_size + offset_y);
         }
         self.ctx.stroke();
 
         // Shops
         for shop in &state.shops {
-            if (shop.position - king_pos).abs().max_element() <= view_radius_squares + 2 {
-                self.ctx.set_fill_style(&JsValue::from_str("#ff0"));
-                self.ctx.fill_rect(shop.position.x as f64 * self.tile_size + offset_x + 5.0 * self.zoom, shop.position.y as f64 * self.tile_size + offset_y + 5.0 * self.zoom, self.tile_size - 10.0 * self.zoom, self.tile_size - 10.0 * self.zoom);
-            }
+            self.ctx.set_fill_style(&JsValue::from_str("#fde047"));
+            self.ctx.fill_rect(shop.position.x as f64 * self.tile_size + offset_x + 5.0 * self.zoom, shop.position.y as f64 * self.tile_size + offset_y + 5.0 * self.zoom, self.tile_size - 10.0 * self.zoom, self.tile_size - 10.0 * self.zoom);
         }
 
         // Highlights for valid moves
         if let Some(sid) = selected_piece_id
             && let Some(piece) = ghost_pieces.get(&sid) {
-            self.ctx.set_fill_style(&JsValue::from_str("rgba(0, 255, 0, 0.1)"));
+            self.ctx.set_fill_style(&JsValue::from_str("rgba(34, 197, 94, 0.2)"));
             let range = 10;
             for x in (piece.position.x - range)..(piece.position.x + range + 1) {
                 for y in (piece.position.y - range)..(piece.position.y + range + 1) {
@@ -136,8 +121,8 @@ impl Renderer {
             }
         }
 
-        // Premove lines
-        self.ctx.set_stroke_style(&JsValue::from_str("rgba(0, 0, 255, 0.4)"));
+        // Pmove lines
+        self.ctx.set_stroke_style(&JsValue::from_str("rgba(59, 130, 246, 0.5)"));
         self.ctx.set_line_width(2.0);
         for pm in pm_queue {
             if let Some(real_p) = state.pieces.get(&pm.piece_id) {
@@ -155,9 +140,7 @@ impl Renderer {
 
         // Real pieces
         for piece in state.pieces.values() {
-            if (piece.position - king_pos).abs().max_element() <= view_radius_squares + 2 {
-                self.draw_piece(piece, player_id, offset_x, offset_y, 1.0, state, false);
-            }
+            self.draw_piece(piece, player_id, offset_x, offset_y, 1.0, state, false);
         }
 
         // Ghosts
@@ -170,28 +153,9 @@ impl Renderer {
 
         // Second pass: Draw player names on top of everything
         for piece in state.pieces.values() {
-            if piece.piece_type == PieceType::King && (piece.position - king_pos).abs().max_element() <= view_radius_squares + 2 {
+            if piece.piece_type == PieceType::King {
                 self.draw_piece_name(piece, offset_x, offset_y, 1.0, state);
             }
-        }
-
-        // Soft Edge Fog of War Overlay
-        if player_id != Uuid::nil() {
-            let king_screen_x = king_pos.x as f64 * self.tile_size + offset_x + self.tile_size / 2.0;
-            let king_screen_y = king_pos.y as f64 * self.tile_size + offset_y + self.tile_size / 2.0;
-
-            let gradient = self.ctx.create_radial_gradient(
-                king_screen_x, king_screen_y, view_radius_px * 0.6,
-                king_screen_x, king_screen_y, view_radius_px
-            ).unwrap();
-            
-            let _ = gradient.add_color_stop(0.0, "rgba(255, 255, 255, 0.0)");
-            let _ = gradient.add_color_stop(1.0, "rgba(255, 255, 255, 1.0)");
-
-            self.ctx.set_fill_style(&gradient);
-            
-            // Draw a large enough rectangle to cover the viewport, excluding the center
-            self.ctx.fill_rect(0.0, 0.0, self.width, self.height);
         }
     }
 
@@ -212,7 +176,7 @@ impl Renderer {
 
         self.ctx.set_fill_style(&JsValue::from_str(&format!("rgba(255, 255, 255, {})", alpha)));
         let font_size = 16.0 * self.zoom;
-        self.ctx.set_font(&format!("bold {}px Arial", font_size));
+        self.ctx.set_font(&format!("bold {}px Arbutus", font_size));
         let label = match piece.piece_type {
             PieceType::King => "K", PieceType::Queen => "Q", PieceType::Rook => "R", PieceType::Bishop => "B", PieceType::Knight => "N", PieceType::Pawn => "P",
         };
@@ -246,7 +210,7 @@ impl Renderer {
             let name = if player.name.trim().is_empty() { "An Unnamed Player" } else { &player.name };
             self.ctx.set_fill_style(&JsValue::from_str(&format!("rgba(0, 0, 0, {})", 0.7 * alpha)));
             let name_font_size = 12.0 * self.zoom;
-            self.ctx.set_font(&format!("{}px Arial", name_font_size));
+            self.ctx.set_font(&format!("{}px Arbutus", name_font_size));
             if let Ok(text_metrics) = self.ctx.measure_text(name) {
                 let text_width = text_metrics.width();
                 let _ = self.ctx.fill_text(

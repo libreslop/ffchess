@@ -9,48 +9,46 @@
 - **State Management:** In-memory board state (no persistent DB for now).
 
 ## 2. Gameplay Mechanics
-- **World:** A large 100x100 grid.
+- **World:** A dynamic grid that starts at 30x30 and scales with player count (up to 200x200).
 - **Multiplayer:** Many players coexist on the same board simultaneously.
-- **Move Interference:** First-come-first-served.
+- **Move Interference:** First-come-first-served. Pieces block movement (except Knights).
 - **Pieces:** 
     - Each piece has an independent cooldown (Type-based + Distance-based).
-    - **Pawn Rotation:** Pawns have a specific orientation. Changing this orientation costs 1 full action/cooldown.
-    - **No Promotion:** Pawns do not promote.
-    - **King Mobility:** Standard chess movement (1 square in any direction). Cooldown is relatively slow to ensure the game can reach a conclusion.
+    - **Pawn Movement:** Pawns can move and capture in 4 cardinal directions (standard chess style adapted for 4-way FFA).
+    - **King Mobility:** Standard chess movement (1 square in any direction). Cooldown is relatively slow.
 - **Capture Logic:**
-    - **Immediate Delete:** Capturing a piece immediately removes it from the board (standard chess style).
-- **Control & Viewport:**
-    - **King-Centric Control:** You can only control pieces within your King's current viewport.
+    - **Immediate Delete:** Capturing a piece immediately removes it from the board.
 - **Elimination:**
     - **King Capture:** A player is eliminated when their King is captured. All owned pieces are removed.
 - **Economy & Upgrades:**
     - **Score:** Gained immediately upon capturing an enemy or NPC piece.
-    - **Shop Areas:** Pieces on shop squares can be upgraded or used to spawn new pieces by spending Score.
-    - **Shop Movement:** Shop squares move to a new random location after 5-10 uses.
-    - **Scaling Costs:** Costs increase as the player's total piece count increases.
-- **Kits:** Players choose a specialized starting set (approx. 5-7 pieces).
-- **NPCs & Puzzles:**
-    - **Behavior:** NPCs roam or hold positions, becoming active/aggressive when a player is nearby.
+    - **Shop Areas:** Pieces on shop squares can be used to spawn new pieces by spending Score.
+    - **Shop Movement:** Shop squares are single-use and reappear at a random location after being used.
+- **Kits:** Players choose a specialized starting set (Standard, Shield, Scout, Tank).
+- **NPCs:** Roaming pieces that can be captured for score.
 
 ## 3. Visuals & UI
-- **Style:** Minimalist 2D ".io game" aesthetic.
+- **Style:** Minimalist 2D ".io game" aesthetic with SVG chess pieces.
 - **Viewport (Dynamic):**
-    - **Focus:** The camera is strictly centered on the player's King.
-    - **Fog of War:** Pieces outside the viewport are invisible and uncontrollable.
-    - **Scaling (Zoom):** The viewport zoom level scales with the **square root** of the player's total piece count (diminishing returns for larger armies).
+    - **Focus:** The camera is strictly constrained to the player's King (cannot pan away from it).
+    - **Smooth Zoom:** Continuous zooming (0.2x to 2.0x) centered on the cursor position with exponential smoothing.
+- **Overlay:**
+    - **Stats Bar:** A semi-transparent top bar showing FPS, Ping, Coordinates, and Player count.
+    - **Leaderboard:** Top 10 players by score shown in the top-right corner.
 - **Interaction:**
+    - **Pmoves (Pre-moves):** Players can queue multiple moves. These are executed sequentially as cooldowns expire.
     - **Move Highlighting:** Valid moves for the selected piece are shown.
     - **Cooldown Indicators:** Visual progress on each piece.
 
 ## 4. Technical Implementation
-- **Concurrency:** The server uses `tokio::sync::RwLock` for the `GameState` and `tokio::sync::mpsc` for per-player communication channels.
-- **WASM Client:** The client utilizes `gloo-net` for WebSockets and `web-sys` for high-performance Canvas rendering.
+- **Concurrency:** The server uses `tokio::sync::RwLock` for the `GameState`.
+- **WASM Client:** The client utilizes `web-sys` for high-performance Canvas rendering.
 - **Protocol:** JSON-serialized messages over WebSockets.
 - **Scalability:** 
-    - Full-state broadcasting every 100ms is efficient for this board size and piece density.
-    - Viewport logic is handled client-side for rendering but validated server-side for control.
-- **Shared Logic:** The `common` crate contains `is_valid_chess_move` which is used by the server to validate moves and by the client to (optionally) show valid move previews.
+    - Dynamic board resizing manages player density.
+    - Aggressive cleanup of pre-move queues ensures client-server synchronization.
+- **Shared Logic:** The `common` crate contains the source of truth for movement rules and cooldowns.
 
 ## 5. Running the Project
 - **Server:** `cargo run -p server` (runs on port 8080)
-- **Client:** `cd client && trunk serve` (requires [Trunk](https://trunkrs.dev/))
+- **Client:** `cd client && trunk serve`

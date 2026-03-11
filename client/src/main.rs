@@ -15,13 +15,92 @@ use glam::IVec2;
 use uuid::Uuid;
 use gloo_events::EventListener;
 use gloo_timers::callback::Interval;
+use rand::seq::SliceRandom;
+
+fn get_stored_name() -> String {
+    let window = web_sys::window().unwrap();
+    if let Ok(Some(storage)) = window.local_storage() {
+        return storage.get_item("ffchess_name").unwrap_or_default().unwrap_or_default();
+    }
+    String::new()
+}
+
+fn set_stored_name(name: &str) {
+    let window = web_sys::window().unwrap();
+    if let Ok(Some(storage)) = window.local_storage() {
+        let _ = storage.set_item("ffchess_name", name);
+    }
+}
+
+fn get_death_timestamp() -> i64 {
+    let window = web_sys::window().unwrap();
+    if let Ok(Some(storage)) = window.local_storage() {
+        return storage.get_item("ffchess_death_ts").unwrap_or_default()
+            .and_then(|s| s.parse::<i64>().ok()).unwrap_or(0);
+    }
+    0
+}
+
+fn set_death_timestamp(ts: i64) {
+    let window = web_sys::window().unwrap();
+    if let Ok(Some(storage)) = window.local_storage() {
+        let _ = storage.set_item("ffchess_death_ts", &ts.to_string());
+    }
+}
+
+fn generate_random_name() -> String {
+    let adjectives = [
+        "Swift", "Brave", "Silent", "Iron", "Gold", "Shadow", "Grand", "Quick", "Old", "New", "Wild", "Calm",
+        "Crimson", "Azure", "Sly", "Mighty", "Ancient", "Fierce", "Noble", "Ethereal", "Frosty", "Fiery", 
+        "Stormy", "Golden", "Silver", "Hidden", "Lone", "vibrant", "Dark", "Bright", "Steady", "Fallen"
+    ];
+    let nouns = [
+        "Knight", "King", "Rook", "Bishop", "Pawn", "Queen", "Warrior", "Shadow", "Storm", "Frost", "Flame", "Blade",
+        "Guard", "Seeker", "Warden", "Herald", "Slayer", "Spirit", "Ghost", "Titan", "Wolf", "Raven", "Dragon",
+        "Phoenix", "Sentinel", "Oracle", "Monarch", "Paladin", "Ranger", "Saber", "Shield", "Fang"
+    ];
+    let mut rng = rand::thread_rng();
+    let adj = adjectives.choose(&mut rng).unwrap();
+    // Ensure the noun is different from the adjective
+    let mut noun = nouns.choose(&mut rng).unwrap();
+    while noun == adj {
+        noun = nouns.choose(&mut rng).unwrap();
+    }
+    format!("{} {}", adj, noun)
+}
 
 #[function_component(App)]
 pub fn app() -> Html {
     let reducer = use_reducer(GameStateReducer::default);
     let tx = use_state(|| None::<MsgSender>);
-    let player_name = use_state(String::new);
+    let player_name = use_state(|| get_stored_name());
+    let join_step = use_state(|| {
+        if get_stored_name().is_empty() { 0 } else { 1 }
+    });
     
+    // Landing Cooldown (persists through refresh)
+    let landing_cooldown = use_state(|| {
+        let ts = get_death_timestamp();
+        let now = js_sys::Date::now() as i64 / 1000;
+        let diff = 5 - (now - ts);
+        if diff > 0 { diff as i32 } else { 0 }
+    });
+
+    {
+        let lc = landing_cooldown.clone();
+        use_effect_with((), move |_| {
+            let mut interval = None;
+            if *lc > 0 {
+                let lc_inner = lc.clone();
+                interval = Some(Interval::new(1000, move || {
+                    let cur = *lc_inner;
+                    if cur > 0 { lc_inner.set(cur - 1); }
+                }));
+            }
+            || drop(interval)
+        });
+    }
+
     // Stable reference to the latest reducer for the Tick loop
     let reducer_ref = use_mut_ref(|| reducer.clone());
     *reducer_ref.borrow_mut() = reducer.clone();
@@ -63,7 +142,8 @@ pub fn app() -> Html {
                                 ServerMessage::Init { player_id, state } => GameAction::SetInit { player_id, state },
                                 ServerMessage::UpdateState { players, pieces, shops, removed_pieces, removed_players } => GameAction::UpdateState { players, pieces, shops, removed_pieces, removed_players },
                                 ServerMessage::Error(e) => GameAction::SetError(e),
-                                ServerMessage::GameOver { final_score } => GameAction::GameOver { final_score },
+                                ServerMessage::GameOver { final_score, kills, pieces_captured, time_survived_secs } => GameAction::GameOver { final_score, kills, pieces_captured, time_survived_secs },
+                                ServerMessage::Pong(t) => GameAction::Pong(t),
                             });
                         }
                     }
@@ -90,10 +170,91 @@ pub fn app() -> Html {
         })
     };
 
+    let on_name_submit = {
+        let join_step = join_step.clone();
+        let player_name = player_name.clone();
+        let landing_cooldown = landing_cooldown.clone();
+        Callback::from(move |e: SubmitEvent| {
+            e.prevent_default();
+            if *landing_cooldown > 0 { return; }
+            let mut name = (*player_name).trim().to_string();
+            if name.is_empty() {
+                name = generate_random_name();
+                player_name.set(name.clone());
+            }
+            set_stored_name(&name);
+            join_step.set(1);
+        })
+    };
+
     let is_joined = reducer.player_id.is_some() && reducer.player_id != Some(Uuid::nil());
     let player_id = reducer.player_id.unwrap_or_else(Uuid::nil);
     let player = reducer.state.players.get(&player_id);
     let is_dead = is_joined && player.is_none();
+    
+    // Game Over Cooldown
+    let rejoin_cooldown = use_state(|| 5);
+    let rc_ref = use_mut_ref(|| 5);
+    {
+        let rejoin_cooldown = rejoin_cooldown.clone();
+        let rc_ref = rc_ref.clone();
+        use_effect_with(is_dead, move |is_dead| {
+            let mut interval = None;
+            if *is_dead {
+                set_death_timestamp(js_sys::Date::now() as i64 / 1000);
+                rejoin_cooldown.set(5);
+                *rc_ref.borrow_mut() = 5;
+                let rc = rejoin_cooldown.clone();
+                let rr = rc_ref.clone();
+                interval = Some(Interval::new(1000, move || {
+                    let mut val = *rr.borrow();
+                    if val > 0 {
+                        val -= 1;
+                        *rr.borrow_mut() = val;
+                        rc.set(val);
+                    }
+                }));
+            }
+            || drop(interval)
+        });
+    }
+
+    let on_rejoin = {
+        let rc_ref = rc_ref.clone();
+        let reducer = reducer.clone();
+        let join_step = join_step.clone();
+        Callback::from(move |_| {
+            if *rc_ref.borrow() == 0 {
+                reducer.dispatch(GameAction::SetInit { player_id: Uuid::nil(), state: reducer.state.clone() });
+                join_step.set(1);
+            }
+        })
+    };
+
+    // Global keyboard listener for Enter (rejoin / step transition)
+    {
+        let is_dead = is_dead;
+        let rc_ref = rc_ref.clone();
+        let join_step = join_step.clone();
+        let on_rejoin = on_rejoin.clone();
+        use_effect_with((is_dead, rc_ref, join_step), move |(is_dead, rc_ref, join_step)| {
+            let is_dead = *is_dead;
+            let rc_ref = rc_ref.clone();
+            let join_step = join_step.clone();
+            let on_rejoin = on_rejoin.clone();
+            let listener = EventListener::new(&web_sys::window().unwrap(), "keydown", move |e| {
+                let e = e.dyn_ref::<web_sys::KeyboardEvent>().unwrap();
+                if e.key() == "Enter" {
+                    if is_dead && *rc_ref.borrow() == 0 {
+                        on_rejoin.emit(MouseEvent::new("click").unwrap());
+                    } else if !is_dead && *join_step == 0 {
+                        // Let the form submit handle it to keep validation logic in one place
+                    }
+                }
+            });
+            || drop(listener)
+        });
+    }
 
     let leaderboard_items = if is_joined && !is_dead {
         let mut players: Vec<_> = reducer.state.players.values().collect();
@@ -111,7 +272,7 @@ pub fn app() -> Html {
     } else { html! {} };
 
     html! {
-        <div style="font-family: 'Segoe UI', Arial, sans-serif; margin: 0; padding: 0; width: 100vw; height: 100vh; overflow: hidden; position: relative; background: #f0f2f5;">
+        <div style="margin: 0; padding: 0; width: 100vw; height: 100vh; overflow: hidden; position: relative; background: #f0f2f5;">
             if let Some(sender) = (*tx).clone() {
                 <GameView reducer={reducer.clone()} tx={sender} />
             } else {
@@ -126,53 +287,94 @@ pub fn app() -> Html {
 
             if is_joined {
                 if is_dead {
-                    <div style="position: absolute; inset: 0; background: rgba(0,0,0,0.6); z-index: 90;"></div>
-                    <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 40px; border-radius: 12px; box-shadow: 0 15px 35px rgba(0,0,0,0.3); z-index: 100; text-align: center; width: 350px;">
-                        <h1 style="color: #dc2626; margin-top: 0;">{"GAME OVER"}</h1>
-                        <div style="margin: 25px 0; font-size: 1.2em;">
-                            <p style="margin: 5px 0; color: #666;">{"Your King was captured!"}</p>
-                            <div style="background: #f8fafc; padding: 15px; border-radius: 8px; margin-top: 20px;">
-                                <span style="display: block; font-size: 0.8em; text-transform: uppercase; color: #94a3b8; letter-spacing: 1px;">{"Final Score"}</span>
+                    <div style="position: absolute; inset: 0; background: rgba(0,0,0,0.7); z-index: 90;"></div>
+                    <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #fff; padding: 40px; border-radius: 0; border: 4px solid #1e293b; z-index: 100; text-align: center; width: 400px;">
+                        <h1 style="color: #dc2626; margin-top: 0; font-size: 3em; letter-spacing: 2px;">{"DEFEAT"}</h1>
+                        
+                        <div style="margin: 30px 0; display: flex; flex-direction: column; gap: 15px;">
+                            <div style="background: #f8fafc; padding: 15px; border: 2px solid #cbd5e1;">
+                                <span style="display: block; font-size: 0.8em; text-transform: uppercase; color: #64748b; margin-bottom: 5px;">{"Final Score"}</span>
                                 <span style="font-size: 2.5em; font-weight: bold; color: #1e293b;">{reducer.last_score}</span>
                             </div>
+                            
+                            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;">
+                                <div style="background: #f8fafc; padding: 10px; border: 2px solid #cbd5e1;">
+                                    <span style="display: block; font-size: 0.7em; text-transform: uppercase; color: #64748b;">{"Kills"}</span>
+                                    <span style="font-size: 1.5em; font-weight: bold;">{reducer.last_kills}</span>
+                                </div>
+                                <div style="background: #f8fafc; padding: 10px; border: 2px solid #cbd5e1;">
+                                    <span style="display: block; font-size: 0.7em; text-transform: uppercase; color: #64748b;">{"Taken"}</span>
+                                    <span style="font-size: 1.5em; font-weight: bold;">{reducer.last_captured}</span>
+                                </div>
+                                <div style="background: #f8fafc; padding: 10px; border: 2px solid #cbd5e1;">
+                                    <span style="display: block; font-size: 0.7em; text-transform: uppercase; color: #64748b;">{"Survived"}</span>
+                                    <span style="font-size: 1.5em; font-weight: bold;">{format!("{}m {}s", reducer.last_survival_secs / 60, reducer.last_survival_secs % 60)}</span>
+                                </div>
+                            </div>
                         </div>
-                        <button onclick={|_| web_sys::window().unwrap().location().reload().unwrap()} 
-                            style="padding: 12px 30px; font-size: 1.1em; cursor: pointer; background: #2563eb; color: white; border: none; border-radius: 8px; font-weight: bold; width: 100%; box-shadow: 0 4px 6px rgba(37, 99, 235, 0.2);">
-                            {"Play Again"}
+
+                        <button onclick={on_rejoin} disabled={*rejoin_cooldown > 0}
+                            style={format!("padding: 15px; font-size: 1.2em; cursor: {}; background: {}; color: white; border: none; border-radius: 0; font-weight: bold; width: 100%; transition: all 0.2s;", 
+                                if *rejoin_cooldown > 0 { "not-allowed" } else { "pointer" },
+                                if *rejoin_cooldown > 0 { "#94a3b8" } else { "#1e293b" })}>
+                            if *rejoin_cooldown > 0 {
+                                {format!("Wait ({}s)", *rejoin_cooldown)}
+                            } else {
+                                {"PLAY AGAIN"}
+                            }
                         </button>
+                        <p style="margin-top: 15px; font-size: 0.8em; color: #64748b;">{"Tip: Press ENTER to rejoin when ready"}</p>
                     </div>
                 } else {
-                    <div style="position: absolute; top: 20px; right: 20px; background: rgba(255, 255, 255, 0.9); padding: 15px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); width: 200px; z-index: 60; pointer-events: none;">
-                        <h3 style="margin: 0 0 10px 0; border-bottom: 1px solid #eee; padding-bottom: 5px;">{"Leaderboard"}</h3>
+                    <div style="position: absolute; top: 20px; right: 20px; background: transparent; padding: 15px; width: 200px; z-index: 60; pointer-events: none;">
                         <div style="display: flex; flex-direction: column; gap: 5px;">
                             {leaderboard_items}
                         </div>
                     </div>
                 }
             } else if tx.is_some() {
-                <div style="position: absolute; inset: 0; background: rgba(0,0,0,0.4); z-index: 90;"></div>
-                <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 30px; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); z-index: 100; text-align: center; width: 400px;">
-                    <h1>{"FFChess"}</h1>
-                    <div style="margin-bottom: 20px; text-align: left;">
-                        <label style="display: block; margin-bottom: 5px; font-weight: bold;">{"Your Name:"}</label>
-                        <input type="text" value={(*player_name).clone()} oninput={on_name_input} placeholder="Enter name..."
-                            style="padding: 10px; border-radius: 6px; border: 1px solid #ddd; width: 100%; box-sizing: border-box; font-size: 1.1em;"/>
-                    </div>
-                    <h3>{"Choose your starting Kit:"}</h3>
-                    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px;">
-                        <button onclick={on_join.reform(|_| KitType::Standard)} style="padding: 15px; cursor: pointer; border-radius: 8px; border: 1px solid #ddd; background: white; font-weight: bold;">
-                            {"Standard"}<br/><span style="font-weight: normal; font-size: 0.8em;">{"2 Pawns, 2 Knights"}</span>
-                        </button>
-                        <button onclick={on_join.reform(|_| KitType::Shield)} style="padding: 15px; cursor: pointer; border-radius: 8px; border: 1px solid #ddd; background: white; font-weight: bold;">
-                            {"Shield"}<br/><span style="font-weight: normal; font-size: 0.8em;">{"6 Pawns"}</span>
-                        </button>
-                        <button onclick={on_join.reform(|_| KitType::Scout)} style="padding: 15px; cursor: pointer; border-radius: 8px; border: 1px solid #ddd; background: white; font-weight: bold;">
-                            {"Scout"}<br/><span style="font-weight: normal; font-size: 0.8em;">{"1 Pawn, 2 Bishops"}</span>
-                        </button>
-                        <button onclick={on_join.reform(|_| KitType::Tank)} style="padding: 15px; cursor: pointer; border-radius: 8px; border: 1px solid #ddd; background: white; font-weight: bold;">
-                            {"Tank"}<br/><span style="font-weight: normal; font-size: 0.8em;">{"1 Rook"}</span>
-                        </button>
-                    </div>
+                <div style="position: absolute; inset: 0; background: rgba(0,0,0,0.6); z-index: 90;"></div>
+                <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 100; text-align: center; width: 400px; padding: 30px;">
+                    <h1 style="margin-top: 0; color: #fff; font-size: 4em; letter-spacing: 4px; text-shadow: 0 4px 8px rgba(0,0,0,0.5);">{"FFCHESS"}</h1>
+                    
+                    if *join_step == 0 {
+                        <form onsubmit={on_name_submit}>
+                            <div style="display: flex; flex-direction: column; gap: 15px; align-items: center;">
+                                <input type="text" name="player_name" value={(*player_name).clone()} oninput={on_name_input} placeholder="This is a tale of..." autofocus=true
+                                    style="padding: 12px 20px; border-radius: 0; border: 2px solid #cbd5e1; width: 100%; box-sizing: border-box; font-size: 1.2em; outline: none; background: #fff;"/>
+                                <button type="submit" disabled={*landing_cooldown > 0}
+                                    style={format!("padding: 10px 40px; background: {}; color: #fff; border: 3px solid {}; border-radius: 0; font-weight: 900; cursor: {}; font-size: 1.2em; width: auto; text-transform: uppercase; letter-spacing: 1px;", 
+                                        if *landing_cooldown > 0 { "#94a3b8" } else { "#3b82f6" },
+                                        if *landing_cooldown > 0 { "#64748b" } else { "#1e3a8a" },
+                                        if *landing_cooldown > 0 { "not-allowed" } else { "pointer" })}>
+                                    if *landing_cooldown > 0 {
+                                        {format!("Wait ({}s)", *landing_cooldown)}
+                                    } else {
+                                        {"Play!"}
+                                    }
+                                </button>
+                            </div>
+                        </form>
+                    } else {
+                        <div style="animation: fadeIn 0.3s ease-out; display: flex; flex-direction: column; align-items: center;">
+                            <h3 style="color: #fff; margin-bottom: 25px; text-transform: uppercase; letter-spacing: 2px; text-shadow: 0 2px 4px rgba(0,0,0,0.3);">{"CHOOSE YOUR ARMY"}</h3>
+                            <div style="display: grid; grid-template-columns: 1fr; gap: 12px; width: 100%;">
+                                <button onclick={on_join.reform(|_| KitType::Standard)} style="padding: 15px; cursor: pointer; border-radius: 0; border: 2px solid #cbd5e1; background: #fff; font-weight: bold; transition: all 0.2s;">
+                                    {"STANDARD"}<br/><span style="font-weight: normal; font-size: 0.8em; color: #475569;">{"2 Pawns, 2 Knights"}</span>
+                                </button>
+                                <button onclick={on_join.reform(|_| KitType::Shield)} style="padding: 15px; cursor: pointer; border-radius: 0; border: 2px solid #cbd5e1; background: #fff; font-weight: bold; transition: all 0.2s;">
+                                    {"SHIELD"}<br/><span style="font-weight: normal; font-size: 0.8em; color: #475569;">{"6 Pawns"}</span>
+                                </button>
+                                <button onclick={on_join.reform(|_| KitType::Scout)} style="padding: 15px; cursor: pointer; border-radius: 0; border: 2px solid #cbd5e1; background: #fff; font-weight: bold; transition: all 0.2s;">
+                                    {"SCOUT"}<br/><span style="font-weight: normal; font-size: 0.8em; color: #475569;">{"1 Pawn, 2 Bishops"}</span>
+                                </button>
+                                <button onclick={on_join.reform(|_| KitType::Tank)} style="padding: 15px; cursor: pointer; border-radius: 0; border: 2px solid #cbd5e1; background: #fff; font-weight: bold; transition: all 0.2s;">
+                                    {"TANK"}<br/><span style="font-weight: normal; font-size: 0.8em; color: #475569;">{"1 Rook"}</span>
+                                </button>
+                            </div>
+                        </div>
+                    }
+                    <style>{"@keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }"}</style>
                 </div>
             }
         </div>
@@ -298,30 +500,19 @@ fn game_view(props: &GameViewProps) -> Html {
         });
     }
 
-    // Centering on King (one-time or on board changes)
+    // Initial Centering on Board (if no King yet)
     {
         let camera_ref = camera_ref.clone();
         let cam_state = cam_state.clone();
         let reducer = props.reducer.clone();
         let zoom_ref = zoom_ref.clone();
-        use_effect_with((reducer.player_id, reducer.state.board_size), move |(pid, board_size)| {
+        use_effect_with(reducer.state.board_size, move |board_size| {
             let zoom = *zoom_ref.borrow();
             let tile_size = 40.0 * zoom;
-            if let Some(player_id) = *pid {
-                if player_id != Uuid::nil() {
-                    if let Some(player) = reducer.state.players.get(&player_id)
-                        && let Some(king) = reducer.state.pieces.get(&player.king_id) {
-                        let nx = king.position.x as f64 * tile_size + tile_size / 2.0;
-                        let ny = king.position.y as f64 * tile_size + tile_size / 2.0;
-                        *camera_ref.borrow_mut() = (nx, ny);
-                        cam_state.set((nx, ny));
-                    }
-                } else if *board_size > 0 {
-                    let nx = *board_size as f64 * tile_size / 2.0;
-                    let ny = *board_size as f64 * tile_size / 2.0;
-                    *camera_ref.borrow_mut() = (nx, ny);
-                    cam_state.set((nx, ny));
-                }
+            if *board_size > 0 && (reducer.player_id.is_none() || reducer.player_id == Some(Uuid::nil())) {
+                let center = *board_size as f64 * tile_size / 2.0;
+                *camera_ref.borrow_mut() = (center, center);
+                cam_state.set((center, center));
             }
             || ()
         });
@@ -371,21 +562,47 @@ fn game_view(props: &GameViewProps) -> Html {
     // Draw Effect
     {
         let canvas_ref = canvas_ref.clone();
-        let reducer = props.reducer.clone();
+        let reducer_handle = props.reducer.clone();
         let sid = selected_piece_id.clone();
         let size = *window_size;
         let ghost_pieces_clone = ghost_pieces.clone();
         let cam = *cam_state;
         let zoom = *zoom_state;
-        use_effect_with((reducer.clone(), sid, size, cam, zoom), move |(reducer, sid, size, cam, zoom)| {
+        
+        let frame_count_ref = use_mut_ref(|| 0);
+        let last_fps_update_ref = use_mut_ref(|| js_sys::Date::now());
+
+        use_effect_with((reducer_handle.clone(), sid, size, cam, zoom), move |(reducer, sid, size, cam, zoom)| {
             if let Some(canvas) = canvas_ref.cast::<HtmlCanvasElement>() {
                 canvas.set_width(size.0 as u32);
                 canvas.set_height(size.1 as u32);
                 let renderer = Renderer::new(canvas, *zoom);
                 let player_id = reducer.player_id.unwrap_or_else(Uuid::nil);
                 renderer.draw_with_ghosts(&reducer.state, player_id, **sid, &reducer.pm_queue, &ghost_pieces_clone, *cam);
+                
+                // FPS Calculation
+                let now = js_sys::Date::now();
+                *frame_count_ref.borrow_mut() += 1;
+                let elapsed = now - *last_fps_update_ref.borrow();
+                if elapsed >= 1000.0 {
+                    let fps = (*frame_count_ref.borrow() as f64 / (elapsed / 1000.0)) as u32;
+                    reducer_handle.dispatch(GameAction::SetFPS(fps));
+                    *frame_count_ref.borrow_mut() = 0;
+                    *last_fps_update_ref.borrow_mut() = now;
+                }
             }
             || ()
+        });
+    }
+
+    // Ping Loop
+    {
+        let tx = props.tx.clone();
+        use_effect_with((), move |_| {
+            let interval = Interval::new(2000, move || {
+                let _ = tx.0.send(ClientMessage::Ping(js_sys::Date::now() as u64));
+            });
+            || drop(interval)
         });
     }
 
@@ -570,9 +787,18 @@ fn game_view(props: &GameViewProps) -> Html {
     html! {
         <div style="width: 100%; height: 100%; position: relative;" oncontextmenu={Callback::from(|e: MouseEvent| e.prevent_default())}>
             <canvas ref={canvas_ref} onmousedown={on_mousedown} onmousemove={on_mousemove} onmouseup={on_mouseup} style="display: block; background: #fafafa; cursor: grab;"></canvas>
-            <div style="position: absolute; top: 20px; left: 20px; pointer-events: none; display: flex; flex-direction: column; gap: 10px;">
+            
+            // Top Stats Bar
+            <div style="position: absolute; top: 0; left: 0; right: 0; height: 24px; background: rgba(0, 0, 0, 0.4); color: #fff; font-family: monospace; font-size: 11px; display: flex; align-items: center; padding: 0 10px; gap: 15px; pointer-events: none; z-index: 100;">
+                <span>{"FPS: "}{props.reducer.fps}</span>
+                <span>{"PING: "}{props.reducer.ping_ms}{"ms"}</span>
+                <span>{"COORD: "}{format!("{}, {}", (cam_state.0 / 40.0 / *zoom_state).floor(), (cam_state.1 / 40.0 / *zoom_state).floor())}</span>
+                <span>{"PLAYERS: "}{props.reducer.state.players.len()}</span>
+            </div>
+
+            <div style="position: absolute; top: 40px; left: 20px; pointer-events: none; display: flex; flex-direction: column; gap: 10px;">
                 if player_id != Uuid::nil() {
-                    <div style="background: rgba(255, 255, 255, 0.9); padding: 10px 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); font-weight: bold; font-size: 1.5em; pointer-events: auto;">{"Score: "}{props.reducer.last_score}</div>
+                    <div style="background: transparent; padding: 10px 20px; font-weight: bold; font-size: 1.5em; pointer-events: auto;">{"Score: "}{props.reducer.last_score}</div>
                 }
                 if let Some(error) = &props.reducer.error {
                     <div style="background: rgba(254, 226, 226, 0.9); color: #dc2626; padding: 10px 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); pointer-events: auto;">{error}</div>

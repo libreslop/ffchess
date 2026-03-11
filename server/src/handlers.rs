@@ -76,6 +76,9 @@ async fn handle_socket(socket: WebSocket, state: Arc<ServerState>) {
                                 let _ = tx.send(ServerMessage::Error(e));
                             }
                         }
+                        ClientMessage::Ping(t) => {
+                            let _ = tx.send(ServerMessage::Pong(t));
+                        }
                     }
                 }
                 Err(e) => {

@@ -18,6 +18,11 @@ pub struct GameStateReducer {
     pub error: Option<String>,
     pub pm_queue: Vec<Pmove>,
     pub last_score: u64,
+    pub last_kills: u32,
+    pub last_captured: u32,
+    pub last_survival_secs: u64,
+    pub ping_ms: u64,
+    pub fps: u32,
 }
 
 pub enum GameAction {
@@ -30,10 +35,12 @@ pub enum GameAction {
         removed_players: Vec<Uuid>,
     },
     SetError(String),
-    GameOver { final_score: u64 },
+    GameOver { final_score: u64, kills: u32, pieces_captured: u32, time_survived_secs: u64 },
     AddPmove(Pmove),
     ClearPmQueue(Uuid),
     Tick(MsgSender),
+    Pong(u64),
+    SetFPS(u32),
 }
 
 #[derive(Clone)]
@@ -52,6 +59,8 @@ impl Reducible for GameStateReducer {
             GameAction::SetInit { player_id, state } => {
                 next.player_id = Some(player_id);
                 next.state = state;
+                next.pm_queue.clear();
+                next.error = None;
                 if let Some(p) = next.state.players.get(&player_id) {
                     next.last_score = p.score;
                 }
@@ -100,8 +109,11 @@ impl Reducible for GameStateReducer {
                     next.pm_queue.clear();
                 }
             }
-            GameAction::GameOver { final_score } => {
+            GameAction::GameOver { final_score, kills, pieces_captured, time_survived_secs } => {
                 next.last_score = final_score;
+                next.last_kills = kills;
+                next.last_captured = pieces_captured;
+                next.last_survival_secs = time_survived_secs;
             }
             GameAction::AddPmove(pm) => {
                 next.pm_queue.push(pm);
@@ -132,6 +144,15 @@ impl Reducible for GameStateReducer {
                         }
                     }
                 }
+            }
+            GameAction::Pong(t) => {
+                let now = js_sys::Date::now() as u64;
+                if now >= t {
+                    next.ping_ms = now - t;
+                }
+            }
+            GameAction::SetFPS(fps) => {
+                next.fps = fps;
             }
         }
         next.into()
@@ -253,7 +274,7 @@ mod tests {
         let reducer = Rc::new(next);
 
         let (tx, mut rx) = mpsc::unbounded_channel();
-        let reducer = reducer.reduce(GameAction::Tick(MsgSender(tx)));
+        let _reducer = reducer.reduce(GameAction::Tick(MsgSender(tx)));
         let msg = rx.try_recv().expect("Should send move 2");
         assert!(matches!(msg, ClientMessage::MovePiece { target, .. } if target == IVec2::new(0, 2)));
     }

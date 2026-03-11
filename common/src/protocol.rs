@@ -8,6 +8,7 @@ pub enum ClientMessage {
     Join { name: String, kit: KitType, player_id: Option<Uuid> },
     MovePiece { piece_id: Uuid, target: IVec2 },
     BuyPiece { shop_pos: IVec2, piece_type: PieceType },
+    Ping(u64),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -24,5 +25,11 @@ pub enum ServerMessage {
         removed_players: Vec<Uuid>,
     },
     Error(String),
-    GameOver { final_score: u64 },
+    GameOver { 
+        final_score: u64,
+        kills: u32,
+        pieces_captured: u32,
+        time_survived_secs: u64,
+    },
+    Pong(u64),
 }

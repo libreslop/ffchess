@@ -47,6 +47,9 @@ pub struct Player {
     pub id: Uuid,
     pub name: String,
     pub score: u64,
+    pub kills: u32,
+    pub pieces_captured: u32,
+    pub join_time: i64,
     pub king_id: Uuid,
     pub color: String, // Hex color code
 }

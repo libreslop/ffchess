@@ -3,6 +3,9 @@
     <head>
         <meta charset="utf-8" />
         <title>FFChess</title>
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link href="https://fonts.googleapis.com/css2?family=Arbutus&display=swap" rel="stylesheet">
         <style>
             html, body { 
                 margin: 0; 
@@ -11,14 +14,17 @@
                 height: 100%; 
                 overflow: hidden; 
                 background-color: #f0f2f5; 
-                font-family: 'Segoe UI', Arial, sans-serif;
+                font-family: 'Arbutus', serif;
+            }
+            input, button, select, textarea {
+                font-family: inherit;
             }
         </style>
-    <link rel="modulepreload" href="/client-64583ef8b3c08b0.js" crossorigin="anonymous" integrity="sha384-ADyhPJOtftsJf2+QbUS2JydKigVw3P7Fr2Far/RCJXtVxma7o16KKUuWhMTJZRWa"><link rel="preload" href="/client-64583ef8b3c08b0_bg.wasm" crossorigin="anonymous" integrity="sha384-igmUVyiQNoR1NAxvwLmoKRqLjgTnLxG7P7ZeT/DTjiuwFIJBm/21Zdkeq6QLZ1HX" as="fetch" type="application/wasm"></head>
+    <link rel="modulepreload" href="/client-6497fc0a42305e85.js" crossorigin="anonymous" integrity="sha384-x9xPk2l1iFwE/K/AZN+cEAH8FOaT467SCsoeqrdItbu7HUZhVu3af8MjxpkWcFI1"><link rel="preload" href="/client-6497fc0a42305e85_bg.wasm" crossorigin="anonymous" integrity="sha384-clCRg8z4Y243b98vyKAtLYTpb6QJ8j9gdrKN0HDASKaZ6JRpqvSX9q+vOBpUggj0" as="fetch" type="application/wasm"></head>
     <body>
 <script type="module">
-import init, * as bindings from '/client-64583ef8b3c08b0.js';
-const wasm = await init({ module_or_path: '/client-64583ef8b3c08b0_bg.wasm' });
+import init, * as bindings from '/client-6497fc0a42305e85.js';
+const wasm = await init({ module_or_path: '/client-6497fc0a42305e85_bg.wasm' });
 
 
 window.wasmBindings = bindings;

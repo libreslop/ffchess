@@ -48,8 +48,9 @@ impl ServerState {
     }
 
     pub fn calculate_board_size(player_count: usize) -> i32 {
-        // Diminishing returns: 30 + sqrt(count) * 25
-        (30 + ((player_count as f32).sqrt() * 25.0) as i32).min(200)
+        // (starts at 30x30, scales with player count using a square-root formula up to 200x200).
+        // Hit ~200 at 100 players: 30 + sqrt(100) * 17 = 200
+        (30.0 + (player_count as f32).sqrt() * 17.0).clamp(30.0, 200.0) as i32
     }
 
     async fn get_or_assign_color(&self, player_id: Uuid) -> String {
@@ -107,7 +108,12 @@ impl ServerState {
 
         let mut game = self.game.write().await;
         
-        game.board_size = Self::calculate_board_size(game.players.len() + 1);
+        let old_size = game.board_size;
+        let new_size = Self::calculate_board_size(game.players.len() + 1);
+        if new_size != old_size {
+            game.board_size = new_size;
+            Self::redistribute_entities(&mut game, old_size, new_size);
+        }
 
         let spawn_pos = self.find_spawn_pos(&game).await;
         
@@ -170,6 +176,9 @@ impl ServerState {
             id: player_id,
             name,
             score: 0,
+            kills: 0,
+            pieces_captured: 0,
+            join_time: chrono::Utc::now().timestamp(),
             king_id,
             color,
         };
@@ -185,12 +194,25 @@ impl ServerState {
         for _ in 0..100 {
             let pos = IVec2::new(rng.gen_range(0..board_size), rng.gen_range(0..board_size));
             let mut occupied = false;
+            
+            // Check pieces
             for piece in game.pieces.values() {
                 if (piece.position - pos).as_vec2().length() < 10.0 {
                     occupied = true;
                     break;
                 }
             }
+            
+            if !occupied {
+                // Check shops
+                for shop in &game.shops {
+                    if (shop.position - pos).as_vec2().length() < 5.0 {
+                        occupied = true;
+                        break;
+                    }
+                }
+            }
+
             if !occupied {
                 return pos;
             }
@@ -217,22 +239,68 @@ impl ServerState {
     }
 
     pub async fn remove_player(&self, player_id: Uuid) {
-        let score = {
+        let stats = {
             let game = self.game.read().await;
-            game.players.get(&player_id).map(|p| p.score).unwrap_or(0)
+            game.players.get(&player_id).map(|p| (p.score, p.kills, p.pieces_captured, p.join_time))
         };
 
         // Send Game Over message to this specific player before removing them
-        let channels = self.player_channels.read().await;
-        if let Some(tx) = channels.get(&player_id) {
-            let _ = tx.send(ServerMessage::GameOver { final_score: score });
+        if let Some((score, kills, pieces_captured, join_time)) = stats {
+            let now = chrono::Utc::now().timestamp();
+            let duration = (now - join_time).max(0) as u64;
+            let channels = self.player_channels.read().await;
+            if let Some(tx) = channels.get(&player_id) {
+                let _ = tx.send(ServerMessage::GameOver { 
+                    final_score: score,
+                    kills,
+                    pieces_captured,
+                    time_survived_secs: duration,
+                });
+            }
         }
-        drop(channels);
 
         let mut game = self.game.write().await;
         game.players.remove(&player_id);
         self.record_player_removal(player_id, &mut game).await;
-        game.board_size = Self::calculate_board_size(game.players.len());
+        
+        let old_size = game.board_size;
+        let new_size = Self::calculate_board_size(game.players.len());
+        if new_size != old_size {
+            game.board_size = new_size;
+            Self::redistribute_entities(&mut game, old_size, new_size);
+        }
+    }
+
+    fn redistribute_entities(game: &mut GameState, old_size: i32, new_size: i32) {
+        let ratio = new_size as f32 / old_size as f32;
+        
+        // Reposition shops
+        for shop in &mut game.shops {
+            shop.position = (shop.position.as_vec2() * ratio).as_ivec2().clamp(IVec2::ZERO, IVec2::new(new_size - 1, new_size - 1));
+        }
+        
+        // Reposition pieces (especially NPCs, but also players to keep things fair)
+        // We use a temporary map to avoid position collisions during the process
+        let mut new_positions = HashMap::new();
+        let piece_ids: Vec<Uuid> = game.pieces.keys().cloned().collect();
+        
+        for id in piece_ids {
+            if let Some(piece) = game.pieces.get_mut(&id) {
+                let mut new_pos = (piece.position.as_vec2() * ratio).as_ivec2().clamp(IVec2::ZERO, IVec2::new(new_size - 1, new_size - 1));
+                
+                // Basic collision avoidance
+                let mut attempts = 0;
+                while new_positions.values().any(|&p| p == new_pos) && attempts < 10 {
+                    let mut rng = rand::thread_rng();
+                    new_pos = (new_pos + IVec2::new(rng.gen_range(-1..=1), rng.gen_range(-1..=1)))
+                        .clamp(IVec2::ZERO, IVec2::new(new_size - 1, new_size - 1));
+                    attempts += 1;
+                }
+                
+                piece.position = new_pos;
+                new_positions.insert(id, new_pos);
+            }
+        }
     }
 
     pub async fn handle_move(&self, player_id: Uuid, piece_id: Uuid, target: IVec2) -> Result<(), String> {
@@ -285,6 +353,7 @@ impl ServerState {
             self.record_piece_removal(captured_id).await;
             if let Some(p) = game.players.get_mut(&player_id) {
                 p.score += value;
+                p.pieces_captured += 1;
             }
         }
 
@@ -295,8 +364,28 @@ impl ServerState {
         }
 
         if let Some(cp_id) = captured_player_id {
+            let victim_stats = game.players.get(&cp_id).map(|p| (p.score, p.kills, p.pieces_captured, p.join_time));
+
             game.players.remove(&cp_id);
             self.record_player_removal(cp_id, &mut game).await;
+            if let Some(p) = game.players.get_mut(&player_id) {
+                p.kills += 1;
+            }
+
+            // Send GameOver to victim immediately
+            if let Some((score, kills, pieces_captured, join_time)) = victim_stats {
+                let now = chrono::Utc::now().timestamp();
+                let duration = (now - join_time).max(0) as u64;
+                let channels = self.player_channels.read().await;
+                if let Some(tx) = channels.get(&cp_id) {
+                    let _ = tx.send(ServerMessage::GameOver { 
+                        final_score: score,
+                        kills,
+                        pieces_captured,
+                        time_survived_secs: duration,
+                    });
+                }
+            }
         }
 
         Ok(())
