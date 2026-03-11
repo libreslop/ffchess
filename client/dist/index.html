@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8" />
+        <title>FFChess</title>
+        <style>
+            html, body { 
+                margin: 0; 
+                padding: 0; 
+                width: 100%; 
+                height: 100%; 
+                overflow: hidden; 
+                background-color: #f0f2f5; 
+                font-family: 'Segoe UI', Arial, sans-serif;
+            }
+        </style>
+    <link rel="modulepreload" href="/client-4901d7c151d19614.js" crossorigin="anonymous" integrity="sha384-RNpq+fbncacWgLicCxTpOPOeI3kJCkSdI9hN2ZdFIZicHMFOMnBwvy0JsRGcZA6Y"><link rel="preload" href="/client-4901d7c151d19614_bg.wasm" crossorigin="anonymous" integrity="sha384-uRRfiXMTSjCYpNRDuYAbE4myVk9u5quSUQVy/UvkycZlbV3kM9esae5mehpcNgcG" as="fetch" type="application/wasm"></head>
+    <body>
+<script type="module">
+import init, * as bindings from '/client-4901d7c151d19614.js';
+const wasm = await init({ module_or_path: '/client-4901d7c151d19614_bg.wasm' });
+
+
+window.wasmBindings = bindings;
+
+
+dispatchEvent(new CustomEvent("TrunkApplicationStarted", {detail: {wasm}}));
+
+</script></body>
+</html>

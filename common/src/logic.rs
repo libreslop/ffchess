@@ -1,0 +1,105 @@
+use glam::IVec2;
+use crate::models::{PieceType, Piece};
+use std::collections::HashMap;
+use uuid::Uuid;
+
+pub fn is_within_board(pos: IVec2, board_size: i32) -> bool {
+    pos.x >= 0 && pos.x < board_size && pos.y >= 0 && pos.y < board_size
+}
+
+pub fn get_piece_base_cooldown(piece_type: PieceType) -> i64 {
+    match piece_type {
+        PieceType::Pawn => 1000,
+        PieceType::Knight => 2000,
+        PieceType::Bishop => 2500,
+        PieceType::Rook => 3000,
+        PieceType::Queen => 5000,
+        PieceType::King => 4000,
+    }
+}
+
+pub fn calculate_cooldown(piece_type: PieceType, start: IVec2, end: IVec2) -> i64 {
+    let distance = (end - start).as_vec2().length();
+    
+    match piece_type {
+        PieceType::Pawn => 1000, // Pawns always move 1 square (or capture 1 square)
+        PieceType::Knight => 2000, // Knights have a fixed "jump" cost
+        PieceType::King => 4000, // Kings are slow and move 1 square
+        PieceType::Bishop => 1200 + (400.0 * distance) as i64,
+        PieceType::Rook => 1500 + (400.0 * distance) as i64,
+        PieceType::Queen => 2000 + (500.0 * distance) as i64,
+    }
+}
+
+pub fn is_valid_chess_move(
+    piece_type: PieceType,
+    start: IVec2,
+    end: IVec2,
+    is_capture: bool,
+    board_size: i32,
+) -> bool {
+    if start == end || !is_within_board(end, board_size) {
+        return false;
+    }
+
+    let diff = end - start;
+    let abs_diff = diff.abs();
+
+    match piece_type {
+        PieceType::King => abs_diff.x <= 1 && abs_diff.y <= 1,
+        PieceType::Queen => (abs_diff.x == abs_diff.y) || (diff.x == 0 || diff.y == 0),
+        PieceType::Rook => diff.x == 0 || diff.y == 0,
+        PieceType::Bishop => abs_diff.x == abs_diff.y,
+        PieceType::Knight => (abs_diff.x == 1 && abs_diff.y == 2) || (abs_diff.x == 2 && abs_diff.y == 1),
+        PieceType::Pawn => {
+            if is_capture {
+                // Pawns capture in any of the 4 diagonal directions
+                abs_diff.x == 1 && abs_diff.y == 1
+            } else {
+                // Pawns move in any of the 4 adjacent directions
+                (abs_diff.x == 1 && abs_diff.y == 0) || (abs_diff.x == 0 && abs_diff.y == 1)
+            }
+        }
+    }
+}
+
+pub fn is_move_blocked(start: IVec2, end: IVec2, pieces: &HashMap<Uuid, Piece>) -> bool {
+    let diff = end - start;
+    if diff.x != 0 && diff.y != 0 && diff.x.abs() != diff.y.abs() {
+        // Not horizontal, vertical, or diagonal - cannot check blocking this way
+        return false;
+    }
+    let step = IVec2::new(diff.x.signum(), diff.y.signum());
+    let mut current = start + step;
+    while current != end {
+        if pieces.values().any(|p| p.position == current) {
+            return true;
+        }
+        current += step;
+    }
+    false
+}
+
+pub fn get_piece_value(piece_type: PieceType) -> u64 {
+    match piece_type {
+        PieceType::Pawn => 10,
+        PieceType::Knight => 30,
+        PieceType::Bishop => 30,
+        PieceType::Rook => 50,
+        PieceType::Queen => 90,
+        PieceType::King => 500,
+    }
+}
+
+pub fn get_upgrade_cost(piece_type: PieceType, current_piece_count: usize) -> u64 {
+    let base_cost = match piece_type {
+        PieceType::Knight => 50,
+        PieceType::Bishop => 50,
+        PieceType::Rook => 100,
+        PieceType::Queen => 250,
+        _ => 0,
+    };
+    // Scaling cost based on piece count
+    let multiplier = 1.0 + (current_piece_count as f32 * 0.1);
+    (base_cost as f32 * multiplier) as u64
+}
