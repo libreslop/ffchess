@@ -74,9 +74,7 @@ pub fn app() -> Html {
     let reducer = use_reducer(GameStateReducer::default);
     let tx = use_state(|| None::<MsgSender>);
     let player_name = use_state(|| get_stored_name());
-    let join_step = use_state(|| {
-        if get_stored_name().is_empty() { 0 } else { 1 }
-    });
+    let join_step = use_state(|| 0); // Always start at Name step on refresh
     
     // Landing Cooldown (persists through refresh)
     let landing_cooldown = use_state(|| {
@@ -406,6 +404,42 @@ fn game_view(props: &GameViewProps) -> Html {
     let zoom_state = use_state(|| 1.0f64);
     let cam_state = use_state(|| (0.0, 0.0));
     let drag_start = use_state(|| None::<(f64, f64, bool)>);
+
+    // Track death state transition
+    let was_alive_ref = use_mut_ref(|| false);
+    let last_king_pos_ref = use_mut_ref(|| (0.0, 0.0));
+
+    {
+        let player_id = props.reducer.player_id.unwrap_or_else(Uuid::nil);
+        let player = props.reducer.state.players.get(&player_id);
+        let is_alive = player.is_some() && player_id != Uuid::nil();
+        let mut was_alive = was_alive_ref.borrow_mut();
+        
+        if is_alive {
+            if let Some(p) = player {
+                if let Some(king) = props.reducer.state.pieces.get(&p.king_id) {
+                    let tile_size = 40.0 * *zoom_ref.borrow();
+                    let pos = (king.position.x as f64 * tile_size + tile_size/2.0, king.position.y as f64 * tile_size + tile_size/2.0);
+                    *last_king_pos_ref.borrow_mut() = pos;
+                }
+            }
+            *was_alive = true;
+        } else if *was_alive {
+            // Just died
+            let pos = *last_king_pos_ref.borrow();
+            *camera_ref.borrow_mut() = pos;
+            cam_state.set(pos);
+            *target_zoom_ref.borrow_mut() = 1.3;
+            *was_alive = false;
+        } else if player_id == Uuid::nil() && !*was_alive {
+            // On kit selection screen (reset camera)
+            if *camera_ref.borrow() != (0.0, 0.0) {
+                *camera_ref.borrow_mut() = (0.0, 0.0);
+                cam_state.set((0.0, 0.0));
+                *target_zoom_ref.borrow_mut() = 1.0;
+            }
+        }
+    }
     
     let window_size = use_state(|| (
         web_sys::window().unwrap().inner_width().unwrap().as_f64().unwrap(),
