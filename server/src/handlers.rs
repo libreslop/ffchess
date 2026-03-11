@@ -49,12 +49,12 @@ async fn handle_socket(socket: WebSocket, state: Arc<ServerState>) {
             match serde_json::from_str::<ClientMessage>(&text) {
                 Ok(client_msg) => {
                     match client_msg {
-                        ClientMessage::Join { name, kit } => {
+                        ClientMessage::Join { name, kit, player_id: pid } => {
                             println!("[JOIN] {} ({:?})", name, kit);
                             // Remove anonymous channel
                             state.player_channels.write().await.remove(&conn_id);
                             
-                            let id = state.add_player(name, kit, tx.clone()).await;
+                            let id = state.add_player(name, kit, tx.clone(), pid).await;
                             player_id = Some(id);
                             
                             // Re-send Init with proper player_id

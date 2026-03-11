@@ -7,15 +7,19 @@ use uuid::Uuid;
 impl ServerState {
     pub async fn spawn_initial_shops(&self) {
         let mut game = self.game.write().await;
+        for _ in 0..10 {
+            Self::spawn_random_shop(&mut game);
+        }
+    }
+
+    pub fn spawn_random_shop(game: &mut GameState) {
         let board_size = game.board_size;
         let mut rng = rand::thread_rng();
-        for _ in 0..10 {
-            game.shops.push(Shop {
-                position: IVec2::new(rng.gen_range(0..board_size), rng.gen_range(0..board_size)),
-                uses_remaining: rng.gen_range(5..11),
-                shop_type: if rng.gen_bool(0.5) { ShopType::Spawn } else { ShopType::Upgrade },
-            });
-        }
+        game.shops.push(Shop {
+            position: IVec2::new(rng.gen_range(0..board_size), rng.gen_range(0..board_size)),
+            uses_remaining: 1, // Shops are now single-use
+            shop_type: if rng.gen_bool(0.5) { ShopType::Spawn } else { ShopType::Upgrade },
+        });
     }
 
     pub async fn tick_npcs(&self) {

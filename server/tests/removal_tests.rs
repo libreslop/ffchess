@@ -11,8 +11,8 @@ mod tests {
         let state = ServerState::new();
         let (tx, _) = mpsc::unbounded_channel();
         
-        let p1_id = state.add_player("P1".to_string(), KitType::Standard, tx.clone()).await;
-        let p2_id = state.add_player("P2".to_string(), KitType::Standard, tx.clone()).await;
+        let p1_id = state.add_player("P1".to_string(), KitType::Standard, tx.clone(), None).await;
+        let p2_id = state.add_player("P2".to_string(), KitType::Standard, tx.clone(), None).await;
         
         let p1_pawn_id = {
             let game = state.game.read().await;
@@ -53,7 +53,7 @@ mod tests {
         let state = ServerState::new();
         let (tx, _) = mpsc::unbounded_channel();
         
-        let p1_id = state.add_player("P1".to_string(), KitType::Standard, tx.clone()).await;
+        let p1_id = state.add_player("P1".to_string(), KitType::Standard, tx.clone(), None).await;
         
         let p1_pieces: Vec<Uuid> = {
             let game = state.game.read().await;
@@ -79,7 +79,7 @@ mod tests {
         let state = ServerState::new();
         let (tx, _) = mpsc::unbounded_channel();
         
-        let p1_id = state.add_player("P1".to_string(), KitType::Standard, tx.clone()).await;
+        let p1_id = state.add_player("P1".to_string(), KitType::Standard, tx.clone(), None).await;
         state.remove_player(p1_id).await;
         
         // Before tick, buffers should be full
@@ -103,7 +103,7 @@ mod tests {
         let (tx, _) = mpsc::unbounded_channel();
         
         // Add player and NPC
-        let p1_id = state.add_player("P1".to_string(), KitType::Standard, tx.clone()).await;
+        let p1_id = state.add_player("P1".to_string(), KitType::Standard, tx.clone(), None).await;
         
         let p1_pawn_id = {
             let game = state.game.read().await;

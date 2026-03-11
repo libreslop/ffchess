@@ -10,7 +10,27 @@ pub struct ServerState {
     pub player_channels: RwLock<HashMap<Uuid, tokio::sync::mpsc::UnboundedSender<ServerMessage>>>,
     pub removed_pieces: RwLock<Vec<Uuid>>,
     pub removed_players: RwLock<Vec<Uuid>>,
+    // Player ID -> Hex Color
+    pub player_colors: RwLock<HashMap<Uuid, String>>,
+    // Color -> Last Active timestamp
+    pub color_last_active: RwLock<HashMap<String, i64>>,
 }
+
+const PREFERRED_COLORS: &[&str] = &[
+    "#2563eb", // Blue
+    "#dc2626", // Red
+    "#16a34a", // Green
+    "#d97706", // Orange
+    "#9333ea", // Purple
+    "#0891b2", // Cyan
+    "#db2777", // Pink
+    "#ca8a04", // Yellow
+    "#4d7c0f", // Lime
+    "#b91c1c", // Dark Red
+    "#1d4ed8", // Dark Blue
+    "#15803d", // Dark Green
+    "#ea580c", // Dark Orange
+];
 
 impl ServerState {
     pub fn new() -> Self {
@@ -22,15 +42,67 @@ impl ServerState {
             player_channels: RwLock::new(HashMap::new()),
             removed_pieces: RwLock::new(Vec::new()),
             removed_players: RwLock::new(Vec::new()),
+            player_colors: RwLock::new(HashMap::new()),
+            color_last_active: RwLock::new(HashMap::new()),
         }
     }
 
     pub fn calculate_board_size(player_count: usize) -> i32 {
-        (30 + (player_count as i32 * 10)).min(200)
+        // Diminishing returns: 30 + sqrt(count) * 25
+        (30 + ((player_count as f32).sqrt() * 25.0) as i32).min(200)
     }
 
-    pub async fn add_player(&self, name: String, kit: KitType, tx: tokio::sync::mpsc::UnboundedSender<ServerMessage>) -> Uuid {
-        let player_id = Uuid::new_v4();
+    async fn get_or_assign_color(&self, player_id: Uuid) -> String {
+        {
+            let colors = self.player_colors.read().await;
+            if let Some(color) = colors.get(&player_id) {
+                return color.clone();
+            }
+        }
+
+        let mut player_colors = self.player_colors.write().await;
+        let mut color_last_active = self.color_last_active.write().await;
+        let now = chrono::Utc::now().timestamp();
+
+        // 1. Try to find a color that is not currently assigned to any ACTIVE player
+        // We consider active players as those who have an entry in player_channels
+        let active_player_ids: Vec<Uuid> = self.player_channels.read().await.keys().cloned().collect();
+        let active_colors: Vec<String> = active_player_ids.iter().filter_map(|id| player_colors.get(id).cloned()).collect();
+
+        for &c in PREFERRED_COLORS {
+            let color = c.to_string();
+            if !active_colors.contains(&color) {
+                player_colors.insert(player_id, color.clone());
+                color_last_active.insert(color.clone(), now);
+                return color;
+            }
+        }
+
+        // 2. If all preferred colors are used, try to find an expired one
+        // Expire after 5 minutes
+        for &c in PREFERRED_COLORS {
+            let color = c.to_string();
+            if let Some(&last_active) = color_last_active.get(&color) {
+                if now - last_active > 300 {
+                    player_colors.insert(player_id, color.clone());
+                    color_last_active.insert(color.clone(), now);
+                    return color;
+                }
+            }
+        }
+
+        // 3. Fallback: generate a random color
+        let mut rng = rand::thread_rng();
+        let color = format!("#{:06x}", rng.gen_range(0..0x1000000));
+        player_colors.insert(player_id, color.clone());
+        color_last_active.insert(color.clone(), now);
+        color
+    }
+
+    pub async fn add_player(&self, name: String, kit: KitType, tx: tokio::sync::mpsc::UnboundedSender<ServerMessage>, existing_id: Option<Uuid>) -> Uuid {
+        let player_id = existing_id.unwrap_or_else(Uuid::new_v4);
+        let color = self.get_or_assign_color(player_id).await;
+        
         self.player_channels.write().await.insert(player_id, tx);
 
         let mut game = self.game.write().await;
@@ -60,12 +132,29 @@ impl ServerState {
             cooldown_ms: 0,
         });
         
-        for (i, p_type) in kit.get_pieces().into_iter().enumerate() {
+        let mut rng = rand::thread_rng();
+        for p_type in kit.get_pieces() {
             let p_id = Uuid::new_v4();
-            let offset = IVec2::new((i as i32 % 3) - 1, (i as i32 / 3) + 1);
-            let mut p_pos = spawn_pos + offset;
-            p_pos.x = p_pos.x.clamp(0, game.board_size - 1);
-            p_pos.y = p_pos.y.clamp(0, game.board_size - 1);
+            
+            // Scatter randomly within 2 squares of king
+            let mut p_pos = spawn_pos;
+            for _ in 0..10 {
+                let offset = IVec2::new(rng.gen_range(-2..=2), rng.gen_range(-2..=2));
+                let candidate = spawn_pos + offset;
+                if candidate != spawn_pos 
+                    && is_within_board(candidate, game.board_size)
+                    && !game.pieces.values().any(|p| p.position == candidate) {
+                    p_pos = candidate;
+                    break;
+                }
+            }
+            
+            // Fallback: if we couldn't find an empty spot, just pick any valid neighbor
+            if p_pos == spawn_pos {
+                let offset = IVec2::new(rng.gen_range(-1..=1), rng.gen_range(-1..=1));
+                p_pos = (spawn_pos + offset).clamp(IVec2::ZERO, IVec2::new(game.board_size - 1, game.board_size - 1));
+                if p_pos == spawn_pos { p_pos.x = (p_pos.x + 1).min(game.board_size - 1); }
+            }
 
             game.pieces.insert(p_id, Piece {
                 id: p_id,
@@ -82,6 +171,7 @@ impl ServerState {
             name,
             score: 0,
             king_id,
+            color,
         };
         
         game.players.insert(player_id, player);

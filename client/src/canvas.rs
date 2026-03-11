@@ -53,35 +53,21 @@ impl Renderer {
         
         let piece_count = state.pieces.values().filter(|p| p.owner_id == Some(player_id)).count();
         let zoom_factor = (piece_count as f64).sqrt().max(1.0);
-        let view_radius_squares = if player_id == Uuid::nil() { 100 } else { (20.0 * zoom_factor) as i32 }; 
+        let view_radius_squares = if player_id == Uuid::nil() { 100 } else { (15.0 * zoom_factor) as i32 }; 
         let view_radius_px = (view_radius_squares as f64 + 0.5) * self.tile_size;
 
-        // Background
-        self.ctx.set_fill_style(&JsValue::from_str("#1a1a1a"));
+        // Background (White Fog)
+        self.ctx.set_fill_style(&JsValue::from_str("#ffffff"));
         self.ctx.fill_rect(0.0, 0.0, self.width, self.height);
         
         // Offset mapping world -> screen
         let offset_x = self.width / 2.0 - camera_pos.0;
         let offset_y = self.height / 2.0 - camera_pos.1;
 
-        // Clip FoW around KING (only if joined)
-        self.ctx.save();
-        if player_id != Uuid::nil() {
-            let king_screen_x = king_pos.x as f64 * self.tile_size + offset_x + self.tile_size / 2.0;
-            let king_screen_y = king_pos.y as f64 * self.tile_size + offset_y + self.tile_size / 2.0;
-
-            self.ctx.begin_path();
-            let _ = self.ctx.arc(king_screen_x, king_screen_y, view_radius_px, 0.0, std::f64::consts::TAU);
-            self.ctx.clip();
-        }
-
-        self.ctx.set_fill_style(&JsValue::from_str("#fafafa"));
-        self.ctx.fill_rect(0.0, 0.0, self.width, self.height);
-
-        // Grid & Checkerboard (only within visible range)
+        // Grid & Checkerboard
         self.ctx.set_stroke_style(&JsValue::from_str("#eee"));
-        for x in (king_pos.x - view_radius_squares)..(king_pos.x + view_radius_squares + 1) {
-            for y in (king_pos.y - view_radius_squares)..(king_pos.y + view_radius_squares + 1) {
+        for x in (king_pos.x - view_radius_squares - 2)..(king_pos.x + view_radius_squares + 3) {
+            for y in (king_pos.y - view_radius_squares - 2)..(king_pos.y + view_radius_squares + 3) {
                 if is_within_board(IVec2::new(x, y), state.board_size) {
                     if (x + y) % 2 != 0 {
                         self.ctx.set_fill_style(&JsValue::from_str("#f4f4f4"));
@@ -94,7 +80,7 @@ impl Renderer {
 
         // Shops
         for shop in &state.shops {
-            if (shop.position - king_pos).abs().max_element() <= view_radius_squares {
+            if (shop.position - king_pos).abs().max_element() <= view_radius_squares + 2 {
                 self.ctx.set_fill_style(&JsValue::from_str("#ff0"));
                 self.ctx.fill_rect(shop.position.x as f64 * self.tile_size + offset_x + 5.0, shop.position.y as f64 * self.tile_size + offset_y + 5.0, self.tile_size - 10.0, self.tile_size - 10.0);
             }
@@ -144,7 +130,7 @@ impl Renderer {
 
         // Real pieces
         for piece in state.pieces.values() {
-            if (piece.position - king_pos).abs().max_element() <= view_radius_squares {
+            if (piece.position - king_pos).abs().max_element() <= view_radius_squares + 2 {
                 self.draw_piece(piece, player_id, offset_x, offset_y, 1.0, state);
             }
         }
@@ -157,7 +143,24 @@ impl Renderer {
             }
         }
 
-        self.ctx.restore();
+        // Soft Edge Fog of War Overlay
+        if player_id != Uuid::nil() {
+            let king_screen_x = king_pos.x as f64 * self.tile_size + offset_x + self.tile_size / 2.0;
+            let king_screen_y = king_pos.y as f64 * self.tile_size + offset_y + self.tile_size / 2.0;
+
+            let gradient = self.ctx.create_radial_gradient(
+                king_screen_x, king_screen_y, view_radius_px * 0.6,
+                king_screen_x, king_screen_y, view_radius_px
+            ).unwrap();
+            
+            let _ = gradient.add_color_stop(0.0, "rgba(255, 255, 255, 0.0)");
+            let _ = gradient.add_color_stop(1.0, "rgba(255, 255, 255, 1.0)");
+
+            self.ctx.set_fill_style(&gradient);
+            
+            // Draw a large enough rectangle to cover the viewport, excluding the center
+            self.ctx.fill_rect(0.0, 0.0, self.width, self.height);
+        }
     }
 
     fn draw_piece(&self, piece: &Piece, player_id: Uuid, offset_x: f64, offset_y: f64, alpha: f64, state: &GameState) {
@@ -192,26 +195,22 @@ impl Renderer {
                 self.ctx.set_fill_style(&JsValue::from_str("#0f0"));
                 self.ctx.fill_rect(piece.position.x as f64 * self.tile_size + offset_x + 5.0, piece.position.y as f64 * self.tile_size + offset_y + self.tile_size - 8.0, (self.tile_size - 10.0) * progress, 4.0);
             }
-// Draw player name above King
-if piece.piece_type == PieceType::King
-    && let Some(owner_id) = piece.owner_id
-    && let Some(player) = state.players.get(&owner_id) {
-    let name = if player.name.trim().is_empty() { "An Unnamed Player" } else { &player.name };
-    self.ctx.set_fill_style(&JsValue::from_str("rgba(0, 0, 0, 0.7)"));
-    self.ctx.set_font("12px Arial");
-    if let Ok(text_metrics) = self.ctx.measure_text(name) {
-        let text_width = text_metrics.width();
-        let _ = self.ctx.fill_text(
-            name,
-            piece.position.x as f64 * self.tile_size + offset_x + self.tile_size / 2.0 - text_width / 2.0,
-            piece.position.y as f64 * self.tile_size + offset_y - 5.0,
-        );
-    }
-}
-        }
-
-        if piece.piece_type == PieceType::Pawn {
-            // No orientation indicator anymore
+            // Draw player name above King
+            if piece.piece_type == PieceType::King
+                && let Some(owner_id) = piece.owner_id
+                && let Some(player) = state.players.get(&owner_id) {
+                let name = if player.name.trim().is_empty() { "An Unnamed Player" } else { &player.name };
+                self.ctx.set_fill_style(&JsValue::from_str("rgba(0, 0, 0, 0.7)"));
+                self.ctx.set_font("12px Arial");
+                if let Ok(text_metrics) = self.ctx.measure_text(name) {
+                    let text_width = text_metrics.width();
+                    let _ = self.ctx.fill_text(
+                        name,
+                        piece.position.x as f64 * self.tile_size + offset_x + self.tile_size / 2.0 - text_width / 2.0,
+                        piece.position.y as f64 * self.tile_size + offset_y - 5.0,
+                    );
+                }
+            }
         }
     }
 }

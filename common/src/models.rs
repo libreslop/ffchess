@@ -48,6 +48,7 @@ pub struct Player {
     pub name: String,
     pub score: u64,
     pub king_id: Uuid,
+    pub color: String, // Hex color code
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

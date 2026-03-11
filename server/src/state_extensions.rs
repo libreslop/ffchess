@@ -66,6 +66,7 @@ impl ServerState {
 
         if game.shops[shop_idx].uses_remaining == 0 {
             game.shops.remove(shop_idx);
+            Self::spawn_random_shop(&mut game);
         }
 
         Ok(())

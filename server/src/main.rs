@@ -6,7 +6,6 @@ mod state_extensions;
 use axum::{
     routing::get,
     Router,
-    response::Html,
 };
 use std::sync::Arc;
 use crate::state::ServerState;

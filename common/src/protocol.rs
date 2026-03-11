@@ -5,7 +5,7 @@ use crate::models::{PieceType, GameState, Player, Piece, Shop, KitType};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ClientMessage {
-    Join { name: String, kit: KitType },
+    Join { name: String, kit: KitType, player_id: Option<Uuid> },
     MovePiece { piece_id: Uuid, target: IVec2 },
     BuyPiece { shop_pos: IVec2, piece_type: PieceType },
 }

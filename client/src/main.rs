@@ -100,7 +100,7 @@ pub fn app() -> Html {
         let player_name = player_name.clone();
         Callback::from(move |kit: KitType| {
             if let Some(sender) = (*tx).as_ref() {
-                let _ = sender.0.send(ClientMessage::Join { name: (*player_name).clone(), kit });
+                let _ = sender.0.send(ClientMessage::Join { name: (*player_name).clone(), kit, player_id: None });
             }
         })
     };
