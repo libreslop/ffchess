@@ -27,6 +27,7 @@ The project is organized as a Cargo Workspace:
 - **Framework:** `Yew` with a `GameStateReducer` for state management.
 - **Rendering:** `web-sys` Canvas API for drawing the board and pieces.
 - **Pmoves (Pre-moves):** The client supports queuing multiple moves. These are executed sequentially as cooldowns expire.
+- **Zooming:** Supports smooth, continuous zooming via the scroll wheel (0.2x to 2.0x), centered on the cursor position with exponential smoothing.
 - **Synchronization:** The client receives periodic `UpdateState` messages and performs "aggressive cleanup" of the pre-move queue when the server confirms a piece's position.
 
 ## 4. Current Status & Handoff (March 2026)

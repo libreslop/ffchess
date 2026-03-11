@@ -12,10 +12,11 @@ pub struct Renderer {
     pub width: f64,
     pub height: f64,
     pub tile_size: f64,
+    pub zoom: f64,
 }
 
 impl Renderer {
-    pub fn new(canvas: HtmlCanvasElement) -> Self {
+    pub fn new(canvas: HtmlCanvasElement, zoom: f64) -> Self {
         let ctx = canvas
             .get_context("2d")
             .unwrap()
@@ -27,7 +28,8 @@ impl Renderer {
             ctx,
             width: canvas.width() as f64,
             height: canvas.height() as f64,
-            tile_size: 40.0,
+            tile_size: 40.0 * zoom,
+            zoom,
         }
     }
 
@@ -56,6 +58,13 @@ impl Renderer {
         let view_radius_squares = if player_id == Uuid::nil() { 100 } else { (15.0 * zoom_factor) as i32 }; 
         let view_radius_px = (view_radius_squares as f64 + 0.5) * self.tile_size;
 
+        // Expanded grid rendering for zoom context
+        let render_radius = if self.zoom < 0.2 { 
+            state.board_size 
+        } else { 
+            view_radius_squares + (5.0 / self.zoom) as i32 
+        }.min(state.board_size);
+
         // Background (White Fog)
         self.ctx.set_fill_style(&JsValue::from_str("#ffffff"));
         self.ctx.fill_rect(0.0, 0.0, self.width, self.height);
@@ -64,25 +73,41 @@ impl Renderer {
         let offset_x = self.width / 2.0 - camera_pos.0;
         let offset_y = self.height / 2.0 - camera_pos.1;
 
-        // Grid & Checkerboard
-        self.ctx.set_stroke_style(&JsValue::from_str("#eee"));
+        // Optimized Checkerboard (within view radius)
+        self.ctx.set_fill_style(&JsValue::from_str("#f4f4f4"));
         for x in (king_pos.x - view_radius_squares - 2)..(king_pos.x + view_radius_squares + 3) {
             for y in (king_pos.y - view_radius_squares - 2)..(king_pos.y + view_radius_squares + 3) {
-                if is_within_board(IVec2::new(x, y), state.board_size) {
-                    if (x + y) % 2 != 0 {
-                        self.ctx.set_fill_style(&JsValue::from_str("#f4f4f4"));
-                        self.ctx.fill_rect(x as f64 * self.tile_size + offset_x, y as f64 * self.tile_size + offset_y, self.tile_size, self.tile_size);
-                    }
-                    self.ctx.stroke_rect(x as f64 * self.tile_size + offset_x, y as f64 * self.tile_size + offset_y, self.tile_size, self.tile_size);
+                if is_within_board(IVec2::new(x, y), state.board_size) && (x + y) % 2 != 0 {
+                    self.ctx.fill_rect(x as f64 * self.tile_size + offset_x, y as f64 * self.tile_size + offset_y, self.tile_size, self.tile_size);
                 }
             }
         }
+
+        // Optimized Grid Lines (rendered over a larger area)
+        self.ctx.set_stroke_style(&JsValue::from_str("#eee"));
+        self.ctx.set_line_width(1.0);
+        self.ctx.begin_path();
+        
+        let min_x = (king_pos.x - render_radius).max(0);
+        let max_x = (king_pos.x + render_radius).min(state.board_size);
+        let min_y = (king_pos.y - render_radius).max(0);
+        let max_y = (king_pos.y + render_radius).min(state.board_size);
+
+        for x in min_x..=max_x {
+            self.ctx.move_to(x as f64 * self.tile_size + offset_x, min_y as f64 * self.tile_size + offset_y);
+            self.ctx.line_to(x as f64 * self.tile_size + offset_x, max_y as f64 * self.tile_size + offset_y);
+        }
+        for y in min_y..=max_y {
+            self.ctx.move_to(min_x as f64 * self.tile_size + offset_x, y as f64 * self.tile_size + offset_y);
+            self.ctx.line_to(max_x as f64 * self.tile_size + offset_x, y as f64 * self.tile_size + offset_y);
+        }
+        self.ctx.stroke();
 
         // Shops
         for shop in &state.shops {
             if (shop.position - king_pos).abs().max_element() <= view_radius_squares + 2 {
                 self.ctx.set_fill_style(&JsValue::from_str("#ff0"));
-                self.ctx.fill_rect(shop.position.x as f64 * self.tile_size + offset_x + 5.0, shop.position.y as f64 * self.tile_size + offset_y + 5.0, self.tile_size - 10.0, self.tile_size - 10.0);
+                self.ctx.fill_rect(shop.position.x as f64 * self.tile_size + offset_x + 5.0 * self.zoom, shop.position.y as f64 * self.tile_size + offset_y + 5.0 * self.zoom, self.tile_size - 10.0 * self.zoom, self.tile_size - 10.0 * self.zoom);
             }
         }
 
@@ -131,7 +156,7 @@ impl Renderer {
         // Real pieces
         for piece in state.pieces.values() {
             if (piece.position - king_pos).abs().max_element() <= view_radius_squares + 2 {
-                self.draw_piece(piece, player_id, offset_x, offset_y, 1.0, state);
+                self.draw_piece(piece, player_id, offset_x, offset_y, 1.0, state, false);
             }
         }
 
@@ -139,7 +164,14 @@ impl Renderer {
         for (id, ghost) in ghost_pieces {
             if let Some(real) = state.pieces.get(id)
                 && real.position != ghost.position {
-                self.draw_piece(ghost, player_id, offset_x, offset_y, 0.4, state);
+                self.draw_piece(ghost, player_id, offset_x, offset_y, 0.4, state, false);
+            }
+        }
+
+        // Second pass: Draw player names on top of everything
+        for piece in state.pieces.values() {
+            if piece.piece_type == PieceType::King && (piece.position - king_pos).abs().max_element() <= view_radius_squares + 2 {
+                self.draw_piece_name(piece, offset_x, offset_y, 1.0, state);
             }
         }
 
@@ -163,7 +195,7 @@ impl Renderer {
         }
     }
 
-    fn draw_piece(&self, piece: &Piece, player_id: Uuid, offset_x: f64, offset_y: f64, alpha: f64, state: &GameState) {
+    fn draw_piece(&self, piece: &Piece, player_id: Uuid, offset_x: f64, offset_y: f64, alpha: f64, state: &GameState, draw_name: bool) {
         let color = if piece.owner_id == Some(player_id) {
             "rgba(0, 0, 255, "
         } else if piece.owner_id.is_none() {
@@ -179,11 +211,12 @@ impl Renderer {
         self.ctx.fill();
 
         self.ctx.set_fill_style(&JsValue::from_str(&format!("rgba(255, 255, 255, {})", alpha)));
-        self.ctx.set_font("bold 16px Arial");
+        let font_size = 16.0 * self.zoom;
+        self.ctx.set_font(&format!("bold {}px Arial", font_size));
         let label = match piece.piece_type {
             PieceType::King => "K", PieceType::Queen => "Q", PieceType::Rook => "R", PieceType::Bishop => "B", PieceType::Knight => "N", PieceType::Pawn => "P",
         };
-        let _ = self.ctx.fill_text(label, piece.position.x as f64 * self.tile_size + offset_x + self.tile_size / 2.0 - 5.0, piece.position.y as f64 * self.tile_size + offset_y + self.tile_size / 2.0 + 6.0);
+        let _ = self.ctx.fill_text(label, piece.position.x as f64 * self.tile_size + offset_x + self.tile_size / 2.0 - (5.0 * self.zoom), piece.position.y as f64 * self.tile_size + offset_y + self.tile_size / 2.0 + (6.0 * self.zoom));
 
         if alpha >= 1.0 {
             let now = chrono::Utc::now().timestamp_millis();
@@ -191,25 +224,36 @@ impl Renderer {
             if elapsed < piece.cooldown_ms {
                 let progress = elapsed as f64 / piece.cooldown_ms as f64;
                 self.ctx.set_fill_style(&JsValue::from_str("#000"));
-                self.ctx.fill_rect(piece.position.x as f64 * self.tile_size + offset_x + 5.0, piece.position.y as f64 * self.tile_size + offset_y + self.tile_size - 8.0, self.tile_size - 10.0, 4.0);
+                let bar_h = 4.0 * self.zoom;
+                let bar_margin = 5.0 * self.zoom;
+                let bar_y_offset = self.tile_size - (8.0 * self.zoom);
+                
+                self.ctx.fill_rect(piece.position.x as f64 * self.tile_size + offset_x + bar_margin, piece.position.y as f64 * self.tile_size + offset_y + bar_y_offset, self.tile_size - (bar_margin * 2.0), bar_h);
                 self.ctx.set_fill_style(&JsValue::from_str("#0f0"));
-                self.ctx.fill_rect(piece.position.x as f64 * self.tile_size + offset_x + 5.0, piece.position.y as f64 * self.tile_size + offset_y + self.tile_size - 8.0, (self.tile_size - 10.0) * progress, 4.0);
+                self.ctx.fill_rect(piece.position.x as f64 * self.tile_size + offset_x + bar_margin, piece.position.y as f64 * self.tile_size + offset_y + bar_y_offset, (self.tile_size - (bar_margin * 2.0)) * progress, bar_h);
             }
-            // Draw player name above King
-            if piece.piece_type == PieceType::King
-                && let Some(owner_id) = piece.owner_id
-                && let Some(player) = state.players.get(&owner_id) {
-                let name = if player.name.trim().is_empty() { "An Unnamed Player" } else { &player.name };
-                self.ctx.set_fill_style(&JsValue::from_str("rgba(0, 0, 0, 0.7)"));
-                self.ctx.set_font("12px Arial");
-                if let Ok(text_metrics) = self.ctx.measure_text(name) {
-                    let text_width = text_metrics.width();
-                    let _ = self.ctx.fill_text(
-                        name,
-                        piece.position.x as f64 * self.tile_size + offset_x + self.tile_size / 2.0 - text_width / 2.0,
-                        piece.position.y as f64 * self.tile_size + offset_y - 5.0,
-                    );
-                }
+            
+            if draw_name {
+                self.draw_piece_name(piece, offset_x, offset_y, alpha, state);
+            }
+        }
+    }
+
+    fn draw_piece_name(&self, piece: &Piece, offset_x: f64, offset_y: f64, alpha: f64, state: &GameState) {
+        if piece.piece_type == PieceType::King
+            && let Some(owner_id) = piece.owner_id
+            && let Some(player) = state.players.get(&owner_id) {
+            let name = if player.name.trim().is_empty() { "An Unnamed Player" } else { &player.name };
+            self.ctx.set_fill_style(&JsValue::from_str(&format!("rgba(0, 0, 0, {})", 0.7 * alpha)));
+            let name_font_size = 12.0 * self.zoom;
+            self.ctx.set_font(&format!("{}px Arial", name_font_size));
+            if let Ok(text_metrics) = self.ctx.measure_text(name) {
+                let text_width = text_metrics.width();
+                let _ = self.ctx.fill_text(
+                    name,
+                    piece.position.x as f64 * self.tile_size + offset_x + self.tile_size / 2.0 - text_width / 2.0,
+                    piece.position.y as f64 * self.tile_size + offset_y - (5.0 * self.zoom),
+                );
             }
         }
     }
