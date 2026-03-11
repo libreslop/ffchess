@@ -4,54 +4,56 @@ use glam::IVec2;
 #[test]
 fn test_is_within_board() {
     let size = 100;
+    // Range is -50 to 49
     assert!(is_within_board(IVec2::new(0, 0), size));
-    assert!(is_within_board(IVec2::new(99, 99), size));
-    assert!(!is_within_board(IVec2::new(-1, 0), size));
-    assert!(!is_within_board(IVec2::new(100, 100), size));
+    assert!(is_within_board(IVec2::new(-50, -50), size));
+    assert!(is_within_board(IVec2::new(49, 49), size));
+    assert!(!is_within_board(IVec2::new(-51, 0), size));
+    assert!(!is_within_board(IVec2::new(50, 50), size));
 }
 
 #[test]
 fn test_pawn_movement() {
     let size = 100;
-    let start = IVec2::new(50, 50);
+    let start = IVec2::new(0, 0);
     
     // Multi-directional movement (adjacent only)
-    assert!(is_valid_chess_move(PieceType::Pawn, start, IVec2::new(50, 49), false, size)); // Up
-    assert!(is_valid_chess_move(PieceType::Pawn, start, IVec2::new(50, 51), false, size)); // Down
-    assert!(is_valid_chess_move(PieceType::Pawn, start, IVec2::new(49, 50), false, size)); // Left
-    assert!(is_valid_chess_move(PieceType::Pawn, start, IVec2::new(51, 50), false, size)); // Right
+    assert!(is_valid_chess_move(PieceType::Pawn, start, IVec2::new(0, -1), false, size)); // Up
+    assert!(is_valid_chess_move(PieceType::Pawn, start, IVec2::new(0, 1), false, size)); // Down
+    assert!(is_valid_chess_move(PieceType::Pawn, start, IVec2::new(-1, 0), false, size)); // Left
+    assert!(is_valid_chess_move(PieceType::Pawn, start, IVec2::new(1, 0), false, size)); // Right
     
     // Diagonal movement NOT allowed without capture
-    assert!(!is_valid_chess_move(PieceType::Pawn, start, IVec2::new(51, 51), false, size));
+    assert!(!is_valid_chess_move(PieceType::Pawn, start, IVec2::new(1, 1), false, size));
 
     // Multi-directional captures (diagonal only)
-    assert!(is_valid_chess_move(PieceType::Pawn, start, IVec2::new(51, 49), true, size)); // Top-Right
-    assert!(is_valid_chess_move(PieceType::Pawn, start, IVec2::new(49, 49), true, size)); // Top-Left
-    assert!(is_valid_chess_move(PieceType::Pawn, start, IVec2::new(51, 51), true, size)); // Bottom-Right
-    assert!(is_valid_chess_move(PieceType::Pawn, start, IVec2::new(49, 51), true, size)); // Bottom-Left
+    assert!(is_valid_chess_move(PieceType::Pawn, start, IVec2::new(1, -1), true, size)); // Top-Right
+    assert!(is_valid_chess_move(PieceType::Pawn, start, IVec2::new(-1, -1), true, size)); // Top-Left
+    assert!(is_valid_chess_move(PieceType::Pawn, start, IVec2::new(1, 1), true, size)); // Bottom-Right
+    assert!(is_valid_chess_move(PieceType::Pawn, start, IVec2::new(-1, 1), true, size)); // Bottom-Left
 
     // Adjacent captures NOT allowed
-    assert!(!is_valid_chess_move(PieceType::Pawn, start, IVec2::new(50, 49), true, size));
+    assert!(!is_valid_chess_move(PieceType::Pawn, start, IVec2::new(0, -1), true, size));
 }
 
 #[test]
 fn test_knight_movement() {
     let size = 100;
-    let start = IVec2::new(50, 50);
-    assert!(is_valid_chess_move(PieceType::Knight, start, IVec2::new(52, 51), false, size));
-    assert!(is_valid_chess_move(PieceType::Knight, start, IVec2::new(48, 51), false, size));
-    assert!(is_valid_chess_move(PieceType::Knight, start, IVec2::new(51, 52), false, size));
-    assert!(!is_valid_chess_move(PieceType::Knight, start, IVec2::new(51, 51), false, size));
+    let start = IVec2::new(0, 0);
+    assert!(is_valid_chess_move(PieceType::Knight, start, IVec2::new(2, 1), false, size));
+    assert!(is_valid_chess_move(PieceType::Knight, start, IVec2::new(-2, 1), false, size));
+    assert!(is_valid_chess_move(PieceType::Knight, start, IVec2::new(1, 2), false, size));
+    assert!(!is_valid_chess_move(PieceType::Knight, start, IVec2::new(1, 1), false, size));
 }
 
 #[test]
 fn test_queen_movement() {
     let size = 100;
-    let start = IVec2::new(50, 50);
-    assert!(is_valid_chess_move(PieceType::Queen, start, IVec2::new(60, 60), false, size));
-    assert!(is_valid_chess_move(PieceType::Queen, start, IVec2::new(50, 60), false, size));
-    assert!(is_valid_chess_move(PieceType::Queen, start, IVec2::new(40, 50), false, size));
-    assert!(!is_valid_chess_move(PieceType::Queen, start, IVec2::new(51, 52), false, size));
+    let start = IVec2::new(0, 0);
+    assert!(is_valid_chess_move(PieceType::Queen, start, IVec2::new(10, 10), false, size));
+    assert!(is_valid_chess_move(PieceType::Queen, start, IVec2::new(0, 10), false, size));
+    assert!(is_valid_chess_move(PieceType::Queen, start, IVec2::new(-10, 0), false, size));
+    assert!(!is_valid_chess_move(PieceType::Queen, start, IVec2::new(1, 2), false, size));
 }
 
 #[test]

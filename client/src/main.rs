@@ -140,7 +140,7 @@ pub fn app() -> Html {
                             && let Ok(server_msg) = serde_json::from_str::<ServerMessage>(&text) {
                             listener_reducer_ref.borrow().clone().dispatch(match server_msg {
                                 ServerMessage::Init { player_id, state } => GameAction::SetInit { player_id, state },
-                                ServerMessage::UpdateState { players, pieces, shops, removed_pieces, removed_players } => GameAction::UpdateState { players, pieces, shops, removed_pieces, removed_players },
+                                ServerMessage::UpdateState { players, pieces, shops, removed_pieces, removed_players, board_size } => GameAction::UpdateState { players, pieces, shops, removed_pieces, removed_players, board_size },
                                 ServerMessage::Error(e) => GameAction::SetError(e),
                                 ServerMessage::GameOver { final_score, kills, pieces_captured, time_survived_secs } => GameAction::GameOver { final_score, kills, pieces_captured, time_survived_secs },
                                 ServerMessage::Pong(t) => GameAction::Pong(t),
@@ -505,14 +505,10 @@ fn game_view(props: &GameViewProps) -> Html {
         let camera_ref = camera_ref.clone();
         let cam_state = cam_state.clone();
         let reducer = props.reducer.clone();
-        let zoom_ref = zoom_ref.clone();
         use_effect_with(reducer.state.board_size, move |board_size| {
-            let zoom = *zoom_ref.borrow();
-            let tile_size = 40.0 * zoom;
             if *board_size > 0 && (reducer.player_id.is_none() || reducer.player_id == Some(Uuid::nil())) {
-                let center = *board_size as f64 * tile_size / 2.0;
-                *camera_ref.borrow_mut() = (center, center);
-                cam_state.set((center, center));
+                *camera_ref.borrow_mut() = (0.0, 0.0);
+                cam_state.set((0.0, 0.0));
             }
             || ()
         });
@@ -792,7 +788,8 @@ fn game_view(props: &GameViewProps) -> Html {
             <div style="position: absolute; top: 0; left: 0; right: 0; height: 24px; background: rgba(0, 0, 0, 0.4); color: #fff; font-family: monospace; font-size: 11px; display: flex; align-items: center; padding: 0 10px; gap: 15px; pointer-events: none; z-index: 100;">
                 <span>{"FPS: "}{props.reducer.fps}</span>
                 <span>{"PING: "}{props.reducer.ping_ms}{"ms"}</span>
-                <span>{"COORD: "}{format!("{}, {}", (cam_state.0 / 40.0 / *zoom_state).floor(), (cam_state.1 / 40.0 / *zoom_state).floor())}</span>
+                <span>{"COORD: "}{format!("{}, {}", (cam_state.0 / (40.0 * *zoom_state)).floor(), (cam_state.1 / (40.0 * *zoom_state)).floor())}</span>
+                <span>{"BOARD: "}{props.reducer.state.board_size}{"x"}{props.reducer.state.board_size}</span>
                 <span>{"PLAYERS: "}{props.reducer.state.players.len()}</span>
             </div>
 

@@ -15,8 +15,10 @@ impl ServerState {
     pub fn spawn_random_shop(game: &mut GameState) {
         let board_size = game.board_size;
         let mut rng = rand::thread_rng();
+        let half = board_size / 2;
+        let limit = (board_size + 1) / 2;
         game.shops.push(Shop {
-            position: IVec2::new(rng.gen_range(0..board_size), rng.gen_range(0..board_size)),
+            position: IVec2::new(rng.gen_range(-half..limit), rng.gen_range(-half..limit)),
             uses_remaining: 1, // Shops are now single-use
             shop_type: if rng.gen_bool(0.5) { ShopType::Spawn } else { ShopType::Upgrade },
         });
@@ -25,6 +27,8 @@ impl ServerState {
     pub async fn tick_npcs(&self) {
         let mut game = self.game.write().await;
         let board_size = game.board_size;
+        let half = board_size / 2;
+        let limit = (board_size + 1) / 2;
         
         // Reduce target density (e.g., 1 per 250 squares instead of 100)
         let target_npc_count = (board_size * board_size / 250).clamp(20, 200);
@@ -33,7 +37,7 @@ impl ServerState {
             let mut rng = rand::thread_rng();
             if game.pieces.values().filter(|p| p.owner_id.is_none()).count() < target_npc_count as usize {
                 let id = Uuid::new_v4();
-                let pos = IVec2::new(rng.gen_range(0..board_size), rng.gen_range(0..board_size));
+                let pos = IVec2::new(rng.gen_range(-half..limit), rng.gen_range(-half..limit));
                 
                 // Don't spawn NPC too close to any player
                 let too_close = game.pieces.values().any(|p| {

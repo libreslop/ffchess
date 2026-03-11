@@ -33,6 +33,7 @@ pub enum GameAction {
         shops: Vec<Shop>,
         removed_pieces: Vec<Uuid>,
         removed_players: Vec<Uuid>,
+        board_size: i32,
     },
     SetError(String),
     GameOver { final_score: u64, kills: u32, pieces_captured: u32, time_survived_secs: u64 },
@@ -65,8 +66,9 @@ impl Reducible for GameStateReducer {
                     next.last_score = p.score;
                 }
             }
-            GameAction::UpdateState { players, pieces, shops, removed_pieces, removed_players } => {
+            GameAction::UpdateState { players, pieces, shops, removed_pieces, removed_players, board_size } => {
                 next.error = None;
+                next.state.board_size = board_size;
                 for p in players { 
                     if next.player_id == Some(p.id) {
                         next.last_score = p.score;
@@ -218,6 +220,7 @@ mod tests {
             shops: vec![],
             removed_pieces: vec![],
             removed_players: vec![],
+            board_size: 30,
         });
 
         assert_eq!(reducer.pm_queue.len(), 0);
@@ -265,6 +268,7 @@ mod tests {
             shops: vec![],
             removed_pieces: vec![],
             removed_players: vec![],
+            board_size: 30,
         });
 
         assert_eq!(reducer.pm_queue.len(), 1);
@@ -312,6 +316,7 @@ mod tests {
             shops: vec![],
             removed_pieces: vec![],
             removed_players: vec![],
+            board_size: 30,
         });
 
         // Should have removed BOTH (0,1) and (0,2)

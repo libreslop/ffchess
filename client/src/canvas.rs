@@ -50,26 +50,40 @@ impl Renderer {
         let offset_x = self.width / 2.0 - camera_pos.0;
         let offset_y = self.height / 2.0 - camera_pos.1;
 
+        let half = state.board_size / 2;
+        let limit_pos = (state.board_size + 1) / 2;
+
+        // Board Pixel Boundaries
+        let board_left = -(half as f64) * self.tile_size + offset_x;
+        let board_top = -(half as f64) * self.tile_size + offset_y;
+        let board_dim = state.board_size as f64 * self.tile_size;
+
         // Draw Board Background
         self.ctx.set_fill_style(&JsValue::from_str("#ffffff"));
-        self.ctx.fill_rect(offset_x, offset_y, state.board_size as f64 * self.tile_size, state.board_size as f64 * self.tile_size);
+        self.ctx.fill_rect(board_left, board_top, board_dim, board_dim);
+
+        // Draw Board Border
+        self.ctx.set_stroke_style(&JsValue::from_str("#1e293b"));
+        self.ctx.set_line_width(2.0);
+        self.ctx.stroke_rect(board_left, board_top, board_dim, board_dim);
 
         // Calculate visible range for optimizations
-        let start_x = ((-offset_x) / self.tile_size).floor() as i32;
-        let end_x = ((self.width - offset_x) / self.tile_size).ceil() as i32;
-        let start_y = ((-offset_y) / self.tile_size).floor() as i32;
-        let end_y = ((self.height - offset_y) / self.tile_size).ceil() as i32;
+        let v_start_x = ((-offset_x) / self.tile_size).floor() as i32;
+        let v_end_x = ((self.width - offset_x) / self.tile_size).ceil() as i32;
+        let v_start_y = ((-offset_y) / self.tile_size).floor() as i32;
+        let v_end_y = ((self.height - offset_y) / self.tile_size).ceil() as i32;
 
-        let start_x = start_x.clamp(0, state.board_size);
-        let end_x = end_x.clamp(0, state.board_size);
-        let start_y = start_y.clamp(0, state.board_size);
-        let end_y = end_y.clamp(0, state.board_size);
+        let start_x = v_start_x.clamp(-half, limit_pos);
+        let end_x = v_end_x.clamp(-half, limit_pos);
+        let start_y = v_start_y.clamp(-half, limit_pos);
+        let end_y = v_end_y.clamp(-half, limit_pos);
 
         // Checkerboard
-        self.ctx.set_fill_style(&JsValue::from_str("#f8fafc"));
+        self.ctx.set_fill_style(&JsValue::from_str("#f1f5f9"));
         for x in start_x..end_x {
             for y in start_y..end_y {
-                if (x + y) % 2 != 0 {
+                // Proper checkerboard for centered system
+                if (x.rem_euclid(2) + y.rem_euclid(2)) % 2 != 0 {
                     self.ctx.fill_rect(x as f64 * self.tile_size + offset_x, y as f64 * self.tile_size + offset_y, self.tile_size, self.tile_size);
                 }
             }
@@ -88,6 +102,16 @@ impl Renderer {
             self.ctx.move_to(start_x as f64 * self.tile_size + offset_x, y as f64 * self.tile_size + offset_y);
             self.ctx.line_to(end_x as f64 * self.tile_size + offset_x, y as f64 * self.tile_size + offset_y);
         }
+        self.ctx.stroke();
+
+        // Origin Marker (Debug/Orientation)
+        self.ctx.set_stroke_style(&JsValue::from_str("rgba(255, 0, 0, 0.3)"));
+        self.ctx.set_line_width(2.0);
+        self.ctx.begin_path();
+        self.ctx.move_to(offset_x - 10.0, offset_y);
+        self.ctx.line_to(offset_x + 10.0, offset_y);
+        self.ctx.move_to(offset_x, offset_y - 10.0);
+        self.ctx.line_to(offset_x, offset_y + 10.0);
         self.ctx.stroke();
 
         // Shops

@@ -23,6 +23,7 @@ pub enum ServerMessage {
         shops: Vec<Shop>,
         removed_pieces: Vec<Uuid>,
         removed_players: Vec<Uuid>,
+        board_size: i32,
     },
     Error(String),
     GameOver { 

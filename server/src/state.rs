@@ -100,6 +100,20 @@ impl ServerState {
         color
     }
 
+    async fn prune_out_of_bounds(&self, game: &mut GameState) {
+        let board_size = game.board_size;
+        let mut rp = self.removed_pieces.write().await;
+        game.pieces.retain(|id, p| {
+            if !is_within_board(p.position, board_size) {
+                rp.push(*id);
+                false
+            } else {
+                true
+            }
+        });
+        game.shops.retain(|s| is_within_board(s.position, board_size));
+    }
+
     pub async fn add_player(&self, name: String, kit: KitType, tx: tokio::sync::mpsc::UnboundedSender<ServerMessage>, existing_id: Option<Uuid>) -> Uuid {
         let player_id = existing_id.unwrap_or_else(Uuid::new_v4);
         let color = self.get_or_assign_color(player_id).await;
@@ -108,11 +122,10 @@ impl ServerState {
 
         let mut game = self.game.write().await;
         
-        let old_size = game.board_size;
         let new_size = Self::calculate_board_size(game.players.len() + 1);
-        if new_size != old_size {
+        if new_size > game.board_size {
             game.board_size = new_size;
-            Self::redistribute_entities(&mut game, old_size, new_size);
+            self.prune_out_of_bounds(&mut game).await;
         }
 
         let spawn_pos = self.find_spawn_pos(&game).await;
@@ -158,8 +171,8 @@ impl ServerState {
             // Fallback: if we couldn't find an empty spot, just pick any valid neighbor
             if p_pos == spawn_pos {
                 let offset = IVec2::new(rng.gen_range(-1..=1), rng.gen_range(-1..=1));
-                p_pos = (spawn_pos + offset).clamp(IVec2::ZERO, IVec2::new(game.board_size - 1, game.board_size - 1));
-                if p_pos == spawn_pos { p_pos.x = (p_pos.x + 1).min(game.board_size - 1); }
+                p_pos = spawn_pos + offset;
+                if p_pos == spawn_pos { p_pos.x = p_pos.x + 1; }
             }
 
             game.pieces.insert(p_id, Piece {
@@ -191,8 +204,11 @@ impl ServerState {
     async fn find_spawn_pos(&self, game: &GameState) -> IVec2 {
         let mut rng = rand::thread_rng();
         let board_size = game.board_size;
+        let half = board_size / 2;
+        let limit = (board_size + 1) / 2;
+
         for _ in 0..100 {
-            let pos = IVec2::new(rng.gen_range(0..board_size), rng.gen_range(0..board_size));
+            let pos = IVec2::new(rng.gen_range(-half..limit), rng.gen_range(-half..limit));
             let mut occupied = false;
             
             // Check pieces
@@ -217,8 +233,8 @@ impl ServerState {
                 return pos;
             }
         }
-        // Fallback: just a random position if we can't find an empty one
-        IVec2::new(rng.gen_range(0..board_size), rng.gen_range(0..board_size))
+        // Fallback
+        IVec2::new(rng.gen_range(-half..limit), rng.gen_range(-half..limit))
     }
 
     pub async fn record_piece_removal(&self, piece_id: Uuid) {
@@ -262,45 +278,6 @@ impl ServerState {
         let mut game = self.game.write().await;
         game.players.remove(&player_id);
         self.record_player_removal(player_id, &mut game).await;
-        
-        let old_size = game.board_size;
-        let new_size = Self::calculate_board_size(game.players.len());
-        if new_size != old_size {
-            game.board_size = new_size;
-            Self::redistribute_entities(&mut game, old_size, new_size);
-        }
-    }
-
-    fn redistribute_entities(game: &mut GameState, old_size: i32, new_size: i32) {
-        let ratio = new_size as f32 / old_size as f32;
-        
-        // Reposition shops
-        for shop in &mut game.shops {
-            shop.position = (shop.position.as_vec2() * ratio).as_ivec2().clamp(IVec2::ZERO, IVec2::new(new_size - 1, new_size - 1));
-        }
-        
-        // Reposition pieces (especially NPCs, but also players to keep things fair)
-        // We use a temporary map to avoid position collisions during the process
-        let mut new_positions = HashMap::new();
-        let piece_ids: Vec<Uuid> = game.pieces.keys().cloned().collect();
-        
-        for id in piece_ids {
-            if let Some(piece) = game.pieces.get_mut(&id) {
-                let mut new_pos = (piece.position.as_vec2() * ratio).as_ivec2().clamp(IVec2::ZERO, IVec2::new(new_size - 1, new_size - 1));
-                
-                // Basic collision avoidance
-                let mut attempts = 0;
-                while new_positions.values().any(|&p| p == new_pos) && attempts < 10 {
-                    let mut rng = rand::thread_rng();
-                    new_pos = (new_pos + IVec2::new(rng.gen_range(-1..=1), rng.gen_range(-1..=1)))
-                        .clamp(IVec2::ZERO, IVec2::new(new_size - 1, new_size - 1));
-                    attempts += 1;
-                }
-                
-                piece.position = new_pos;
-                new_positions.insert(id, new_pos);
-            }
-        }
     }
 
     pub async fn handle_move(&self, player_id: Uuid, piece_id: Uuid, target: IVec2) -> Result<(), String> {
@@ -409,6 +386,21 @@ impl ServerState {
     pub async fn handle_tick(&self) {
         self.tick_npcs().await;
         
+        {
+            let mut game = self.game.write().await;
+            let target_size = Self::calculate_board_size(game.players.len());
+            if target_size < game.board_size {
+                let any_player_pieces_outside = game.pieces.values().any(|p| {
+                    p.owner_id.is_some() && !is_within_board(p.position, target_size)
+                });
+
+                if !any_player_pieces_outside {
+                    game.board_size = target_size;
+                    self.prune_out_of_bounds(&mut game).await;
+                }
+            }
+        }
+
         let removed_pieces = {
             let mut rp = self.removed_pieces.write().await;
             std::mem::take(&mut *rp)
@@ -426,6 +418,7 @@ impl ServerState {
             shops: game.shops.clone(),
             removed_pieces,
             removed_players,
+            board_size: game.board_size,
         }).await;
     }
 }

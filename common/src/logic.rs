@@ -4,7 +4,9 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 pub fn is_within_board(pos: IVec2, board_size: i32) -> bool {
-    pos.x >= 0 && pos.x < board_size && pos.y >= 0 && pos.y < board_size
+    let half = board_size / 2;
+    let limit_pos = (board_size + 1) / 2;
+    pos.x >= -half && pos.x < limit_pos && pos.y >= -half && pos.y < limit_pos
 }
 
 pub fn get_piece_base_cooldown(piece_type: PieceType) -> i64 {
