@@ -16,6 +16,14 @@ impl ServerState {
         }
 
         {
+            let mut cm = self.color_manager.write().await;
+            let game = self.game.read().await;
+            for player_id in game.players.keys() {
+                cm.update_activity(*player_id);
+            }
+        }
+
+        {
             let mut game = self.game.write().await;
             let target_size = calculate_board_size(game.players.len());
             if target_size < game.board_size {

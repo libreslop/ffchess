@@ -212,6 +212,9 @@ pub fn app() -> Html {
         let has_interacted = has_interacted.clone();
         Callback::from(move |kit: KitType| {
             has_interacted.set(true);
+            if is_mobile() {
+                request_fullscreen();
+            }
             if reducer.disconnected {
                 return;
             }

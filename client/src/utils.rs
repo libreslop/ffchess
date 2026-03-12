@@ -58,3 +58,22 @@ pub fn generate_random_name() -> String {
     }
     format!("{} {}", adj, noun)
 }
+
+pub fn is_mobile() -> bool {
+    let window = web_sys::window().expect("no global `window` exists");
+    let navigator = window.navigator();
+    let user_agent = navigator.user_agent().unwrap_or_default().to_lowercase();
+    
+    user_agent.contains("mobi") || 
+    user_agent.contains("android") || 
+    user_agent.contains("iphone") ||
+    user_agent.contains("ipad")
+}
+
+pub fn request_fullscreen() {
+    let window = web_sys::window().expect("no global `window` exists");
+    let document = window.document().expect("should have a document on window");
+    let element = document.document_element().expect("should have a document element");
+    
+    let _ = element.request_fullscreen();
+}

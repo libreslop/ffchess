@@ -3,16 +3,21 @@ use common::*;
 
 impl Renderer {
     pub fn draw_piece(&self, params: PieceDrawParams) {
-        let color = if params.piece.owner_id == Some(params.player_id) {
-            "rgba(0, 0, 255, "
-        } else if params.piece.owner_id.is_none() {
-            "rgba(85, 85, 85, "
+        let is_self = params.piece.owner_id == Some(params.player_id);
+        
+        let color_str = if let Some(owner_id) = params.piece.owner_id {
+            if let Some(player) = params.state.players.get(&owner_id) {
+                player.color.clone()
+            } else {
+                "#555555".to_string()
+            }
         } else {
-            "rgba(255, 0, 0, "
+            "#555555".to_string()
         };
-        let final_color = format!("{}{})", color, params.alpha);
 
-        self.ctx.set_fill_style_str(&final_color);
+        self.ctx.set_fill_style_str(&color_str);
+        self.ctx.set_global_alpha(params.alpha);
+        
         self.ctx.begin_path();
         let _ = self.ctx.arc(
             params.piece.position.x as f64 * self.tile_size
@@ -26,6 +31,9 @@ impl Renderer {
             std::f64::consts::TAU,
         );
         self.ctx.fill();
+        
+        // Reset alpha for text
+        self.ctx.set_global_alpha(1.0);
 
         self.ctx.set_fill_style_str(&format!(
             "rgba(255, 255, 255, {})",
@@ -53,7 +61,7 @@ impl Renderer {
                 + (6.0 * self.zoom),
         );
 
-        if params.alpha >= 1.0 && params.piece.owner_id == Some(params.player_id) {
+        if params.alpha >= 1.0 && is_self {
             #[cfg(target_arch = "wasm32")]
             let now = js_sys::Date::now() as i64;
             #[cfg(not(target_arch = "wasm32"))]
@@ -134,11 +142,10 @@ impl Renderer {
                 let _ = self.ctx.stroke_text(name, x, y);
 
                 // Draw fill
-                self.ctx.set_fill_style_str(&format!(
-                    "rgba(0, 0, 0, {})",
-                    0.7 * alpha
-                ));
+                self.ctx.set_fill_style_str(&player.color);
+                self.ctx.set_global_alpha(alpha);
                 let _ = self.ctx.fill_text(name, x, y);
+                self.ctx.set_global_alpha(1.0);
             }
         }
     }

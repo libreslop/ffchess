@@ -21,8 +21,8 @@ pub fn leaderboard(props: &LeaderboardProps) -> Html {
                         let is_self = props.self_id == p.id;
                         let display_name = if p.name.trim().is_empty() { "An Unnamed Player" } else { &p.name };
                         html! {
-                            <div style={format!("display: flex; justify-content: space-between; font-size: 0.9em; {}", if is_self { "font-weight: bold; color: #2563eb;" } else { "" })}>
-                                <span style="max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{display_name}</span>
+                            <div style={format!("display: flex; justify-content: space-between; font-size: 0.9em; font-weight: bold; color: {};", p.color)}>
+                                <span style={format!("max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; {}", if is_self { "text-decoration: underline;" } else { "" })}>{display_name}</span>
                                 <span>{p.score}</span>
                             </div>
                         }

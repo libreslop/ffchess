@@ -149,6 +149,7 @@ impl ServerState {
 
         let mut game = self.game.write().await;
         game.players.remove(&player_id);
+        self.player_channels.write().await.remove(&player_id);
         self.record_player_removal(player_id, &mut game).await;
     }
 

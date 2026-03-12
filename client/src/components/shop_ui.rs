@@ -30,9 +30,9 @@ pub fn shop_ui(props: &ShopUIProps) -> Html {
     let is_king_on_shop = current_piece_type == PieceType::King;
 
     html! {
-        <div style="position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%); background: rgba(255, 255, 255, 0.9); padding: 15px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.2); display: flex; flex-direction: column; align-items: center; gap: 10px; z-index: 50;">
-            <span style="font-weight: bold; color: #1e3a8a;">{"RECRUITMENT & UPGRADES"}</span>
-            <div style="display: flex; gap: 10px;">
+        <div style="position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%); background: rgba(255, 255, 255, 0.9); padding: 15px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.2); display: flex; flex-direction: column; align-items: center; gap: 10px; z-index: 50; width: 90%; max-width: 600px;">
+            <span style="font-weight: bold; color: #1e3a8a; font-size: 0.9em; text-align: center;">{"RECRUITMENT & UPGRADES"}</span>
+            <div style="display: flex; gap: 8px; flex-wrap: wrap; justify-content: center;">
                 {
                     [PieceType::Pawn, PieceType::Knight, PieceType::Bishop, PieceType::Rook, PieceType::Queen].into_iter().map(|pt| {
                         let cost = get_upgrade_cost(pt, props.player_pieces_count);
@@ -60,7 +60,7 @@ pub fn shop_ui(props: &ShopUIProps) -> Html {
                                     onclick={on_buy.reform(move |_| pt)}
                                     disabled={!can_afford}
                                     style={format!(
-                                        "padding: 8px 15px; cursor: {}; border-radius: 6px; border: 1px solid #ddd; background: {}; color: {};",
+                                        "padding: 6px 12px; cursor: {}; border-radius: 6px; border: 1px solid #ddd; background: {}; color: {}; font-size: 0.85em; white-space: nowrap;",
                                         if can_afford { "pointer" } else { "not-allowed" },
                                         if can_afford { "white" } else { "#f1f5f9" },
                                         if can_afford { "black" } else { "#94a3b8" }

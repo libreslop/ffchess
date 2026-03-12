@@ -1,6 +1,7 @@
-use crate::camera::{CameraManager, update_camera};
+use crate::camera::{update_camera, CameraManager};
 use crate::canvas::Renderer;
 use crate::reducer::{GameAction, GameStateReducer, MsgSender, Pmove};
+use crate::utils::is_mobile;
 use common::*;
 use glam::IVec2;
 use gloo_events::EventListener;
@@ -26,6 +27,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
     let zoom_state = use_state(|| 1.0f64);
     let frame_id = use_state(|| 0u64);
     let drag_start = use_state(|| None::<(f64, f64, bool)>);
+    let last_touch_dist = use_state(|| None::<f64>);
 
     let window_size = use_state(|| {
         (
@@ -178,20 +180,20 @@ pub fn game_view(props: &GameViewProps) -> Html {
         });
     }
 
-    let on_mousedown = {
+    let handle_input_start = {
         let canvas_ref = canvas_ref.clone();
         let manager_ref = manager_ref.clone();
         let reducer = props.reducer.clone();
         let selected_piece_id = selected_piece_id.clone();
         let drag_start = drag_start.clone();
-        Callback::from(move |e: MouseEvent| {
+        Callback::from(move |(cx, cy, is_right_click): (f64, f64, bool)| {
             let canvas = canvas_ref.cast::<HtmlCanvasElement>().unwrap();
             let rect = canvas.get_bounding_client_rect();
             let mut manager = manager_ref.borrow_mut();
             let zoom = manager.zoom;
             let tile_size = 40.0 * zoom;
-            let x = e.client_x() as f64 - rect.left();
-            let y = e.client_y() as f64 - rect.top();
+            let x = cx - rect.left();
+            let y = cy - rect.top();
 
             let world_x = x + manager.camera.0 - (canvas.width() as f64 / 2.0);
             let world_y = y + manager.camera.1 - (canvas.height() as f64 / 2.0);
@@ -203,7 +205,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
             let board_size = reducer.state.board_size;
             let mut is_interactive = false;
 
-            if is_within_board(target, board_size) {
+            if !is_right_click && is_within_board(target, board_size) {
                 let mut ghosts = reducer.state.pieces.clone();
                 for pm in &reducer.pm_queue {
                     if let Some(p) = ghosts.get_mut(&pm.piece_id) {
@@ -228,31 +230,27 @@ pub fn game_view(props: &GameViewProps) -> Html {
                     is_interactive = true;
                 }
             }
-            drag_start.set(Some((
-                e.client_x() as f64,
-                e.client_y() as f64,
-                !is_interactive,
-            )));
+            drag_start.set(Some((cx, cy, !is_interactive)));
             manager.velocity = (0.0, 0.0);
         })
     };
 
-    let on_mousemove = {
+    let handle_input_move = {
         let drag_start = drag_start.clone();
         let cam_state = cam_state.clone();
         let manager_ref = manager_ref.clone();
         let reducer = props.reducer.clone();
         let canvas_ref = canvas_ref.clone();
-        Callback::from(move |e: MouseEvent| {
+        Callback::from(move |(cx, cy): (f64, f64)| {
             let mut manager = manager_ref.borrow_mut();
-            manager.mouse_pos = (e.client_x() as f64, e.client_y() as f64);
+            manager.mouse_pos = (cx, cy);
             if let Some((start_x, start_y, allow_panning)) = *drag_start {
                 if !allow_panning {
                     return;
                 }
-                let dx = e.client_x() as f64 - start_x;
-                let dy = e.client_y() as f64 - start_y;
-                if dx.abs() > 1.0 || dy.abs() > 1.0 {
+                let dx = cx - start_x;
+                let dy = cy - start_y;
+                if dx.abs() > 0.1 || dy.abs() > 0.1 {
                     let mut cam = manager.camera;
                     cam.0 -= dx;
                     cam.1 -= dy;
@@ -290,29 +288,29 @@ pub fn game_view(props: &GameViewProps) -> Html {
                         }
                         cam_state.set(cam);
                         manager.velocity = (dx, dy);
-                        drag_start.set(Some((e.client_x() as f64, e.client_y() as f64, true)));
+                        drag_start.set(Some((cx, cy, true)));
                     } else {
                         manager.velocity = (0.0, 0.0);
-                        drag_start.set(Some((e.client_x() as f64, e.client_y() as f64, true)));
+                        drag_start.set(Some((cx, cy, true)));
                     }
                 }
             }
         })
     };
 
-    let on_mouseup = {
+    let handle_input_end = {
         let canvas_ref = canvas_ref.clone();
         let reducer = props.reducer.clone();
         let selected_piece_id = selected_piece_id.clone();
         let manager_ref = manager_ref.clone();
         let drag_start = drag_start.clone();
 
-        Callback::from(move |e: MouseEvent| {
+        Callback::from(move |(cx, cy, is_right_click): (f64, f64, bool)| {
             let start = *drag_start;
             drag_start.set(None);
             if let Some((sx, sy, allow_panning)) = start {
-                let dx = e.client_x() as f64 - sx;
-                let dy = e.client_y() as f64 - sy;
+                let dx = cx - sx;
+                let dy = cy - sy;
                 if allow_panning && (dx * dx + dy * dy).sqrt() > 5.0 {
                     return;
                 }
@@ -328,8 +326,8 @@ pub fn game_view(props: &GameViewProps) -> Html {
             let manager = manager_ref.borrow_mut();
             let zoom = manager.zoom;
             let tile_size = 40.0 * zoom;
-            let x = e.client_x() as f64 - rect.left();
-            let y = e.client_y() as f64 - rect.top();
+            let x = cx - rect.left();
+            let y = cy - rect.top();
 
             let world_x = x + manager.camera.0 - (canvas.width() as f64 / 2.0);
             let world_y = y + manager.camera.1 - (canvas.height() as f64 / 2.0);
@@ -339,7 +337,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
             let target = IVec2::new(grid_x, grid_y);
             let player_id = reducer.player_id.unwrap_or_else(Uuid::nil);
 
-            if e.button() == 2 {
+            if is_right_click {
                 selected_piece_id.set(None);
                 reducer.dispatch(GameAction::ClearPmQueue(Uuid::nil()));
                 return;
@@ -398,6 +396,88 @@ pub fn game_view(props: &GameViewProps) -> Html {
         })
     };
 
+    let on_mousedown = {
+        let handle_input_start = handle_input_start.clone();
+        Callback::from(move |e: MouseEvent| {
+            handle_input_start.emit((e.client_x() as f64, e.client_y() as f64, e.button() == 2));
+        })
+    };
+
+    let on_mousemove = {
+        let handle_input_move = handle_input_move.clone();
+        Callback::from(move |e: MouseEvent| {
+            handle_input_move.emit((e.client_x() as f64, e.client_y() as f64));
+        })
+    };
+
+    let on_mouseup = {
+        let handle_input_end = handle_input_end.clone();
+        Callback::from(move |e: MouseEvent| {
+            handle_input_end.emit((e.client_x() as f64, e.client_y() as f64, e.button() == 2));
+        })
+    };
+
+    let on_touchstart = {
+        let handle_input_start = handle_input_start.clone();
+        let last_touch_dist = last_touch_dist.clone();
+        Callback::from(move |e: TouchEvent| {
+            let e = e.dyn_ref::<web_sys::TouchEvent>().unwrap();
+            let touches = e.touches();
+            if touches.length() == 1 {
+                let touch = touches.get(0).unwrap();
+                handle_input_start.emit((touch.client_x() as f64, touch.client_y() as f64, false));
+            } else if touches.length() == 2 {
+                let t1 = touches.get(0).unwrap();
+                let t2 = touches.get(1).unwrap();
+                let dx = t1.client_x() - t2.client_x();
+                let dy = t1.client_y() - t2.client_y();
+                let dist = ((dx * dx + dy * dy) as f64).sqrt();
+                last_touch_dist.set(Some(dist));
+            }
+        })
+    };
+
+    let on_touchmove = {
+        let handle_input_move = handle_input_move.clone();
+        let last_touch_dist = last_touch_dist.clone();
+        let manager_ref = manager_ref.clone();
+        Callback::from(move |e: TouchEvent| {
+            let e = e.dyn_ref::<web_sys::TouchEvent>().unwrap();
+            let touches = e.touches();
+            if touches.length() == 1 {
+                let touch = touches.get(0).unwrap();
+                handle_input_move.emit((touch.client_x() as f64, touch.client_y() as f64));
+            } else if touches.length() == 2 {
+                let t1 = touches.get(0).unwrap();
+                let t2 = touches.get(1).unwrap();
+                let dx = t1.client_x() - t2.client_x();
+                let dy = t1.client_y() - t2.client_y();
+                let dist = ((dx * dx + dy * dy) as f64).sqrt();
+
+                if let Some(last_dist) = *last_touch_dist {
+                    let ratio = dist / last_dist;
+                    let mut manager = manager_ref.borrow_mut();
+                    manager.target_zoom = (manager.target_zoom * ratio).clamp(0.2, 2.0);
+                    last_touch_dist.set(Some(dist));
+                }
+            }
+        })
+    };
+
+    let on_touchend = {
+        let handle_input_end = handle_input_end.clone();
+        let last_touch_dist = last_touch_dist.clone();
+        Callback::from(move |e: TouchEvent| {
+            let e = e.dyn_ref::<web_sys::TouchEvent>().unwrap();
+            last_touch_dist.set(None);
+            let touches = e.changed_touches();
+            if touches.length() > 0 {
+                let touch = touches.get(0).unwrap();
+                handle_input_end.emit((touch.client_x() as f64, touch.client_y() as f64, false));
+            }
+        })
+    };
+
     let player_id = props.reducer.player_id.unwrap_or_else(Uuid::nil);
     let player = props.reducer.state.players.get(&player_id);
     let player_score = player.map(|p| p.score).unwrap_or(0);
@@ -439,12 +519,22 @@ pub fn game_view(props: &GameViewProps) -> Html {
         html! {}
     };
 
+    let mobile = is_mobile();
+    let hud_style = if mobile {
+        "position: absolute; bottom: 5px; right: 5px; background: rgba(0, 0, 0, 0.4); color: #fff; font-family: monospace; font-size: 8px; padding: 3px 6px; pointer-events: none; z-index: 100; border-radius: 4px; display: flex; flex-direction: column; align-items: flex-end; gap: 1px;"
+    } else {
+        "position: absolute; bottom: 10px; right: 10px; background: rgba(0, 0, 0, 0.4); color: #fff; font-family: monospace; font-size: 10px; padding: 5px 10px; pointer-events: none; z-index: 100; border-radius: 4px; display: flex; flex-direction: column; align-items: flex-end; gap: 2px;"
+    };
+
     html! {
         <div style="width: 100%; height: 100%; position: relative;" oncontextmenu={Callback::from(|e: MouseEvent| e.prevent_default())}>
-            <canvas ref={canvas_ref} onmousedown={on_mousedown} onmousemove={on_mousemove} onmouseup={on_mouseup} style="display: block; background: #fafafa; cursor: grab;"></canvas>
+            <canvas ref={canvas_ref}
+                onmousedown={on_mousedown} onmousemove={on_mousemove} onmouseup={on_mouseup}
+                ontouchstart={on_touchstart} ontouchmove={on_touchmove} ontouchend={on_touchend}
+                style="display: block; background: #fafafa; cursor: grab; touch-action: none;"></canvas>
 
             if is_alive {
-                <div style="position: absolute; bottom: 10px; right: 10px; background: rgba(0, 0, 0, 0.4); color: #fff; font-family: monospace; font-size: 10px; padding: 5px 10px; pointer-events: none; z-index: 100; border-radius: 4px; display: flex; flex-direction: column; align-items: flex-end; gap: 2px;">
+                <div style={hud_style}>
                     <span>{"FPS: "}{props.reducer.fps}</span>
                     <span>{"PING: "}{props.reducer.ping_ms}{"ms"}</span>
                     <span>{"BOARD: "}{props.reducer.state.board_size}{"x"}{props.reducer.state.board_size}</span>
