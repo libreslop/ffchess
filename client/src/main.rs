@@ -15,7 +15,7 @@ use std::rc::Rc;
 use glam::IVec2;
 use uuid::Uuid;
 use gloo_events::EventListener;
-use gloo_timers::callback::Interval;
+use gloo_timers::callback::{Interval, Timeout};
 use rand::seq::SliceRandom;
 
 fn get_stored_name() -> String {
@@ -76,6 +76,25 @@ pub fn app() -> Html {
     let tx = use_state(|| None::<MsgSender>);
     let player_name = use_state(|| get_stored_name());
     let join_step = use_state(|| 0); // Always start at Name step on refresh
+    let has_interacted = use_state(|| false);
+    let show_disconnected = use_state(|| false);
+
+    {
+        let show_disconnected = show_disconnected.clone();
+        let disconnected = reducer.disconnected;
+        use_effect_with(disconnected, move |&disconnected| {
+            if disconnected {
+                show_disconnected.set(true);
+                Box::new(|| ()) as Box<dyn FnOnce()>
+            } else {
+                let sd = show_disconnected.clone();
+                let handle = Timeout::new(300, move || {
+                    sd.set(false);
+                });
+                Box::new(move || drop(handle)) as Box<dyn FnOnce()>
+            }
+        });
+    }
     
     // Landing Cooldown (persists through refresh)
     let landing_cooldown = use_state(|| {
@@ -132,10 +151,21 @@ pub fn app() -> Html {
             
             // Outgoing Message Loop
             let sender_ws_tx = current_ws_tx.clone();
+            let sender_reducer_ref = reducer_ref.clone();
             spawn_local(async move {
                 while let Some(msg) = client_rx.recv().await {
-                    if let Some(tx) = &*sender_ws_tx.borrow() {
-                        let _ = tx.send(Message::Text(serde_json::to_string(&msg).unwrap()));
+                    let maybe_tx = sender_ws_tx.borrow().clone();
+                    if let Some(tx) = maybe_tx {
+                        if let Err(_) = tx.send(Message::Text(serde_json::to_string(&msg).unwrap())) {
+                            if !sender_reducer_ref.borrow().disconnected {
+                                sender_reducer_ref.borrow().clone().dispatch(GameAction::SetDisconnected(true));
+                            }
+                        }
+                    } else if !matches!(msg, ClientMessage::Ping(_)) {
+                        // If we try to send a non-ping message and we are not connected, ensure the UI knows it
+                        if !sender_reducer_ref.borrow().disconnected {
+                            sender_reducer_ref.borrow().clone().dispatch(GameAction::SetDisconnected(true));
+                        }
                     }
                 }
             });
@@ -152,8 +182,6 @@ pub fn app() -> Html {
                         let (mut write, mut read) = ws.split();
                         let (internal_tx, mut internal_rx) = mpsc::unbounded_channel::<Message>();
                         *current_ws_tx.borrow_mut() = Some(internal_tx);
-                        
-                        listener_reducer_ref.borrow().clone().dispatch(GameAction::SetDisconnected(false));
                         
                         // Bridge outgoing
                         spawn_local(async move {
@@ -177,7 +205,9 @@ pub fn app() -> Html {
                         *current_ws_tx.borrow_mut() = None;
                     }
                     
-                    listener_reducer_ref.borrow().clone().dispatch(GameAction::SetDisconnected(true));
+                    if !listener_reducer_ref.borrow().disconnected {
+                        listener_reducer_ref.borrow().clone().dispatch(GameAction::SetDisconnected(true));
+                    }
                     gloo_timers::future::TimeoutFuture::new(2000).await;
                 }
             });
@@ -188,7 +218,13 @@ pub fn app() -> Html {
     let on_join = {
         let tx = tx.clone();
         let player_name = player_name.clone();
+        let reducer = reducer.clone();
+        let has_interacted = has_interacted.clone();
         Callback::from(move |kit: KitType| {
+            has_interacted.set(true);
+            if reducer.disconnected {
+                return;
+            }
             if let Some(sender) = (*tx).as_ref() {
                 let _ = sender.0.send(ClientMessage::Join { name: (*player_name).clone(), kit, player_id: None });
             }
@@ -207,9 +243,14 @@ pub fn app() -> Html {
         let player_name = player_name.clone();
         let landing_cooldown = landing_cooldown.clone();
         let reducer = reducer.clone();
+        let has_interacted = has_interacted.clone();
         Callback::from(move |e: SubmitEvent| {
             e.prevent_default();
-            if *landing_cooldown > 0 || reducer.disconnected { return; }
+            has_interacted.set(true);
+            if reducer.disconnected {
+                return;
+            }
+            if *landing_cooldown > 0 { return; }
             let mut name = (*player_name).trim().to_string();
             if name.is_empty() {
                 name = generate_random_name();
@@ -256,8 +297,13 @@ pub fn app() -> Html {
         let rc_ref = rc_ref.clone();
         let reducer = reducer.clone();
         let join_step = join_step.clone();
+        let has_interacted = has_interacted.clone();
         Callback::from(move |_| {
             if *rc_ref.borrow() == 0 {
+                has_interacted.set(true);
+                if reducer.disconnected {
+                    return;
+                }
                 reducer.dispatch(GameAction::SetInit { player_id: Uuid::nil(), state: reducer.state.clone() });
                 join_step.set(1);
             }
@@ -308,21 +354,34 @@ pub fn app() -> Html {
 
     html! {
         <div style="margin: 0; padding: 0; width: 100vw; height: 100vh; overflow: hidden; position: relative; background: #f0f2f5;">
-            if let Some(sender) = (*tx).clone() {
-                <GameView key={player_id.to_string()} reducer={reducer.clone()} tx={sender} />
-            } else {
-                <div style="position: absolute; inset: 0; background: #f0f2f5; display: flex; align-items: center; justify-content: center; z-index: 200;">
-                    <div style="text-align: center;">
-                        <h2 style="color: #64748b;">{"Connecting to server..."}</h2>
-                        <div style="width: 40px; height: 40px; border: 4px solid #e2e8f0; border-top: 4px solid #2563eb; border-radius: 50%; margin: 20px auto; animation: spin 1s linear infinite;"></div>
-                        <style>{"@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }"}</style>
-                    </div>
-                </div>
+            <style>{"
+                @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+                @keyframes simpleFadeIn { from { opacity: 0; } to { opacity: 1; } }
+                @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+            "}</style>
+            {
+                if let Some(sender) = (*tx).clone() {
+                    html! { <GameView key={player_id.to_string()} reducer={reducer.clone()} tx={sender} /> }
+                } else if *show_disconnected && *has_interacted {
+                    html! {} // Let the disconnected screen handle it
+                } else {
+                    html! {
+                        <div style="position: absolute; inset: 0; background: #f0f2f5; display: flex; align-items: center; justify-content: center; z-index: 200;">
+                            <div style="text-align: center;">
+                                <h2 style="color: #64748b;">{"Connecting to server..."}</h2>
+                                <div style="width: 40px; height: 40px; border: 4px solid #e2e8f0; border-top: 4px solid #2563eb; border-radius: 50%; margin: 20px auto; animation: spin 1s linear infinite;"></div>
+                            </div>
+                        </div>
+                    }
+                }
             }
 
-            if reducer.disconnected && is_joined {
-                <div style="position: absolute; inset: 0; background: #ef4444; z-index: 150; animation: simpleFadeIn 0.3s ease-out; display: flex; align-items: center; justify-content: center;">
-                    <div style="text-align: center; color: #fff; padding: 20px; animation: fadeIn 0.3s ease-out;">
+            if *show_disconnected && (is_joined || *has_interacted) {
+                <div style={format!("position: absolute; inset: 0; background: #ef4444; z-index: 300; display: flex; align-items: center; justify-content: center; transition: opacity 0.3s ease-out; animation: simpleFadeIn 0.3s ease-out; opacity: {}; pointer-events: {};", 
+                    if reducer.disconnected { "1" } else { "0" },
+                    if reducer.disconnected { "all" } else { "none" }
+                )}>
+                    <div style="text-align: center; color: #fff; padding: 20px;">
                         <h1 style="color: #fff; margin: 0; font-size: 4em; letter-spacing: 4px; text-shadow: 0 4px 8px rgba(0,0,0,0.5);">{"DISCONNECTED"}</h1>
                         <p style="margin: 20px 0 0; font-size: 1.2em; color: #fff; letter-spacing: 1px;">{"The connection to the server was lost."}</p>
                     </div>
@@ -386,7 +445,7 @@ pub fn app() -> Html {
                         <form onsubmit={on_name_submit}>
                             <div style="display: flex; flex-direction: column; gap: 15px; align-items: center;">
                                 <input type="text" name="player_name" value={(*player_name).clone()} oninput={on_name_input} placeholder="This is a tale of..." autofocus=true
-                                    style="padding: 12px 20px; border-radius: 0; border: 2px solid #cbd5e1; width: 100%; box-sizing: border-box; font-size: 1.2em; outline: none; background: #fff;"/>
+                                    style="padding: 12px 20px; border-radius: 0; border: 2px solid #cbd5e1; width: 100%; box-sizing: border-box; font-size: 1.2em; outline: none; background: #fff; text-align: center;"/>
                                 <button type="submit" disabled={*landing_cooldown > 0}
                                     style={format!("padding: 10px 40px; background: {}; color: #fff; border: 3px solid {}; border-radius: 0; font-weight: 900; cursor: {}; font-size: 1.2em; width: auto; text-transform: uppercase; letter-spacing: 1px;", 
                                         if *landing_cooldown > 0 { "#94a3b8" } else { "#3b82f6" },
@@ -419,10 +478,6 @@ pub fn app() -> Html {
                             </div>
                         </div>
                     }
-                    <style>{"
-                        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-                        @keyframes simpleFadeIn { from { opacity: 0; } to { opacity: 1; } }
-                    "}</style>
                 </div>
             }
         </div>
@@ -456,6 +511,7 @@ fn game_view(props: &GameViewProps) -> Html {
     let cam_state = use_state(|| (0.0, 0.0));
     let frame_id = use_state(|| 0u64);
     let drag_start = use_state(|| None::<(f64, f64, bool)>);
+    let velocity_ref = use_mut_ref(|| (0.0f64, 0.0f64));
 
     // Track death state transition
     let was_alive_ref = use_mut_ref(|| false);
@@ -506,6 +562,8 @@ fn game_view(props: &GameViewProps) -> Html {
         let mouse_ref = mouse_ref.clone();
         let canvas_ref = canvas_ref.clone();
         let state_ref = state_ref.clone();
+        let drag_start = drag_start.clone();
+        let velocity_ref = velocity_ref.clone();
         
         let target_camera_ref = target_camera_ref.clone();
         let frame_id = frame_id.clone();
@@ -541,7 +599,22 @@ fn game_view(props: &GameViewProps) -> Html {
                     }
                 }
 
-                // 2. King Constraints / Smooth Pan
+                // 2. Momentum
+                if drag_start.is_none() {
+                    let mut vel = *velocity_ref.borrow();
+                    if vel.0.abs() > 0.1 || vel.1.abs() > 0.1 {
+                        cam.0 -= vel.0;
+                        cam.1 -= vel.1;
+                        vel.0 *= 0.94;
+                        vel.1 *= 0.94;
+                        *velocity_ref.borrow_mut() = vel;
+                        changed = true;
+                    } else {
+                        *velocity_ref.borrow_mut() = (0.0, 0.0);
+                    }
+                }
+
+                // 3. King Constraints / Smooth Pan
                 let (state, player_id) = &*state_ref.borrow();
                 let player_id_val = player_id.unwrap_or_else(Uuid::nil);
                 let player = state.players.get(&player_id_val);
@@ -710,6 +783,7 @@ fn game_view(props: &GameViewProps) -> Html {
         let reducer = props.reducer.clone();
         let selected_piece_id = selected_piece_id.clone();
         let drag_start = drag_start.clone();
+        let velocity_ref = velocity_ref.clone();
         Callback::from(move |e: MouseEvent| {
             let canvas = canvas_ref.cast::<HtmlCanvasElement>().unwrap();
             let rect = canvas.get_bounding_client_rect();
@@ -748,6 +822,7 @@ fn game_view(props: &GameViewProps) -> Html {
                 }
             }
             drag_start.set(Some((e.client_x() as f64, e.client_y() as f64, !is_interactive)));
+            *velocity_ref.borrow_mut() = (0.0, 0.0);
         })
     };
 
@@ -759,6 +834,7 @@ fn game_view(props: &GameViewProps) -> Html {
         let state_ref = state_ref.clone();
         let zoom_ref = zoom_ref.clone();
         let canvas_ref = canvas_ref.clone();
+        let velocity_ref = velocity_ref.clone();
         Callback::from(move |e: MouseEvent| {
             *mouse_ref.borrow_mut() = (e.client_x() as f64, e.client_y() as f64);
             if let Some((start_x, start_y, allow_panning)) = *drag_start {
@@ -792,8 +868,10 @@ fn game_view(props: &GameViewProps) -> Html {
                     if valid_pan {
                         *camera_ref.borrow_mut() = cam;
                         cam_state.set(cam);
+                        *velocity_ref.borrow_mut() = (dx, dy);
                         drag_start.set(Some((e.client_x() as f64, e.client_y() as f64, true)));
                     } else {
+                        *velocity_ref.borrow_mut() = (0.0, 0.0);
                         drag_start.set(Some((e.client_x() as f64, e.client_y() as f64, true)));
                     }
                 }
@@ -808,14 +886,22 @@ fn game_view(props: &GameViewProps) -> Html {
         let camera_ref = camera_ref.clone();
         let zoom_ref = zoom_ref.clone();
         let drag_start = drag_start.clone();
+        let velocity_ref = velocity_ref.clone();
         
         Callback::from(move |e: MouseEvent| {
             let start = *drag_start;
             drag_start.set(None);
-            if let Some((sx, sy, _)) = start {
+            if let Some((sx, sy, allow_panning)) = start {
                 let dx = e.client_x() as f64 - sx;
                 let dy = e.client_y() as f64 - sy;
-                if (dx*dx + dy*dy).sqrt() > 5.0 { return; }
+                if allow_panning && (dx*dx + dy*dy).sqrt() > 5.0 { 
+                    return; 
+                }
+                if !allow_panning {
+                    *velocity_ref.borrow_mut() = (0.0, 0.0);
+                }
+            } else {
+                *velocity_ref.borrow_mut() = (0.0, 0.0);
             }
 
             let canvas = canvas_ref.cast::<HtmlCanvasElement>().unwrap();
@@ -872,8 +958,16 @@ fn game_view(props: &GameViewProps) -> Html {
     };
 
     let player_id = props.reducer.player_id.unwrap_or_else(Uuid::nil);
+    let player = props.reducer.state.players.get(&player_id);
+    let player_score = player.map(|p| p.score).unwrap_or(0);
     let player_pieces = props.reducer.state.pieces.values().filter(|p| p.owner_id == Some(player_id)).collect::<Vec<_>>();
     let shop_nearby = props.reducer.state.shops.iter().find(|s| player_pieces.iter().any(|p| p.position == s.position));
+    
+    let piece_on_shop = shop_nearby.and_then(|shop| {
+        player_pieces.iter().find(|p| p.position == shop.position)
+    });
+
+    let can_shop = shop_nearby.is_some();
 
     let on_buy = {
         let tx = props.tx.clone();
@@ -884,6 +978,67 @@ fn game_view(props: &GameViewProps) -> Html {
     };
 
     let is_alive = props.reducer.state.players.contains_key(&player_id) && player_id != Uuid::nil();
+
+    let shop_ui = if can_shop {
+        let piece_count = player_pieces.len();
+        let current_piece_type = piece_on_shop.map(|p| p.piece_type).unwrap_or(PieceType::Pawn);
+        let current_value = get_piece_value(current_piece_type);
+        let is_king_on_shop = current_piece_type == PieceType::King;
+
+        html! {
+            <div style="position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%); background: rgba(255, 255, 255, 0.9); padding: 15px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.2); display: flex; flex-direction: column; align-items: center; gap: 10px; z-index: 50;">
+                <span style="font-weight: bold; color: #1e3a8a;">{"RECRUITMENT & UPGRADES"}</span>
+                <div style="display: flex; gap: 10px;">
+                    {
+                        [PieceType::Pawn, PieceType::Knight, PieceType::Bishop, PieceType::Rook, PieceType::Queen].into_iter().map(|pt| {
+                            let cost = get_upgrade_cost(pt, piece_count);
+                            let can_afford = player_score >= cost;
+                            
+                            // Pawn is always shown (as a spawn)
+                            // Others are only shown if they are an upgrade (strictly higher value)
+                            // And not if current is King (King only sees Pawn)
+                            let should_show = if pt == PieceType::Pawn {
+                                true
+                            } else if is_king_on_shop {
+                                false
+                            } else {
+                                get_piece_value(pt) > current_value
+                            };
+
+                            if should_show {
+                                let label = match pt {
+                                    PieceType::Pawn => "Recruit Pawn",
+                                    PieceType::Knight => "Knight",
+                                    PieceType::Bishop => "Bishop",
+                                    PieceType::Rook => "Rook",
+                                    PieceType::Queen => "Queen",
+                                    _ => "Unknown",
+                                };
+                                html! {
+                                    <button 
+                                        onclick={on_buy.reform(move |_| pt)} 
+                                        disabled={!can_afford} 
+                                        style={format!(
+                                            "padding: 8px 15px; cursor: {}; border-radius: 6px; border: 1px solid #ddd; background: {}; color: {};", 
+                                            if can_afford { "pointer" } else { "not-allowed" },
+                                            if can_afford { "white" } else { "#f1f5f9" },
+                                            if can_afford { "black" } else { "#94a3b8" }
+                                        )}
+                                    >
+                                        {format!("{} ({})", label, cost)}
+                                    </button>
+                                }
+                            } else {
+                                html! {}
+                            }
+                        }).collect::<Html>()
+                    }
+                </div>
+            </div>
+        }
+    } else {
+        html! {}
+    };
 
     html! {
         <div style="width: 100%; height: 100%; position: relative;" oncontextmenu={Callback::from(|e: MouseEvent| e.prevent_default())}>
@@ -898,22 +1053,7 @@ fn game_view(props: &GameViewProps) -> Html {
                 </div>
             }
 
-            <div style="position: absolute; top: 40px; left: 20px; pointer-events: none; display: flex; flex-direction: column; gap: 10px;">
-                if is_alive {
-                    <div style="background: transparent; padding: 10px 20px; font-weight: bold; font-size: 1.5em; pointer-events: auto;">{"Score: "}{props.reducer.last_score}</div>
-                }
-            </div>
-            if let Some(shop) = shop_nearby {
-                <div style="position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%); background: rgba(255, 255, 255, 0.9); padding: 15px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.2); display: flex; flex-direction: column; align-items: center; gap: 10px; z-index: 50;">
-                    <span style="font-weight: bold; color: #856404;">{format!("Shop Area ({:?})", shop.shop_type)}</span>
-                    <div style="display: flex; gap: 10px;">
-                        <button onclick={on_buy.reform(|_| PieceType::Pawn)} style="padding: 8px 15px; cursor: pointer; border-radius: 6px; border: 1px solid #ddd; background: white;">{"Pawn (10)"}</button>
-                        <button onclick={on_buy.reform(|_| PieceType::Knight)} style="padding: 8px 15px; cursor: pointer; border-radius: 6px; border: 1px solid #ddd; background: white;">{"Knight (50+)"}</button>
-                        <button onclick={on_buy.reform(|_| PieceType::Rook)} style="padding: 8px 15px; cursor: pointer; border-radius: 6px; border: 1px solid #ddd; background: white;">{"Rook (100+)"}</button>
-                        <button onclick={on_buy.reform(|_| PieceType::Queen)} style="padding: 8px 15px; cursor: pointer; border-radius: 6px; border: 1px solid #ddd; background: white;">{"Queen (250+)"}</button>
-                    </div>
-                </div>
-            }
+            {shop_ui}
         </div>
     }
 }

@@ -13,7 +13,7 @@ pub struct Pmove {
     pub old_cooldown_ms: i64,
 }
 
-#[derive(Default, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct GameStateReducer {
     pub state: GameState,
     pub player_id: Option<Uuid>,
@@ -26,6 +26,24 @@ pub struct GameStateReducer {
     pub ping_ms: u64,
     pub fps: u32,
     pub disconnected: bool,
+}
+
+impl Default for GameStateReducer {
+    fn default() -> Self {
+        Self {
+            state: GameState::default(),
+            player_id: None,
+            error: None,
+            pm_queue: Vec::new(),
+            last_score: 0,
+            last_kills: 0,
+            last_captured: 0,
+            last_survival_secs: 0,
+            ping_ms: 0,
+            fps: 0,
+            disconnected: false,
+        }
+    }
 }
 
 pub enum GameAction {
@@ -66,12 +84,14 @@ impl Reducible for GameStateReducer {
                 next.state = state;
                 next.pm_queue.clear();
                 next.error = None;
+                next.disconnected = false;
                 if let Some(p) = next.state.players.get(&player_id) {
                     next.last_score = p.score;
                 }
             }
             GameAction::UpdateState { players, pieces, shops, removed_pieces, removed_players, board_size } => {
                 next.error = None;
+                next.disconnected = false;
                 next.state.board_size = board_size;
                 let player_id_val = next.player_id.unwrap_or_else(Uuid::nil);
                 #[cfg(target_arch = "wasm32")]

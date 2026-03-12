@@ -95,6 +95,7 @@ pub fn get_piece_value(piece_type: PieceType) -> u64 {
 
 pub fn get_upgrade_cost(piece_type: PieceType, current_piece_count: usize) -> u64 {
     let base_cost = match piece_type {
+        PieceType::Pawn => 10,
         PieceType::Knight => 50,
         PieceType::Bishop => 50,
         PieceType::Rook => 100,

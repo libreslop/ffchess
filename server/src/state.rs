@@ -14,6 +14,7 @@ pub struct ServerState {
     pub player_colors: RwLock<HashMap<Uuid, String>>,
     // Color -> Last Active timestamp
     pub color_last_active: RwLock<HashMap<String, i64>>,
+    pub last_viewed_at: RwLock<i64>,
 }
 
 const PREFERRED_COLORS: &[&str] = &[
@@ -36,7 +37,7 @@ impl ServerState {
     pub fn new() -> Self {
         Self {
             game: RwLock::new(GameState {
-                board_size: 25,
+                board_size: 40,
                 ..Default::default()
             }),
             player_channels: RwLock::new(HashMap::new()),
@@ -44,13 +45,19 @@ impl ServerState {
             removed_players: RwLock::new(Vec::new()),
             player_colors: RwLock::new(HashMap::new()),
             color_last_active: RwLock::new(HashMap::new()),
+            last_viewed_at: RwLock::new(chrono::Utc::now().timestamp_millis()),
         }
     }
 
     pub fn calculate_board_size(player_count: usize) -> i32 {
-        // (starts at 25x25, scales with player count using a square-root formula up to 200x200).
+        // (starts at 40x40, scales with player count using a square-root formula up to 200x200).
+        // For the first 3 players, stay at 40.
+        if player_count <= 3 {
+            return 40;
+        }
         // Hit ~200 at 100 players: 25 + sqrt(100) * 17.5 = 200
-        (25.0 + (player_count as f32).sqrt() * 17.5).clamp(25.0, 200.0) as i32
+        // We keep the original scaling but clamp to 40.
+        (25.0 + (player_count as f32).sqrt() * 17.5).clamp(40.0, 200.0) as i32
     }
 
     async fn get_or_assign_color(&self, player_id: Uuid) -> String {
@@ -168,11 +175,19 @@ impl ServerState {
                 }
             }
             
-            // Fallback: if we couldn't find an empty spot, just pick any valid neighbor
+            // Fallback: pick any neighbor within board boundaries
             if p_pos == spawn_pos {
-                let offset = IVec2::new(rng.gen_range(-1..=1), rng.gen_range(-1..=1));
-                p_pos = spawn_pos + offset;
-                if p_pos == spawn_pos { p_pos.x = p_pos.x + 1; }
+                let neighbors = [
+                    IVec2::new(1, 0), IVec2::new(-1, 0), IVec2::new(0, 1), IVec2::new(0, -1),
+                    IVec2::new(1, 1), IVec2::new(-1, 1), IVec2::new(1, -1), IVec2::new(-1, -1)
+                ];
+                for offset in neighbors {
+                    let candidate = spawn_pos + offset;
+                    if is_within_board(candidate, game.board_size) {
+                        p_pos = candidate;
+                        break;
+                    }
+                }
             }
 
             game.pieces.insert(p_id, Piece {
@@ -206,9 +221,15 @@ impl ServerState {
         let board_size = game.board_size;
         let half = board_size / 2;
         let limit = (board_size + 1) / 2;
+        
+        // Ensure spawn is within board with a margin for kit pieces
+        let margin = 3;
 
         for _ in 0..100 {
-            let pos = IVec2::new(rng.gen_range(-half..limit), rng.gen_range(-half..limit));
+            let pos = IVec2::new(
+                rng.gen_range(-half + margin..limit - margin), 
+                rng.gen_range(-half + margin..limit - margin)
+            );
             let mut occupied = false;
             
             // Check pieces
@@ -233,8 +254,11 @@ impl ServerState {
                 return pos;
             }
         }
-        // Fallback
-        IVec2::new(rng.gen_range(-half..limit), rng.gen_range(-half..limit))
+        // Fallback: stay within board margin
+        IVec2::new(
+            rng.gen_range(-half + margin..limit - margin), 
+            rng.gen_range(-half + margin..limit - margin)
+        )
     }
 
     pub async fn record_piece_removal(&self, piece_id: Uuid) {
@@ -385,7 +409,17 @@ impl Default for ServerState {
 
 impl ServerState {
     pub async fn handle_tick(&self) {
-        self.tick_npcs().await;
+        let now = chrono::Utc::now().timestamp_millis();
+        let players_viewing = !self.player_channels.read().await.is_empty();
+        
+        if players_viewing {
+            *self.last_viewed_at.write().await = now;
+        }
+
+        let last_viewed = *self.last_viewed_at.read().await;
+        if now - last_viewed < 5000 {
+            self.tick_npcs().await;
+        }
         
         {
             let mut game = self.game.write().await;

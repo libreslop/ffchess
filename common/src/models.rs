@@ -98,11 +98,23 @@ impl Default for CooldownConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct GameState {
     pub players: HashMap<Uuid, Player>,
     pub pieces: HashMap<Uuid, Piece>,
     pub shops: Vec<Shop>,
     pub board_size: i32,
     pub cooldown_config: CooldownConfig,
+}
+
+impl Default for GameState {
+    fn default() -> Self {
+        Self {
+            players: HashMap::new(),
+            pieces: HashMap::new(),
+            shops: Vec::new(),
+            board_size: 40,
+            cooldown_config: CooldownConfig::default(),
+        }
+    }
 }
