@@ -515,7 +515,7 @@ fn game_view(props: &GameViewProps) -> Html {
 
     // Track death state transition
     let was_alive_ref = use_mut_ref(|| false);
-    let last_king_pos_ref = use_mut_ref(|| (0.0, 0.0));
+    let last_king_grid_pos_ref = use_mut_ref(|| IVec2::ZERO);
 
     {
         let player_id = props.reducer.player_id.unwrap_or_else(Uuid::nil);
@@ -526,17 +526,22 @@ fn game_view(props: &GameViewProps) -> Html {
         if is_alive {
             if let Some(p) = player {
                 if let Some(king) = props.reducer.state.pieces.get(&p.king_id) {
-                    let tile_size = 40.0 * *zoom_ref.borrow();
-                    let pos = (king.position.x as f64 * tile_size + tile_size/2.0, king.position.y as f64 * tile_size + tile_size/2.0);
-                    *last_king_pos_ref.borrow_mut() = pos;
+                    *last_king_grid_pos_ref.borrow_mut() = king.position;
                 }
             }
             *was_alive = true;
         } else if *was_alive {
             // Just died
-            let pos = *last_king_pos_ref.borrow();
-            *target_camera_ref.borrow_mut() = pos;
-            *target_zoom_ref.borrow_mut() = 1.3;
+            let grid_pos = *last_king_grid_pos_ref.borrow();
+            let target_zoom = 1.3;
+            let tile_size = 40.0 * target_zoom;
+            let pixel_pos = (
+                grid_pos.x as f64 * tile_size + tile_size / 2.0,
+                grid_pos.y as f64 * tile_size + tile_size / 2.0
+            );
+            
+            *target_camera_ref.borrow_mut() = pixel_pos;
+            *target_zoom_ref.borrow_mut() = target_zoom;
             *was_alive = false;
         } else if player_id == Uuid::nil() && !*was_alive {
             // On kit selection screen (reset camera)

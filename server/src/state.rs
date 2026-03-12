@@ -169,7 +169,8 @@ impl ServerState {
                 let candidate = spawn_pos + offset;
                 if candidate != spawn_pos 
                     && is_within_board(candidate, game.board_size)
-                    && !game.pieces.values().any(|p| p.position == candidate) {
+                    && !game.pieces.values().any(|p| p.position == candidate)
+                    && !game.shops.iter().any(|s| s.position == candidate) {
                     p_pos = candidate;
                     break;
                 }
@@ -183,7 +184,8 @@ impl ServerState {
                 ];
                 for offset in neighbors {
                     let candidate = spawn_pos + offset;
-                    if is_within_board(candidate, game.board_size) {
+                    if is_within_board(candidate, game.board_size) 
+                        && !game.shops.iter().any(|s| s.position == candidate) {
                         p_pos = candidate;
                         break;
                     }
@@ -254,7 +256,18 @@ impl ServerState {
                 return pos;
             }
         }
-        // Fallback: stay within board margin
+        
+        // Final Fallback: try to find ANYTHING not on a shop or piece
+        for _ in 0..100 {
+            let pos = IVec2::new(
+                rng.gen_range(-half + margin..limit - margin), 
+                rng.gen_range(-half + margin..limit - margin)
+            );
+            if !game.pieces.values().any(|p| p.position == pos) && !game.shops.iter().any(|s| s.position == pos) {
+                return pos;
+            }
+        }
+
         IVec2::new(
             rng.gen_range(-half + margin..limit - margin), 
             rng.gen_range(-half + margin..limit - margin)
