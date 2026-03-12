@@ -21,6 +21,9 @@ impl Reducible for GameStateReducer {
                 next.pm_queue.clear();
                 next.error = None;
                 next.disconnected = false;
+                if player_id != Uuid::nil() {
+                    next.fatal_error = false;
+                }
                 if let Some(p) = next.state.players.get(&player_id) {
                     next.last_score = p.score;
                 }
@@ -123,8 +126,16 @@ impl Reducible for GameStateReducer {
             GameAction::SetFPS(fps) => {
                 next.fps = fps;
             }
-            GameAction::SetDisconnected(d) => {
-                next.disconnected = d;
+            GameAction::SetDisconnected {
+                disconnected,
+                is_fatal,
+                title,
+                msg,
+            } => {
+                next.disconnected = disconnected;
+                next.fatal_error = is_fatal;
+                next.disconnected_title = title;
+                next.disconnected_msg = msg;
             }
         }
         next.into()

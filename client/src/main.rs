@@ -5,7 +5,10 @@ mod reducer;
 mod utils;
 
 pub use common::*;
-use components::{DefeatScreen, DisconnectedScreen, ErrorToast, GameView, JoinScreen, Leaderboard};
+use components::{
+    DefeatScreen, DisconnectedScreen, ErrorToast, FatalNotification, GameView, JoinScreen,
+    Leaderboard,
+};
 use futures_util::{SinkExt, StreamExt};
 use gloo_events::EventListener;
 use gloo_net::websocket::{Message, futures::WebSocket};
@@ -30,7 +33,7 @@ pub fn app() -> Html {
 
     {
         let show_disconnected = show_disconnected.clone();
-        let disconnected = reducer.disconnected;
+        let disconnected = reducer.disconnected && !reducer.fatal_error;
         use_effect_with(disconnected, move |&disconnected| {
             if disconnected {
                 show_disconnected.set(true);
@@ -45,10 +48,34 @@ pub fn app() -> Html {
         });
     }
 
+    {
+        let fatal_error = reducer.fatal_error;
+        let reducer_handle = reducer.clone();
+        use_effect_with(fatal_error, move |&fatal| {
+            let mut timeout = None;
+            if fatal {
+                timeout = Some(Timeout::new(5000, move || {
+                    reducer_handle.dispatch(GameAction::SetDisconnected {
+                        disconnected: false,
+                        is_fatal: false,
+                        title: None,
+                        msg: None,
+                    });
+                }));
+            }
+            move || {
+                if let Some(t) = timeout {
+                    drop(t);
+                }
+            }
+        });
+    }
+
     let landing_cooldown = use_state(|| {
         let ts = get_death_timestamp();
         let now = js_sys::Date::now() as i64 / 1000;
-        let diff = 5 - (now - ts);
+        let cooldown_sec = (reducer.state.respawn_cooldown_ms / 1000) as i64;
+        let diff = cooldown_sec - (now - ts);
         if diff > 0 { diff as i32 } else { 0 }
     });
     let lc_ref = use_mut_ref(|| *landing_cooldown);
@@ -112,7 +139,12 @@ pub fn app() -> Html {
                             sender_reducer_ref
                                 .borrow()
                                 .clone()
-                                .dispatch(GameAction::SetDisconnected(true));
+                                .dispatch(GameAction::SetDisconnected {
+                                    disconnected: true,
+                                    is_fatal: false,
+                                    title: None,
+                                    msg: None,
+                                });
                         }
                     } else if !matches!(msg, ClientMessage::Ping(_))
                         && !sender_reducer_ref.borrow().disconnected
@@ -120,7 +152,12 @@ pub fn app() -> Html {
                         sender_reducer_ref
                             .borrow()
                             .clone()
-                            .dispatch(GameAction::SetDisconnected(true));
+                            .dispatch(GameAction::SetDisconnected {
+                                disconnected: true,
+                                is_fatal: false,
+                                title: None,
+                                msg: None,
+                            });
                     }
                 }
             });
@@ -156,6 +193,9 @@ pub fn app() -> Html {
                                     .clone()
                                     .dispatch(match server_msg {
                                         ServerMessage::Init { player_id, state } => {
+                                            if player_id != Uuid::nil() {
+                                                set_stored_id(player_id);
+                                            }
                                             GameAction::SetInit { player_id, state }
                                         }
                                         ServerMessage::UpdateState {
@@ -173,7 +213,18 @@ pub fn app() -> Html {
                                             removed_players,
                                             board_size,
                                         },
-                                        ServerMessage::Error(e) => GameAction::SetError(e),
+                                        ServerMessage::Error(e) => {
+                                            if let GameError::Custom { title, message } = &e {
+                                                GameAction::SetDisconnected {
+                                                    disconnected: true,
+                                                    is_fatal: true,
+                                                    title: Some(title.clone()),
+                                                    msg: Some(message.clone()),
+                                                }
+                                            } else {
+                                                GameAction::SetError(e)
+                                            }
+                                        }
                                         ServerMessage::GameOver {
                                             final_score,
                                             kills,
@@ -196,7 +247,12 @@ pub fn app() -> Html {
                         listener_reducer_ref
                             .borrow()
                             .clone()
-                            .dispatch(GameAction::SetDisconnected(true));
+                            .dispatch(GameAction::SetDisconnected {
+                                disconnected: true,
+                                is_fatal: false,
+                                title: None,
+                                msg: None,
+                            });
                     }
                     gloo_timers::future::TimeoutFuture::new(2000).await;
                 }
@@ -219,10 +275,11 @@ pub fn app() -> Html {
                 return;
             }
             if let Some(sender) = (*tx).as_ref() {
+                let stored_id = get_stored_id();
                 let _ = sender.0.send(ClientMessage::Join {
                     name: (*player_name).clone(),
                     kit,
-                    player_id: None,
+                    player_id: stored_id,
                 });
             }
         })
@@ -270,12 +327,14 @@ pub fn app() -> Html {
     {
         let rejoin_cooldown = rejoin_cooldown.clone();
         let rc_ref = rc_ref.clone();
+        let cooldown_ms = reducer.state.respawn_cooldown_ms;
         use_effect_with(is_dead, move |is_dead| {
             let mut interval = None;
             if *is_dead {
                 set_death_timestamp(js_sys::Date::now() as i64 / 1000);
-                rejoin_cooldown.set(5);
-                *rc_ref.borrow_mut() = 5;
+                let cooldown_sec = (cooldown_ms / 1000) as i32;
+                rejoin_cooldown.set(cooldown_sec);
+                *rc_ref.borrow_mut() = cooldown_sec;
                 let rc = rejoin_cooldown.clone();
                 let rr = rc_ref.clone();
                 interval = Some(Interval::new(1000, move || {
@@ -312,21 +371,42 @@ pub fn app() -> Html {
     };
 
     {
-        let rc_ref = rc_ref.clone();
-        let on_rejoin = on_rejoin.clone();
+        let join_step = join_step.clone();
+        let player_name = player_name.clone();
+        let landing_cooldown = landing_cooldown.clone();
         let reducer = reducer.clone();
-        use_effect_with(is_dead, move |is_dead| {
-            let is_dead = *is_dead;
-            let rc_ref = rc_ref.clone();
-            let on_rejoin = on_rejoin.clone();
-            let reducer = reducer.clone();
+        let has_interacted = has_interacted.clone();
+        let on_join = on_join.clone();
+        let on_rejoin = on_rejoin.clone();
+        let rc_ref = rc_ref.clone();
+        let is_joined = is_joined;
+        let is_dead = is_dead;
+
+        use_effect_with((is_joined, is_dead, *join_step), move |&(joined, dead, step)| {
             let listener = EventListener::new(&web_sys::window().unwrap(), "keydown", move |e| {
                 let e = e.dyn_ref::<web_sys::KeyboardEvent>().unwrap();
-                if e.key() == "Enter" && !reducer.disconnected && is_dead && *rc_ref.borrow() == 0 {
-                    on_rejoin.emit(MouseEvent::new("click").unwrap());
+                if e.key() == "Enter" {
+                    if !joined {
+                        if step == 0 && *landing_cooldown == 0 && !reducer.disconnected {
+                            let mut name = (*player_name).trim().to_string();
+                            if name.is_empty() {
+                                name = generate_random_name();
+                                player_name.set(name.clone());
+                            }
+                            set_stored_name(&name);
+                            join_step.set(1);
+                            has_interacted.set(true);
+                        } else if step == 1 && !reducer.disconnected {
+                            on_join.emit(KitType::Standard);
+                            has_interacted.set(true);
+                        }
+                    } else if dead && *rc_ref.borrow() == 0 && !reducer.disconnected {
+                        on_rejoin.emit(MouseEvent::new("click").unwrap());
+                        has_interacted.set(true);
+                    }
                 }
             });
-            || drop(listener)
+            move || drop(listener)
         });
     }
 
@@ -350,7 +430,18 @@ pub fn app() -> Html {
                 </div>
             }
 
-            <DisconnectedScreen show={*show_disconnected && (is_joined || *has_interacted)} disconnected={reducer.disconnected} />
+            <DisconnectedScreen
+                show={*show_disconnected && (is_joined || *has_interacted)}
+                disconnected={reducer.disconnected && !reducer.fatal_error}
+                title={reducer.disconnected_title.clone()}
+                msg={reducer.disconnected_msg.clone()}
+            />
+
+            <FatalNotification
+                show={reducer.fatal_error}
+                title={reducer.disconnected_title.clone()}
+                msg={reducer.disconnected_msg.clone()}
+            />
 
             if is_joined {
                 if is_dead {

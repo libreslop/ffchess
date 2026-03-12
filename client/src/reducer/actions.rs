@@ -27,5 +27,10 @@ pub enum GameAction {
     Tick(MsgSender),
     Pong(u64),
     SetFPS(u32),
-    SetDisconnected(bool),
+    SetDisconnected {
+        disconnected: bool,
+        is_fatal: bool,
+        title: Option<String>,
+        msg: Option<String>,
+    },
 }

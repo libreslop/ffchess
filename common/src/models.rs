@@ -117,6 +117,7 @@ pub struct GameState {
     pub shops: Vec<Shop>,
     pub board_size: i32,
     pub cooldown_config: CooldownConfig,
+    pub respawn_cooldown_ms: u64,
 }
 
 impl Default for GameState {
@@ -127,6 +128,7 @@ impl Default for GameState {
             shops: Vec::new(),
             board_size: 40,
             cooldown_config: CooldownConfig::default(),
+            respawn_cooldown_ms: 5000,
         }
     }
 }

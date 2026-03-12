@@ -16,15 +16,13 @@ pub struct JoinScreenProps {
 #[function_component(JoinScreen)]
 pub fn join_screen(props: &JoinScreenProps) -> Html {
     let mobile = is_mobile();
-    let title_size = if mobile { "3em" } else { "4em" };
 
     html! {
         <>
             <div style="position: absolute; inset: 0; background: rgba(0,0,0,0.6); z-index: 90;"></div>
             <div style={format!("position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 100; text-align: center; width: 90%; max-width: 400px; padding: {};", if mobile { "20px 10px" } else { "30px" })}>
-                <h1 style={format!("margin-top: 0; color: #fff; font-size: {}; letter-spacing: 4px; text-shadow: 0 4px 8px rgba(0,0,0,0.5);", title_size)}>{"FFCHESS"}</h1>
-
                 if props.join_step == 0 {
+                    <h1 style={format!("margin-top: 0; color: #fff; font-size: {}; letter-spacing: 4px; text-shadow: 0 4px 8px rgba(0,0,0,0.5);", if mobile { "3em" } else { "4em" })}>{"FFCHESS"}</h1>
                     <form onsubmit={props.on_name_submit.clone()}>
                         <div style="display: flex; flex-direction: column; gap: 15px; align-items: center;">
                             <input type="text" name="player_name" value={props.player_name.clone()} oninput={props.on_name_input.clone()} placeholder="This is a tale of..." autofocus=true

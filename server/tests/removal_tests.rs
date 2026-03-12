@@ -13,10 +13,12 @@ mod tests {
 
         let p1_id = state
             .add_player("P1".to_string(), KitType::Standard, tx.clone(), None)
-            .await;
+            .await
+            .expect("Initial join should succeed");
         let p2_id = state
             .add_player("P2".to_string(), KitType::Standard, tx.clone(), None)
-            .await;
+            .await
+            .expect("Initial join should succeed");
 
         let p1_pawn_id = {
             let game = state.game.read().await;
@@ -70,7 +72,8 @@ mod tests {
 
         let p1_id = state
             .add_player("P1".to_string(), KitType::Standard, tx.clone(), None)
-            .await;
+            .await
+            .expect("Initial join should succeed");
 
         let p1_pieces: Vec<Uuid> = {
             let game = state.game.read().await;
@@ -99,7 +102,8 @@ mod tests {
 
         let p1_id = state
             .add_player("P1".to_string(), KitType::Standard, tx.clone(), None)
-            .await;
+            .await
+            .expect("Initial join should succeed");
         state.remove_player(p1_id).await;
 
         // Before tick, buffers should be full
@@ -125,7 +129,8 @@ mod tests {
         // Add player and NPC
         let p1_id = state
             .add_player("P1".to_string(), KitType::Standard, tx.clone(), None)
-            .await;
+            .await
+            .expect("Initial join should succeed");
 
         let p1_pawn_id = {
             let game = state.game.read().await;

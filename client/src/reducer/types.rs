@@ -24,6 +24,9 @@ pub struct GameStateReducer {
     pub ping_ms: u64,
     pub fps: u32,
     pub disconnected: bool,
+    pub fatal_error: bool,
+    pub disconnected_title: Option<String>,
+    pub disconnected_msg: Option<String>,
 }
 
 #[derive(Clone)]

@@ -51,7 +51,8 @@ async fn test_shop_behavior_pawns() {
     let (tx, _rx) = mpsc::unbounded_channel();
     let player_id = state
         .add_player("Test".to_string(), KitType::Standard, tx, None)
-        .await;
+        .await
+        .expect("Initial join should succeed");
 
     // Set score high enough
     {
@@ -118,7 +119,8 @@ async fn test_shop_behavior_upgrade() {
     let (tx, _rx) = mpsc::unbounded_channel();
     let player_id = state
         .add_player("Test".to_string(), KitType::Standard, tx, None)
-        .await;
+        .await
+        .expect("Initial join should succeed");
 
     let piece_id = Uuid::new_v4();
     {
@@ -163,7 +165,8 @@ async fn test_king_can_only_recruit_pawns() {
     let (tx, _rx) = mpsc::unbounded_channel();
     let player_id = state
         .add_player("Test".to_string(), KitType::Standard, tx, None)
-        .await;
+        .await
+        .expect("Initial join should succeed");
 
     let king_pos = {
         let game = state.game.read().await;

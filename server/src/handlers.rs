@@ -62,18 +62,42 @@ async fn handle_socket(socket: WebSocket, state: Arc<ServerState>) {
                             player_id: pid,
                         } => {
                             tracing::info!(?name, ?kit, ?pid, "Player joining");
+
+                            if let Some(pid) = pid {
+                                let channels = state.player_channels.read().await;
+                                let game = state.game.read().await;
+                                if game.players.contains_key(&pid) && channels.contains_key(&pid) {
+                                    tracing::warn!(?pid, "Player already in game, rejecting join");
+                                    let _ = tx.send(ServerMessage::Error(GameError::Custom {
+                                        title: "DUPLICATE SESSION".to_string(),
+                                        message: "You are already in a game in another tab.".to_string(),
+                                    }));
+                                    // Give them a moment to receive the message before closing
+                                    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                                    break; 
+                                }
+                            }
+
                             // Remove anonymous channel
                             state.player_channels.write().await.remove(&conn_id);
 
-                            let id = state.add_player(name, kit, tx.clone(), pid).await;
-                            player_id = Some(id);
-
-                            // Re-send Init with proper player_id
-                            let game = state.game.read().await;
-                            let _ = tx.send(ServerMessage::Init {
-                                player_id: id,
-                                state: game.clone(),
-                            });
+                            match state.add_player(name, kit, tx.clone(), pid).await {
+                                Ok(id) => {
+                                    player_id = Some(id);
+                                    // Re-send Init with proper player_id
+                                    let game = state.game.read().await;
+                                    let _ = tx.send(ServerMessage::Init {
+                                        player_id: id,
+                                        state: game.clone(),
+                                    });
+                                }
+                                Err(e) => {
+                                    tracing::warn!(?pid, error = %e, "Join failed");
+                                    let _ = tx.send(ServerMessage::Error(e));
+                                    // Restore anonymous channel so they can still watch
+                                    state.player_channels.write().await.insert(conn_id, tx.clone());
+                                }
+                            }
                         }
                         ClientMessage::MovePiece { piece_id, target } => {
                             if let Some(pid) = player_id

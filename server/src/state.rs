@@ -11,6 +11,7 @@ pub struct ServerState {
     pub removed_players: RwLock<Vec<Uuid>>,
     pub color_manager: RwLock<ColorManager>,
     pub last_viewed_at: RwLock<i64>,
+    pub death_timestamps: RwLock<HashMap<Uuid, i64>>,
 }
 
 impl ServerState {
@@ -25,6 +26,7 @@ impl ServerState {
             removed_players: RwLock::new(Vec::new()),
             color_manager: RwLock::new(ColorManager::new()),
             last_viewed_at: RwLock::new(chrono::Utc::now().timestamp_millis()),
+            death_timestamps: RwLock::new(HashMap::new()),
         }
     }
 
@@ -37,6 +39,11 @@ impl ServerState {
         for tx in channels.values() {
             let _ = tx.send(msg.clone());
         }
+    }
+
+    pub async fn cleanup_death_timestamps(&self, now_ms: i64, max_age_ms: i64) {
+        let mut dt = self.death_timestamps.write().await;
+        dt.retain(|_, timestamp_ms| now_ms - *timestamp_ms <= max_age_ms);
     }
 }
 

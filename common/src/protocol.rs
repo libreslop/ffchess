@@ -20,6 +20,7 @@ pub enum GameError {
     InsufficientScore { needed: u64, have: u64 },
     NoSpaceNearby,
     Internal(String),
+    Custom { title: String, message: String },
 }
 
 impl fmt::Display for GameError {
@@ -41,6 +42,7 @@ impl fmt::Display for GameError {
             }
             Self::NoSpaceNearby => write!(f, "No free space nearby"),
             Self::Internal(s) => write!(f, "Internal error: {}", s),
+            Self::Custom { title, message } => write!(f, "{}: {}", title, message),
         }
     }
 }

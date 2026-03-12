@@ -13,10 +13,12 @@ mod tests {
 
         let p1 = state
             .add_player("P1".to_string(), KitType::Standard, tx.clone(), None)
-            .await;
+            .await
+            .expect("Initial join should succeed");
         let p2 = state
             .add_player("P2".to_string(), KitType::Tank, tx.clone(), None)
-            .await;
+            .await
+            .expect("Initial join should succeed");
 
         let game = state.game.read().await;
         assert_eq!(game.players.len(), 2);
@@ -45,10 +47,12 @@ mod tests {
 
         let p1_id = state
             .add_player("P1".to_string(), KitType::Standard, tx.clone(), None)
-            .await;
+            .await
+            .expect("Initial join should succeed");
         let p2_id = state
             .add_player("P2".to_string(), KitType::Standard, tx.clone(), None)
-            .await;
+            .await
+            .expect("Initial join should succeed");
 
         let p1_king_id = {
             let game = state.game.read().await;

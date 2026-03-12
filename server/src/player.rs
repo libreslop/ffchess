@@ -12,8 +12,24 @@ impl ServerState {
         kit: KitType,
         tx: tokio::sync::mpsc::UnboundedSender<ServerMessage>,
         existing_id: Option<Uuid>,
-    ) -> Uuid {
+    ) -> Result<Uuid, GameError> {
         let player_id = existing_id.unwrap_or_else(Uuid::new_v4);
+
+        {
+            let deaths = self.death_timestamps.read().await;
+            if let Some(death_time) = deaths.get(&player_id) {
+                let now = chrono::Utc::now().timestamp_millis();
+                let game = self.game.read().await;
+                let elapsed = now - death_time;
+                if elapsed < game.respawn_cooldown_ms as i64 {
+                    let remaining = (game.respawn_cooldown_ms as i64 - elapsed) / 1000;
+                    return Err(GameError::Custom {
+                        title: "RESPAWN COOLDOWN".to_string(),
+                        message: format!("You must wait {} more seconds to respawn.", remaining.max(1)),
+                    });
+                }
+            }
+        }
 
         let color = {
             let active_ids: Vec<Uuid> = self.player_channels.read().await.keys().cloned().collect();
@@ -122,7 +138,7 @@ impl ServerState {
         };
 
         game.players.insert(player_id, player);
-        player_id
+        Ok(player_id)
     }
 
     pub async fn remove_player(&self, player_id: Uuid) {
@@ -155,6 +171,7 @@ impl ServerState {
 
     pub async fn record_player_removal(&self, player_id: Uuid, game: &mut GameState) {
         self.removed_players.write().await.push(player_id);
+        self.death_timestamps.write().await.insert(player_id, chrono::Utc::now().timestamp_millis());
         let mut rp = self.removed_pieces.write().await;
         game.pieces.retain(|id, p| {
             if p.owner_id == Some(player_id) {

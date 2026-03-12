@@ -21,6 +21,7 @@ pub const PREFERRED_COLORS: &[&str] = &[
 pub struct ColorManager {
     pub player_colors: HashMap<Uuid, String>,
     pub color_last_active: HashMap<String, i64>,
+    pub player_last_active: HashMap<Uuid, i64>,
 }
 
 impl ColorManager {
@@ -28,6 +29,7 @@ impl ColorManager {
         Self {
             player_colors: HashMap::new(),
             color_last_active: HashMap::new(),
+            player_last_active: HashMap::new(),
         }
     }
 
@@ -41,11 +43,16 @@ impl ColorManager {
             .collect();
 
         // 1. Re-use player's color if it's NOT active.
-        if let Some(color) = self.player_colors.get(&player_id).cloned()
-            && !active_colors.contains(&color)
-        {
-            self.color_last_active.insert(color.clone(), now);
-            return color;
+        if let Some(color) = self.player_colors.get(&player_id).cloned() {
+            if !active_colors.contains(&color) {
+                tracing::info!(?player_id, ?color, "Re-using player's previous color");
+                self.player_colors.insert(player_id, color.clone());
+                self.color_last_active.insert(color.clone(), now);
+                self.player_last_active.insert(player_id, now);
+                return color;
+            } else {
+                tracing::info!(?player_id, ?color, "Player's previous color is currently active, assigning new one");
+            }
         }
 
         // 2. Try to find a preferred color that is NOT active and NOT claimed.
@@ -56,8 +63,10 @@ impl ColorManager {
                 let last_active = self.color_last_active.get(&color);
                 let claimed = last_active.is_some_and(|&last| now - last < 60);
                 if !claimed {
+                    tracing::info!(?player_id, ?color, "Assigning unclaimed preferred color");
                     self.player_colors.insert(player_id, color.clone());
                     self.color_last_active.insert(color.clone(), now);
+                    self.player_last_active.insert(player_id, now);
                     return color;
                 }
             }
@@ -71,8 +80,10 @@ impl ColorManager {
                 let last_active = self.color_last_active.get(&color);
                 let claimed = last_active.is_some_and(|&last| now - last < 60);
                 if !claimed {
+                    tracing::info!(?player_id, ?color, "Assigning random color");
                     self.player_colors.insert(player_id, color.clone());
                     self.color_last_active.insert(color.clone(), now);
+                    self.player_last_active.insert(player_id, now);
                     return color;
                 }
             }
@@ -82,23 +93,44 @@ impl ColorManager {
         for &c in PREFERRED_COLORS {
              let color = c.to_string();
              if !active_colors.contains(&color) {
+                tracing::info!(?player_id, ?color, "Assigning fallback preferred color");
                 self.player_colors.insert(player_id, color.clone());
                 self.color_last_active.insert(color.clone(), now);
+                self.player_last_active.insert(player_id, now);
                 return color;
              }
         }
 
         // Ultimate fallback
         let color = format!("#{:06x}", rng.gen_range(0..0x1000000));
+        tracing::info!(?player_id, ?color, "Assigning ultimate fallback random color");
         self.player_colors.insert(player_id, color.clone());
         self.color_last_active.insert(color.clone(), now);
+        self.player_last_active.insert(player_id, now);
         color
     }
 
     pub fn update_activity(&mut self, player_id: Uuid) {
+        let now = chrono::Utc::now().timestamp();
         if let Some(color) = self.player_colors.get(&player_id).cloned() {
-            self.color_last_active.insert(color, chrono::Utc::now().timestamp());
+            self.color_last_active.insert(color, now);
         }
+        self.player_last_active.insert(player_id, now);
+    }
+
+    pub fn cleanup(&mut self, now: i64, max_age_secs: i64) {
+        self.player_last_active.retain(|id, last_active| {
+            if now - *last_active > max_age_secs {
+                self.player_colors.remove(id);
+                false
+            } else {
+                true
+            }
+        });
+
+        self.color_last_active.retain(|_, last_active| {
+            now - *last_active <= max_age_secs
+        });
     }
 }
 

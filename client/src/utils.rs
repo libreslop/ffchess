@@ -1,4 +1,5 @@
 use rand::seq::SliceRandom;
+use uuid::Uuid;
 
 pub fn get_stored_name() -> String {
     let window = web_sys::window().unwrap();
@@ -15,6 +16,24 @@ pub fn set_stored_name(name: &str) {
     let window = web_sys::window().unwrap();
     if let Ok(Some(storage)) = window.local_storage() {
         let _ = storage.set_item("ffchess_name", name);
+    }
+}
+
+pub fn get_stored_id() -> Option<Uuid> {
+    let window = web_sys::window().unwrap();
+    if let Ok(Some(storage)) = window.local_storage() {
+        return storage
+            .get_item("ffchess_player_id")
+            .unwrap_or_default()
+            .and_then(|s| Uuid::parse_str(&s).ok());
+    }
+    None
+}
+
+pub fn set_stored_id(id: Uuid) {
+    let window = web_sys::window().unwrap();
+    if let Ok(Some(storage)) = window.local_storage() {
+        let _ = storage.set_item("ffchess_player_id", &id.to_string());
     }
 }
 

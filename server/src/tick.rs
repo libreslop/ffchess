@@ -15,6 +15,18 @@ impl ServerState {
             self.tick_npcs().await;
         }
 
+        // Periodic cleanup (approx. every minute)
+        static TICK_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let tick = TICK_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        if tick % 1200 == 0 {
+            // Cleanup death timestamps older than 10 minutes
+            self.cleanup_death_timestamps(now, 10 * 60 * 1000).await;
+            
+            // Cleanup color manager data older than 24 hours
+            let mut cm = self.color_manager.write().await;
+            cm.cleanup(now / 1000, 24 * 60 * 60);
+        }
+
         {
             let mut cm = self.color_manager.write().await;
             let game = self.game.read().await;
