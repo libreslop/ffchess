@@ -40,7 +40,20 @@ The system is built using a modern Rust stack for both performance and type safe
 - **Kits:** Players choose from Standard, Shield, Scout, or Tank starting armies.
 - **Shops:** Single-use squares for spawning or upgrading pieces. Relocate randomly after use.
 
-## 4. Client Experience
+### 4.4 Security Architecture (Added March 2026)
+- **Session Management:** Prevents `player_id` hijacking by requiring a `session_secret` (UUIDv4) for all re-joins.
+    - **First Join:** Server generates a random secret and returns it to the client.
+    - **Re-Join:** Client provides both its public `player_id` and private `session_secret`.
+    - **Validation:** Server rejects any join where the secret does not match the stored secret for that player ID.
+- **Protocol Protections:** 
+    - **Input Sanitization:** Player names are truncated to 32 characters on the server.
+    - **Cooldown Validation:** Strict server-side cooldown checks with a minimal 100ms tolerance.
+- **Planned Mitigations:**
+    - **Spatial Filtering:** Transitioning to a server-side "Fog of War" to prevent information leakage of the entire board.
+    - **Rate Limiting:** Per-connection token-bucket rate limiting for movement and shop commands.
+    - **Memory Safety:** Switching to bounded channels to mitigate DoS from slow consumers.
+
+## 5. Client Experience
 
 ### 4.1 Rendering Engine
 - **Layering:** Background -> Checkerboard -> Grid -> Border -> Pieces -> Names.
@@ -50,7 +63,7 @@ The system is built using a modern Rust stack for both performance and type safe
 ### 4.2 Camera & Interaction
 - **Smooth Interpolation:** Pan and zoom use exponential smoothing for a "cinematic" feel.
 - **Death Camera:** Pans to the location of the King's defeat and dims the background with a 300ms fade.
-- **Fog of War:** Radial vision centered on the King; radius scales with `sqrt(piece_count)`. Vision is disabled upon death to show the full board.
+- **Fog of War (Client-Side Only):** The client provides radial vision centered on the King. Currently, the server broadcasts the **full** board state; a server-side implementation is planned to prevent data scraping of the entire world.
 
 ### 4.3 Network Stability
 - **Auto-Reconnection:** Client attempts to reconnect every 2 seconds if the WebSocket is lost.

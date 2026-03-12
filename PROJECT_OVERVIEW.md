@@ -26,22 +26,29 @@ The project is organized as a Cargo Workspace:
 ### Client (`client/`)
 - **Framework:** `Yew` with a `GameStateReducer` for state management.
 - **Rendering:** `web-sys` Canvas API for drawing the board and pieces.
+### Synchronization & Security
 - **Pmoves (Pre-moves):** The client supports queuing multiple moves. These are executed sequentially as cooldowns expire.
-- **Zooming:** Supports smooth, continuous zooming via the scroll wheel (0.2x to 2.0x), centered on the cursor position with exponential smoothing.
+- **Session Security:** Implemented a `session_secret` (UUID) system. When a player joins, they receive a secret token stored in local storage. Subsequent re-joins must provide this secret to prevent UUID hijacking.
 - **Synchronization:** The client receives periodic `UpdateState` messages and performs "aggressive cleanup" of the pre-move queue when the server confirms a piece's position.
 
-## 4. Current Status & Handoff (March 2026)
+## 4. Security & Performance Evaluation (March 2026)
+A comprehensive security audit identified several key areas for improvement:
+- **Session Integrity:** (Fixed) Added session secrets to prevent impersonation.
+- **Information Leakage:** The server currently broadcasts the entire game state to all players. A server-side "Fog of War" (spatial partitioning) is planned to limit data sent to the player's immediate vicinity.
+- **Protocol Robustness:** Potential vulnerabilities to JSON-based DoS and message spamming have been identified. Future work includes implementing message size limits and per-connection rate limiting.
+- **Memory Safety:** Transitioning from `unbounded_channel` to bounded channels is recommended to prevent memory exhaustion from slow/malicious clients.
+
+## 5. Current Status & Handoff (March 2026)
 ### Build & Test Status
-- `cargo check`: **PASSED** (with minor unused import warnings in `server/src/main.rs`).
-- `cargo test`: **PASSED** (all 15 tests across client, common, and server pass).
+- `cargo check`: **PASSED**.
+- `cargo test`: **PASSED** (all 17 tests pass, including new session hijack prevention tests).
 - **WASM Build:** `cargo check -p client --target wasm32-unknown-unknown` **PASSED**.
 
 ### Recent Progress
+- Implemented robust session secret validation to prevent player ID hijacking.
+- Updated all server test suites to support the new secure join protocol.
+- Performed a security audit and architectural evaluation.
 - Implemented robust pre-move queue handling with aggressive cleanup on server confirmation.
-- Added dynamic board resizing based on player count.
-- Implemented NPC roaming and shop spawning logic.
-- Verified movement and cooldown calculations with unit tests in `common/tests/logic_tests.rs`.
-
 ### Known Issues / Future Work
 - **Unused Warning:** `server/src/main.rs` has an unused `Html` import.
 - **NPC Intelligence:** NPCs currently move randomly. Future work could include basic AI/puzzles.
