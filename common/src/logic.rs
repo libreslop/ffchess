@@ -3,6 +3,17 @@ use crate::models::{PieceType, Piece, CooldownConfig};
 use std::collections::HashMap;
 use uuid::Uuid;
 
+pub fn calculate_board_size(player_count: usize) -> i32 {
+    // (starts at 40x40, scales with player count using a square-root formula up to 200x200).
+    // For the first 3 players, stay at 40.
+    if player_count <= 3 {
+        return 40;
+    }
+    // Hit ~200 at 100 players: 25 + sqrt(100) * 17.5 = 200
+    // We keep the original scaling but clamp to 40.
+    (25.0 + (player_count as f32).sqrt() * 17.5).clamp(40.0, 200.0) as i32
+}
+
 pub fn is_within_board(pos: IVec2, board_size: i32) -> bool {
     let half = board_size / 2;
     let limit_pos = (board_size + 1) / 2;

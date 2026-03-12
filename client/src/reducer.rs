@@ -4,7 +4,7 @@ use uuid::Uuid;
 use glam::IVec2;
 use std::rc::Rc;
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Default)]
 pub struct Pmove {
     pub piece_id: Uuid,
     pub target: IVec2,
@@ -13,11 +13,11 @@ pub struct Pmove {
     pub old_cooldown_ms: i64,
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Default)]
 pub struct GameStateReducer {
     pub state: GameState,
     pub player_id: Option<Uuid>,
-    pub error: Option<String>,
+    pub error: Option<GameError>,
     pub pm_queue: Vec<Pmove>,
     pub last_score: u64,
     pub last_kills: u32,
@@ -26,24 +26,6 @@ pub struct GameStateReducer {
     pub ping_ms: u64,
     pub fps: u32,
     pub disconnected: bool,
-}
-
-impl Default for GameStateReducer {
-    fn default() -> Self {
-        Self {
-            state: GameState::default(),
-            player_id: None,
-            error: None,
-            pm_queue: Vec::new(),
-            last_score: 0,
-            last_kills: 0,
-            last_captured: 0,
-            last_survival_secs: 0,
-            ping_ms: 0,
-            fps: 0,
-            disconnected: false,
-        }
-    }
 }
 
 pub enum GameAction {
@@ -56,7 +38,7 @@ pub enum GameAction {
         removed_players: Vec<Uuid>,
         board_size: i32,
     },
-    SetError(String),
+    SetError(GameError),
     GameOver { final_score: u64, kills: u32, pieces_captured: u32, time_survived_secs: u64 },
     AddPmove(Pmove),
     ClearPmQueue(Uuid),
@@ -109,27 +91,18 @@ impl Reducible for GameStateReducer {
                     next.state.players.insert(p.id, p); 
                 }
                 for mut p in pieces { 
-                    // Carry over local state for our own pieces since the server doesn't send it
-                    if p.owner_id == Some(player_id_val) {
-                        if let Some(old_p) = next.state.pieces.get(&p.id) {
-                            p.last_move_time = old_p.last_move_time;
-                            p.cooldown_ms = old_p.cooldown_ms;
-                        }
+                    if p.owner_id == Some(player_id_val)
+                        && let Some(old_p) = next.state.pieces.get(&p.id) {
+                        p.last_move_time = old_p.last_move_time;
+                        p.cooldown_ms = old_p.cooldown_ms;
                     }
 
-                    // Predicted State Protection:
-                    // If we have a pending move for this piece, don't let the server overwrite its position
-                    // with old data until the server confirms it's at the new location.
-                    if let Some(pm) = next.pm_queue.iter().find(|pm| pm.piece_id == p.id && pm.pending) {
-                        if p.position != pm.target {
-                            // Server hasn't seen our move yet, keep our local prediction
-                            if let Some(old_p) = next.state.pieces.get(&p.id) {
-                                p.position = old_p.position;
-                            }
-                        }
+                    if let Some(pm) = next.pm_queue.iter().find(|pm| pm.piece_id == p.id && pm.pending)
+                        && p.position != pm.target
+                        && let Some(old_p) = next.state.pieces.get(&p.id) {
+                        p.position = old_p.position;
                     }
 
-                    // Robust cleanup: remove the match AND any preceding moves for this piece
                     if let Some(match_idx) = next.pm_queue.iter().rposition(|pm| pm.piece_id == p.id && pm.target == p.position) {
                         let mut i = 0;
                         let mut threshold = match_idx;
@@ -156,19 +129,16 @@ impl Reducible for GameStateReducer {
             }
             GameAction::SetError(e) => {
                 next.error = Some(e.clone());
-                if e.contains("cooldown") {
+                if matches!(e, GameError::OnCooldown) {
                     for pm in next.pm_queue.iter_mut() {
                         pm.pending = false;
                     }
                 } else {
-                    // Revert cooldowns for all pending moves that were in the queue
-                    // Use reverse order to ensure we revert to the absolute oldest state for a piece
                     for pm in next.pm_queue.iter().rev() {
-                        if pm.pending {
-                            if let Some(p) = next.state.pieces.get_mut(&pm.piece_id) {
-                                p.last_move_time = pm.old_last_move_time;
-                                p.cooldown_ms = pm.old_cooldown_ms;
-                            }
+                        if pm.pending
+                            && let Some(p) = next.state.pieces.get_mut(&pm.piece_id) {
+                            p.last_move_time = pm.old_last_move_time;
+                            p.cooldown_ms = pm.old_cooldown_ms;
                         }
                     }
                     next.pm_queue.clear();
@@ -198,22 +168,20 @@ impl Reducible for GameStateReducer {
                         processed_pieces.insert(pm.piece_id);
                         continue;
                     }
-                    if let Some(piece) = next.state.pieces.get(&pm.piece_id) {
-                        if now >= piece.last_move_time + piece.cooldown_ms + 50 {
-                            let _ = tx.0.send(ClientMessage::MovePiece { 
-                                piece_id: pm.piece_id, 
-                                target: pm.target 
-                            });
-                            pm.pending = true;
-                            processed_pieces.insert(pm.piece_id);
+                    if let Some(piece) = next.state.pieces.get(&pm.piece_id)
+                        && now >= piece.last_move_time + piece.cooldown_ms + 50 {
+                        let _ = tx.0.send(ClientMessage::MovePiece { 
+                            piece_id: pm.piece_id, 
+                            target: pm.target 
+                        });
+                        pm.pending = true;
+                        processed_pieces.insert(pm.piece_id);
 
-                            // Update local state for immediate visual feedback
-                            if let Some(p) = next.state.pieces.get_mut(&pm.piece_id) {
-                                pm.old_last_move_time = p.last_move_time;
-                                pm.old_cooldown_ms = p.cooldown_ms;
-                                p.cooldown_ms = calculate_cooldown(p.piece_type, p.position, pm.target, &next.state.cooldown_config);
-                                p.last_move_time = now;
-                            }
+                        if let Some(p) = next.state.pieces.get_mut(&pm.piece_id) {
+                            pm.old_last_move_time = p.last_move_time;
+                            pm.old_cooldown_ms = p.cooldown_ms;
+                            p.cooldown_ms = calculate_cooldown(p.piece_type, p.position, pm.target, &next.state.cooldown_config);
+                            p.last_move_time = now;
                         }
                     }
                 }

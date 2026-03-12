@@ -6,6 +6,7 @@ use common::*;
 use glam::IVec2;
 use uuid::Uuid;
 use std::collections::HashMap;
+use crate::reducer::Pmove;
 
 pub struct Renderer {
     pub ctx: CanvasRenderingContext2d,
@@ -13,6 +14,16 @@ pub struct Renderer {
     pub height: f64,
     pub tile_size: f64,
     pub zoom: f64,
+}
+
+struct PieceDrawParams<'a> {
+    piece: &'a Piece,
+    player_id: Uuid,
+    offset_x: f64,
+    offset_y: f64,
+    alpha: f64,
+    state: &'a GameState,
+    draw_name: bool,
 }
 
 impl Renderer {
@@ -38,7 +49,7 @@ impl Renderer {
         state: &GameState, 
         player_id: Uuid, 
         selected_piece_id: Option<Uuid>, 
-        pm_queue: &[crate::Pmove], 
+        pm_queue: &[Pmove], 
         ghost_pieces: &HashMap<Uuid, Piece>,
         camera_pos: (f64, f64) // Pixel coords in world
     ) {
@@ -167,7 +178,9 @@ impl Renderer {
         // Real pieces
         for piece in state.pieces.values() {
             if (piece.position - king_pos).abs().max_element() <= view_radius_squares + 2 {
-                self.draw_piece(piece, player_id, offset_x, offset_y, 1.0, state, false);
+                self.draw_piece(PieceDrawParams {
+                    piece, player_id, offset_x, offset_y, alpha: 1.0, state, draw_name: false
+                });
             }
         }
 
@@ -175,7 +188,9 @@ impl Renderer {
         for (id, ghost) in ghost_pieces {
             if let Some(real) = state.pieces.get(id)
                 && real.position != ghost.position {
-                self.draw_piece(ghost, player_id, offset_x, offset_y, 0.4, state, false);
+                self.draw_piece(PieceDrawParams {
+                    piece: ghost, player_id, offset_x, offset_y, alpha: 0.4, state, draw_name: false
+                });
             }
         }
 
@@ -204,49 +219,47 @@ impl Renderer {
         }
     }
 
-    fn draw_piece(&self, piece: &Piece, player_id: Uuid, offset_x: f64, offset_y: f64, alpha: f64, state: &GameState, draw_name: bool) {
-        let color = if piece.owner_id == Some(player_id) {
+    fn draw_piece(&self, params: PieceDrawParams) {
+        let color = if params.piece.owner_id == Some(params.player_id) {
             "rgba(0, 0, 255, "
-        } else if piece.owner_id.is_none() {
+        } else if params.piece.owner_id.is_none() {
             "rgba(85, 85, 85, "
         } else {
             "rgba(255, 0, 0, "
         };
-        let final_color = format!("{}{})", color, alpha);
+        let final_color = format!("{}{})", color, params.alpha);
 
         self.ctx.set_fill_style(&JsValue::from_str(&final_color));
         self.ctx.begin_path();
-        let _ = self.ctx.arc(piece.position.x as f64 * self.tile_size + offset_x + self.tile_size / 2.0, piece.position.y as f64 * self.tile_size + offset_y + self.tile_size / 2.0, self.tile_size / 3.0, 0.0, std::f64::consts::TAU);
+        let _ = self.ctx.arc(params.piece.position.x as f64 * self.tile_size + params.offset_x + self.tile_size / 2.0, params.piece.position.y as f64 * self.tile_size + params.offset_y + self.tile_size / 2.0, self.tile_size / 3.0, 0.0, std::f64::consts::TAU);
         self.ctx.fill();
 
-        self.ctx.set_fill_style(&JsValue::from_str(&format!("rgba(255, 255, 255, {})", alpha)));
+        self.ctx.set_fill_style(&JsValue::from_str(&format!("rgba(255, 255, 255, {})", params.alpha)));
         let font_size = 16.0 * self.zoom;
         self.ctx.set_font(&format!("bold {}px Arbutus", font_size));
-        let label = match piece.piece_type {
+        let label = match params.piece.piece_type {
             PieceType::King => "K", PieceType::Queen => "Q", PieceType::Rook => "R", PieceType::Bishop => "B", PieceType::Knight => "N", PieceType::Pawn => "P",
         };
-        let _ = self.ctx.fill_text(label, piece.position.x as f64 * self.tile_size + offset_x + self.tile_size / 2.0 - (5.0 * self.zoom), piece.position.y as f64 * self.tile_size + offset_y + self.tile_size / 2.0 + (6.0 * self.zoom));
+        let _ = self.ctx.fill_text(label, params.piece.position.x as f64 * self.tile_size + params.offset_x + self.tile_size / 2.0 - (5.0 * self.zoom), params.piece.position.y as f64 * self.tile_size + params.offset_y + self.tile_size / 2.0 + (6.0 * self.zoom));
 
-        if alpha >= 1.0 && piece.owner_id == Some(player_id) {
+        if params.alpha >= 1.0 && params.piece.owner_id == Some(params.player_id) {
             let now = chrono::Utc::now().timestamp_millis();
-            let elapsed = now - piece.last_move_time;
-            if elapsed < piece.cooldown_ms {
-                let progress = elapsed as f64 / piece.cooldown_ms as f64;
+            let elapsed = now - params.piece.last_move_time;
+            if elapsed < params.piece.cooldown_ms {
+                let progress = elapsed as f64 / params.piece.cooldown_ms as f64;
                 self.ctx.set_fill_style(&JsValue::from_str("#000"));
                 let bar_h = 4.0 * self.zoom;
                 let bar_margin = 5.0 * self.zoom;
                 let bar_y_offset = self.tile_size - (8.0 * self.zoom);
                 
-                self.ctx.fill_rect(piece.position.x as f64 * self.tile_size + offset_x + bar_margin, piece.position.y as f64 * self.tile_size + offset_y + bar_y_offset, self.tile_size - (bar_margin * 2.0), bar_h);
+                self.ctx.fill_rect(params.piece.position.x as f64 * self.tile_size + params.offset_x + bar_margin, params.piece.position.y as f64 * self.tile_size + params.offset_y + bar_y_offset, self.tile_size - (bar_margin * 2.0), bar_h);
                 self.ctx.set_fill_style(&JsValue::from_str("#0f0"));
-                self.ctx.fill_rect(piece.position.x as f64 * self.tile_size + offset_x + bar_margin, piece.position.y as f64 * self.tile_size + offset_y + bar_y_offset, (self.tile_size - (bar_margin * 2.0)) * progress, bar_h);
+                self.ctx.fill_rect(params.piece.position.x as f64 * self.tile_size + params.offset_x + bar_margin, params.piece.position.y as f64 * self.tile_size + params.offset_y + bar_y_offset, (self.tile_size - (bar_margin * 2.0)) * progress, bar_h);
             }
         }
         
-        if alpha >= 1.0 {
-            if draw_name {
-                self.draw_piece_name(piece, offset_x, offset_y, alpha, state);
-            }
+        if params.alpha >= 1.0 && params.draw_name {
+            self.draw_piece_name(params.piece, params.offset_x, params.offset_y, params.alpha, params.state);
         }
     }
 

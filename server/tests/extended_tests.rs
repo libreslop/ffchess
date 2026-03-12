@@ -152,7 +152,7 @@ async fn test_king_can_only_recruit_pawns() {
     // 1. Try to upgrade King - should fail
     let result = state.handle_shop_buy(player_id, king_pos, PieceType::Queen).await;
     assert!(result.is_err());
-    assert_eq!(result.unwrap_err(), "The King can only use the shop to recruit Pawns");
+    assert_eq!(result.unwrap_err(), GameError::KingRestrictedShop);
 
     // 2. Try to recruit Pawn with King - should succeed
     state.handle_shop_buy(player_id, king_pos, PieceType::Pawn).await.expect("Should succeed");

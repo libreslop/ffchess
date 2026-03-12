@@ -4,34 +4,36 @@ use uuid::Uuid;
 use glam::IVec2;
 
 impl ServerState {
-    pub async fn handle_shop_buy(&self, player_id: Uuid, shop_pos: IVec2, piece_type: PieceType) -> Result<(), String> {
+    pub async fn handle_shop_buy(&self, player_id: Uuid, shop_pos: IVec2, piece_type: PieceType) -> Result<(), GameError> {
         let mut game = self.game.write().await;
 
         // 1. Find the player's piece on the shop square
-        let piece = game.pieces.values()
+        let piece_id = game.pieces.values()
             .find(|p| p.position == shop_pos && p.owner_id == Some(player_id))
-            .ok_or("No piece on shop square")?;
+            .map(|p| p.id)
+            .ok_or(GameError::NoPieceOnShop)?;
         
-        let piece_id = piece.id;
-        let is_king = piece.piece_type == PieceType::King;
+        let is_king = game.pieces.get(&piece_id)
+            .map(|p| p.piece_type == PieceType::King)
+            .unwrap_or(false);
 
         if is_king && piece_type != PieceType::Pawn {
-            return Err("The King can only use the shop to recruit Pawns".to_string());
+            return Err(GameError::KingRestrictedShop);
         }
 
         // 2. Cost calculation
         let player_piece_count = game.pieces.values().filter(|p| p.owner_id == Some(player_id)).count();
         let cost = get_upgrade_cost(piece_type, player_piece_count);
-        let shop_idx = game.shops.iter().position(|s| s.position == shop_pos).ok_or("Shop not found")?;
+        let shop_idx = game.shops.iter().position(|s| s.position == shop_pos).ok_or(GameError::ShopNotFound)?;
 
         if game.shops[shop_idx].uses_remaining == 0 {
-            return Err("Shop is depleted".to_string());
+            return Err(GameError::ShopDepleted);
         }
 
         // 3. Score check
-        let player = game.players.get_mut(&player_id).ok_or("Player not found")?;
+        let player = game.players.get_mut(&player_id).ok_or(GameError::PlayerNotFound)?;
         if player.score < cost {
-            return Err(format!("Insufficient score. Need {}, have {}", cost, player.score));
+            return Err(GameError::InsufficientScore { needed: cost, have: player.score });
         }
 
         // 4. Execution
@@ -45,8 +47,10 @@ impl ServerState {
             
             // Search in expanding rings
             'outer: for r in 1..5 {
-                for dx in (-r..=r).map(|x| x as i32) {
-                    for dy in (-r..=r).map(|y| y as i32) {
+                for dx in -r..=r {
+                    let dx: i32 = dx;
+                    for dy in -r..=r {
+                        let dy: i32 = dy;
                         if dx.abs() != r && dy.abs() != r { continue; }
                         let p = shop_pos + IVec2::new(dx, dy);
                         if is_within_board(p, board_size) && !game.pieces.values().any(|pc| pc.position == p) {
@@ -57,7 +61,7 @@ impl ServerState {
                 }
             }
 
-            let final_spawn_pos = spawn_pos.ok_or("No free space nearby to spawn pawn")?;
+            let final_spawn_pos = spawn_pos.ok_or(GameError::NoSpaceNearby)?;
             let new_id = Uuid::new_v4();
             game.pieces.insert(new_id, Piece {
                 id: new_id,

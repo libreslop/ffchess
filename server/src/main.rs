@@ -1,14 +1,9 @@
-mod state;
-mod handlers;
-mod npc;
-mod state_extensions;
-
 use axum::{
     routing::get,
     Router,
 };
 use std::sync::Arc;
-use crate::state::ServerState;
+use server::state::ServerState;
 use tower_http::{
     cors::CorsLayer,
     services::ServeDir,
@@ -36,7 +31,7 @@ async fn main() {
     // Serve the API routes under "/api"
     let app = Router::new()
         .route("/ping", get(|| async { "pong" }))
-        .nest("/api", Router::new().route("/ws", get(handlers::ws_handler)))
+        .nest("/api", Router::new().route("/ws", get(server::handlers::ws_handler)))
         .fallback_service(ServeDir::new("client/dist"))
         .with_state(state)
         .layer(TraceLayer::new_for_http())
@@ -49,6 +44,6 @@ async fn main() {
 
     let addr = format!("0.0.0.0:{}", port);
     let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
-    println!("[INFO] FFchess listening on :{}", port);
+    tracing::info!("FFchess listening on :{}", port);
     axum::serve(listener, app).await.unwrap();
 }

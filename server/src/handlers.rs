@@ -50,7 +50,7 @@ async fn handle_socket(socket: WebSocket, state: Arc<ServerState>) {
                 Ok(client_msg) => {
                     match client_msg {
                         ClientMessage::Join { name, kit, player_id: pid } => {
-                            println!("[JOIN] {} ({:?})", name, kit);
+                            tracing::info!(?name, ?kit, ?pid, "Player joining");
                             // Remove anonymous channel
                             state.player_channels.write().await.remove(&conn_id);
                             
@@ -67,12 +67,14 @@ async fn handle_socket(socket: WebSocket, state: Arc<ServerState>) {
                         ClientMessage::MovePiece { piece_id, target } => {
                             if let Some(pid) = player_id
                                 && let Err(e) = state.handle_move(pid, piece_id, target).await {
+                                tracing::warn!(?pid, ?piece_id, ?target, error = %e, "Invalid move");
                                 let _ = tx.send(ServerMessage::Error(e));
                             }
                         }
                         ClientMessage::BuyPiece { shop_pos, piece_type } => {
                             if let Some(pid) = player_id
                                 && let Err(e) = state.handle_shop_buy(pid, shop_pos, piece_type).await {
+                                tracing::warn!(?pid, ?shop_pos, ?piece_type, error = %e, "Shop buy failed");
                                 let _ = tx.send(ServerMessage::Error(e));
                             }
                         }
@@ -82,14 +84,14 @@ async fn handle_socket(socket: WebSocket, state: Arc<ServerState>) {
                     }
                 }
                 Err(e) => {
-                    println!("[ERR] Failed to parse: {} | {}", text, e);
+                    tracing::error!(?text, error = %e, "Failed to parse client message");
                 }
             }
         }
     }
 
     if let Some(pid) = player_id {
-        println!("[LEAVE] Player {}", pid);
+        tracing::info!(?pid, "Player leaving");
         state.remove_player(pid).await;
         state.player_channels.write().await.remove(&pid);
     } else {
