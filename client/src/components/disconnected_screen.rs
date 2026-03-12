@@ -13,7 +13,7 @@ pub fn disconnected_screen(props: &DisconnectedScreenProps) -> Html {
     }
 
     html! {
-        <div style={format!("position: absolute; inset: 0; background: #ef4444; z-index: 300; display: flex; align-items: center; justify-content: center; transition: opacity 0.3s ease-out; animation: simpleFadeIn 0.3s ease-out; opacity: {}; pointer-events: {};", 
+        <div style={format!("position: absolute; inset: 0; background: #ef4444; z-index: 300; display: flex; align-items: center; justify-content: center; transition: opacity 0.3s ease-out; animation: simpleFadeIn 0.3s ease-out; opacity: {}; pointer-events: {};",
             if props.disconnected { "1" } else { "0" },
             if props.disconnected { "all" } else { "none" }
         )}>

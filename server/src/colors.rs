@@ -1,6 +1,6 @@
+use rand::Rng;
 use std::collections::HashMap;
 use uuid::Uuid;
-use rand::Rng;
 
 pub const PREFERRED_COLORS: &[&str] = &[
     "#2563eb", // Blue
@@ -37,7 +37,10 @@ impl ColorManager {
         }
 
         let now = chrono::Utc::now().timestamp();
-        let active_colors: Vec<String> = active_player_ids.iter().filter_map(|id| self.player_colors.get(id).cloned()).collect();
+        let active_colors: Vec<String> = active_player_ids
+            .iter()
+            .filter_map(|id| self.player_colors.get(id).cloned())
+            .collect();
 
         for &c in PREFERRED_COLORS {
             let color = c.to_string();
@@ -51,7 +54,8 @@ impl ColorManager {
         for &c in PREFERRED_COLORS {
             let color = c.to_string();
             if let Some(&last_active) = self.color_last_active.get(&color)
-                && now - last_active > 300 {
+                && now - last_active > 300
+            {
                 self.player_colors.insert(player_id, color.clone());
                 self.color_last_active.insert(color.clone(), now);
                 return color;

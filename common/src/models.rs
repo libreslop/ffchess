@@ -1,7 +1,7 @@
-use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 use glam::IVec2;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use uuid::Uuid;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum PieceType {
@@ -24,8 +24,20 @@ pub enum KitType {
 impl KitType {
     pub fn get_pieces(&self) -> Vec<PieceType> {
         match self {
-            KitType::Standard => vec![PieceType::Pawn, PieceType::Pawn, PieceType::Knight, PieceType::Knight],
-            KitType::Shield => vec![PieceType::Pawn, PieceType::Pawn, PieceType::Pawn, PieceType::Pawn, PieceType::Pawn, PieceType::Pawn],
+            KitType::Standard => vec![
+                PieceType::Pawn,
+                PieceType::Pawn,
+                PieceType::Knight,
+                PieceType::Knight,
+            ],
+            KitType::Shield => vec![
+                PieceType::Pawn,
+                PieceType::Pawn,
+                PieceType::Pawn,
+                PieceType::Pawn,
+                PieceType::Pawn,
+                PieceType::Pawn,
+            ],
             KitType::Scout => vec![PieceType::Pawn, PieceType::Bishop, PieceType::Bishop],
             KitType::Tank => vec![PieceType::Rook],
         }

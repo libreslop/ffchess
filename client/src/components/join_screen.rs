@@ -1,5 +1,5 @@
-use yew::prelude::*;
 use common::models::KitType;
+use yew::prelude::*;
 
 #[derive(Properties, PartialEq)]
 pub struct JoinScreenProps {
@@ -19,14 +19,14 @@ pub fn join_screen(props: &JoinScreenProps) -> Html {
             <div style="position: absolute; inset: 0; background: rgba(0,0,0,0.6); z-index: 90;"></div>
             <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 100; text-align: center; width: 400px; padding: 30px;">
                 <h1 style="margin-top: 0; color: #fff; font-size: 4em; letter-spacing: 4px; text-shadow: 0 4px 8px rgba(0,0,0,0.5);">{"FFCHESS"}</h1>
-                
+
                 if props.join_step == 0 {
                     <form onsubmit={props.on_name_submit.clone()}>
                         <div style="display: flex; flex-direction: column; gap: 15px; align-items: center;">
                             <input type="text" name="player_name" value={props.player_name.clone()} oninput={props.on_name_input.clone()} placeholder="This is a tale of..." autofocus=true
                                 style="padding: 12px 20px; border-radius: 0; border: 2px solid #cbd5e1; width: 100%; box-sizing: border-box; font-size: 1.2em; outline: none; background: #fff; text-align: center;"/>
                             <button type="submit" disabled={props.landing_cooldown > 0}
-                                style={format!("padding: 10px 40px; background: {}; color: #fff; border: 3px solid {}; border-radius: 0; font-weight: 900; cursor: {}; font-size: 1.2em; width: auto; text-transform: uppercase; letter-spacing: 1px;", 
+                                style={format!("padding: 10px 40px; background: {}; color: #fff; border: 3px solid {}; border-radius: 0; font-weight: 900; cursor: {}; font-size: 1.2em; width: auto; text-transform: uppercase; letter-spacing: 1px;",
                                     if props.landing_cooldown > 0 { "#94a3b8" } else { "#3b82f6" },
                                     if props.landing_cooldown > 0 { "#64748b" } else { "#1e3a8a" },
                                     if props.landing_cooldown > 0 { "not-allowed" } else { "pointer" })}>
@@ -41,7 +41,7 @@ pub fn join_screen(props: &JoinScreenProps) -> Html {
                 } else {
                     <div style="animation: fadeIn 0.3s ease-out; display: flex; flex-direction: column; align-items: center;">
                         <h3 style="color: #fff; margin-bottom: 25px; text-transform: uppercase; letter-spacing: 2px; text-shadow: 0 2px 4px rgba(0,0,0,0.3);">{"CHOOSE YOUR ARMY"}</h3>
-                        
+
                         if let Some(error) = &props.error {
                             <div style="margin-bottom: 20px; color: #ef4444; background: rgba(255,255,255,0.9); padding: 10px 20px; border-radius: 4px; font-weight: bold;">
                                 { error.to_string() }

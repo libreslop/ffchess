@@ -1,22 +1,23 @@
-mod reducer;
+mod camera;
 mod canvas;
 mod components;
+mod reducer;
 mod utils;
 
-use wasm_bindgen::JsCast;
-use yew::prelude::*;
 pub use common::*;
-use reducer::{GameStateReducer, GameAction, MsgSender};
-use components::{GameView, JoinScreen, Leaderboard, DefeatScreen, ErrorToast, DisconnectedScreen};
-use utils::*;
-use gloo_net::websocket::{futures::WebSocket, Message};
-use futures_util::{StreamExt, SinkExt};
-use wasm_bindgen_futures::spawn_local;
-use tokio::sync::mpsc;
-use std::rc::Rc;
-use uuid::Uuid;
-use gloo_timers::callback::{Interval, Timeout};
+use components::{DefeatScreen, DisconnectedScreen, ErrorToast, GameView, JoinScreen, Leaderboard};
+use futures_util::{SinkExt, StreamExt};
 use gloo_events::EventListener;
+use gloo_net::websocket::{Message, futures::WebSocket};
+use gloo_timers::callback::{Interval, Timeout};
+use reducer::{GameAction, GameStateReducer, MsgSender};
+use std::rc::Rc;
+use tokio::sync::mpsc;
+use utils::*;
+use uuid::Uuid;
+use wasm_bindgen::JsCast;
+use wasm_bindgen_futures::spawn_local;
+use yew::prelude::*;
 
 #[function_component(App)]
 pub fn app() -> Html {
@@ -43,7 +44,7 @@ pub fn app() -> Html {
             }
         });
     }
-    
+
     let landing_cooldown = use_state(|| {
         let ts = get_death_timestamp();
         let now = js_sys::Date::now() as i64 / 1000;
@@ -63,7 +64,7 @@ pub fn app() -> Html {
                 let lr = lc_ref.clone();
                 interval = Some(Interval::new(1000, move || {
                     let mut cur = *lr.borrow();
-                    if cur > 0 { 
+                    if cur > 0 {
                         cur -= 1;
                         *lr.borrow_mut() = cur;
                         lc_inner.set(cur);
@@ -93,21 +94,33 @@ pub fn app() -> Html {
             });
 
             let listener_reducer_ref = reducer_ref.clone();
-            let current_ws_tx = Rc::new(std::cell::RefCell::new(None::<mpsc::UnboundedSender<Message>>));
-            
+            let current_ws_tx = Rc::new(std::cell::RefCell::new(
+                None::<mpsc::UnboundedSender<Message>>,
+            ));
+
             let sender_ws_tx = current_ws_tx.clone();
             let sender_reducer_ref = reducer_ref.clone();
             spawn_local(async move {
                 while let Some(msg) = client_rx.recv().await {
                     let maybe_tx = sender_ws_tx.borrow().clone();
                     if let Some(tx) = maybe_tx {
-                        if tx.send(Message::Text(serde_json::to_string(&msg).unwrap())).is_err()
-                            && !sender_reducer_ref.borrow().disconnected {
-                            sender_reducer_ref.borrow().clone().dispatch(GameAction::SetDisconnected(true));
+                        if tx
+                            .send(Message::Text(serde_json::to_string(&msg).unwrap()))
+                            .is_err()
+                            && !sender_reducer_ref.borrow().disconnected
+                        {
+                            sender_reducer_ref
+                                .borrow()
+                                .clone()
+                                .dispatch(GameAction::SetDisconnected(true));
                         }
                     } else if !matches!(msg, ClientMessage::Ping(_))
-                        && !sender_reducer_ref.borrow().disconnected {
-                        sender_reducer_ref.borrow().clone().dispatch(GameAction::SetDisconnected(true));
+                        && !sender_reducer_ref.borrow().disconnected
+                    {
+                        sender_reducer_ref
+                            .borrow()
+                            .clone()
+                            .dispatch(GameAction::SetDisconnected(true));
                     }
                 }
             });
@@ -115,15 +128,19 @@ pub fn app() -> Html {
             spawn_local(async move {
                 let window = web_sys::window().unwrap();
                 let host = window.location().host().unwrap();
-                let protocol = if window.location().protocol().unwrap() == "https:" { "wss:" } else { "ws:" };
+                let protocol = if window.location().protocol().unwrap() == "https:" {
+                    "wss:"
+                } else {
+                    "ws:"
+                };
                 let ws_url = format!("{}//{}/api/ws", protocol, host);
-                
+
                 loop {
                     if let Ok(ws) = WebSocket::open(&ws_url) {
                         let (mut write, mut read) = ws.split();
                         let (internal_tx, mut internal_rx) = mpsc::unbounded_channel::<Message>();
                         *current_ws_tx.borrow_mut() = Some(internal_tx);
-                        
+
                         spawn_local(async move {
                             while let Some(m) = internal_rx.recv().await {
                                 let _ = write.send(m).await;
@@ -132,21 +149,54 @@ pub fn app() -> Html {
 
                         while let Some(msg) = read.next().await {
                             if let Ok(Message::Text(text)) = msg
-                                && let Ok(server_msg) = serde_json::from_str::<ServerMessage>(&text) {
-                                listener_reducer_ref.borrow().clone().dispatch(match server_msg {
-                                    ServerMessage::Init { player_id, state } => GameAction::SetInit { player_id, state },
-                                    ServerMessage::UpdateState { players, pieces, shops, removed_pieces, removed_players, board_size } => GameAction::UpdateState { players, pieces, shops, removed_pieces, removed_players, board_size },
-                                    ServerMessage::Error(e) => GameAction::SetError(e),
-                                    ServerMessage::GameOver { final_score, kills, pieces_captured, time_survived_secs } => GameAction::GameOver { final_score, kills, pieces_captured, time_survived_secs },
-                                    ServerMessage::Pong(t) => GameAction::Pong(t),
-                                });
+                                && let Ok(server_msg) = serde_json::from_str::<ServerMessage>(&text)
+                            {
+                                listener_reducer_ref
+                                    .borrow()
+                                    .clone()
+                                    .dispatch(match server_msg {
+                                        ServerMessage::Init { player_id, state } => {
+                                            GameAction::SetInit { player_id, state }
+                                        }
+                                        ServerMessage::UpdateState {
+                                            players,
+                                            pieces,
+                                            shops,
+                                            removed_pieces,
+                                            removed_players,
+                                            board_size,
+                                        } => GameAction::UpdateState {
+                                            players,
+                                            pieces,
+                                            shops,
+                                            removed_pieces,
+                                            removed_players,
+                                            board_size,
+                                        },
+                                        ServerMessage::Error(e) => GameAction::SetError(e),
+                                        ServerMessage::GameOver {
+                                            final_score,
+                                            kills,
+                                            pieces_captured,
+                                            time_survived_secs,
+                                        } => GameAction::GameOver {
+                                            final_score,
+                                            kills,
+                                            pieces_captured,
+                                            time_survived_secs,
+                                        },
+                                        ServerMessage::Pong(t) => GameAction::Pong(t),
+                                    });
                             }
                         }
                         *current_ws_tx.borrow_mut() = None;
                     }
-                    
+
                     if !listener_reducer_ref.borrow().disconnected {
-                        listener_reducer_ref.borrow().clone().dispatch(GameAction::SetDisconnected(true));
+                        listener_reducer_ref
+                            .borrow()
+                            .clone()
+                            .dispatch(GameAction::SetDisconnected(true));
                     }
                     gloo_timers::future::TimeoutFuture::new(2000).await;
                 }
@@ -162,9 +212,15 @@ pub fn app() -> Html {
         let has_interacted = has_interacted.clone();
         Callback::from(move |kit: KitType| {
             has_interacted.set(true);
-            if reducer.disconnected { return; }
+            if reducer.disconnected {
+                return;
+            }
             if let Some(sender) = (*tx).as_ref() {
-                let _ = sender.0.send(ClientMessage::Join { name: (*player_name).clone(), kit, player_id: None });
+                let _ = sender.0.send(ClientMessage::Join {
+                    name: (*player_name).clone(),
+                    kit,
+                    player_id: None,
+                });
             }
         })
     };
@@ -172,7 +228,10 @@ pub fn app() -> Html {
     let on_name_input = {
         let player_name = player_name.clone();
         Callback::from(move |e: InputEvent| {
-            player_name.set(e.target_unchecked_into::<web_sys::HtmlInputElement>().value());
+            player_name.set(
+                e.target_unchecked_into::<web_sys::HtmlInputElement>()
+                    .value(),
+            );
         })
     };
 
@@ -185,7 +244,9 @@ pub fn app() -> Html {
         Callback::from(move |e: SubmitEvent| {
             e.prevent_default();
             has_interacted.set(true);
-            if reducer.disconnected || *landing_cooldown > 0 { return; }
+            if reducer.disconnected || *landing_cooldown > 0 {
+                return;
+            }
             let mut name = (*player_name).trim().to_string();
             if name.is_empty() {
                 name = generate_random_name();
@@ -200,7 +261,7 @@ pub fn app() -> Html {
     let player_id = reducer.player_id.unwrap_or_else(Uuid::nil);
     let player = reducer.state.players.get(&player_id);
     let is_dead = is_joined && player.is_none();
-    
+
     let rejoin_cooldown = use_state(|| 5);
     let rc_ref = use_mut_ref(|| 5);
     {
@@ -235,8 +296,13 @@ pub fn app() -> Html {
         Callback::from(move |_| {
             if *rc_ref.borrow() == 0 {
                 has_interacted.set(true);
-                if reducer.disconnected { return; }
-                reducer.dispatch(GameAction::SetInit { player_id: Uuid::nil(), state: reducer.state.clone() });
+                if reducer.disconnected {
+                    return;
+                }
+                reducer.dispatch(GameAction::SetInit {
+                    player_id: Uuid::nil(),
+                    state: reducer.state.clone(),
+                });
                 join_step.set(1);
             }
         })
@@ -253,8 +319,7 @@ pub fn app() -> Html {
             let reducer = reducer.clone();
             let listener = EventListener::new(&web_sys::window().unwrap(), "keydown", move |e| {
                 let e = e.dyn_ref::<web_sys::KeyboardEvent>().unwrap();
-                if e.key() == "Enter" && !reducer.disconnected
-                    && is_dead && *rc_ref.borrow() == 0 {
+                if e.key() == "Enter" && !reducer.disconnected && is_dead && *rc_ref.borrow() == 0 {
                     on_rejoin.emit(MouseEvent::new("click").unwrap());
                 }
             });
@@ -270,7 +335,7 @@ pub fn app() -> Html {
                 @keyframes fadeInOut { 0% { opacity: 0; transform: translate(-50%, 20px); } 15% { opacity: 1; transform: translate(-50%, 0); } 85% { opacity: 1; transform: translate(-50%, 0); } 100% { opacity: 0; transform: translate(-50%, -20px); } }
                 @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
             "}</style>
-            
+
             if let Some(sender) = (*tx).clone() {
                 <GameView key={player_id.to_string()} reducer={reducer.clone()} tx={sender} />
             } else if !*show_disconnected || !*has_interacted {
@@ -291,14 +356,14 @@ pub fn app() -> Html {
                     <Leaderboard players={reducer.state.players.values().cloned().collect::<Vec<_>>()} self_id={player_id} />
                 }
             } else if tx.is_some() {
-                <JoinScreen 
-                    player_name={(*player_name).clone()} 
-                    on_name_input={on_name_input} 
-                    on_name_submit={on_name_submit} 
-                    landing_cooldown={*landing_cooldown} 
-                    join_step={*join_step} 
-                    on_join={on_join} 
-                    error={reducer.error.clone()} 
+                <JoinScreen
+                    player_name={(*player_name).clone()}
+                    on_name_input={on_name_input}
+                    on_name_submit={on_name_submit}
+                    landing_cooldown={*landing_cooldown}
+                    join_step={*join_step}
+                    on_join={on_join}
+                    error={reducer.error.clone()}
                 />
             }
 

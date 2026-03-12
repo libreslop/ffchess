@@ -1,5 +1,5 @@
+use crate::models::{CooldownConfig, Piece, PieceType};
 use glam::IVec2;
-use crate::models::{PieceType, Piece, CooldownConfig};
 use std::collections::HashMap;
 use uuid::Uuid;
 
@@ -31,9 +31,14 @@ pub fn get_piece_base_cooldown(piece_type: PieceType) -> i64 {
     }
 }
 
-pub fn calculate_cooldown(piece_type: PieceType, start: IVec2, end: IVec2, config: &CooldownConfig) -> i64 {
+pub fn calculate_cooldown(
+    piece_type: PieceType,
+    start: IVec2,
+    end: IVec2,
+    config: &CooldownConfig,
+) -> i64 {
     let distance = (end - start).as_vec2().length() as f64;
-    
+
     match piece_type {
         PieceType::Pawn => config.pawn_base,
         PieceType::Knight => config.knight_base,
@@ -63,7 +68,9 @@ pub fn is_valid_chess_move(
         PieceType::Queen => (abs_diff.x == abs_diff.y) || (diff.x == 0 || diff.y == 0),
         PieceType::Rook => diff.x == 0 || diff.y == 0,
         PieceType::Bishop => abs_diff.x == abs_diff.y,
-        PieceType::Knight => (abs_diff.x == 1 && abs_diff.y == 2) || (abs_diff.x == 2 && abs_diff.y == 1),
+        PieceType::Knight => {
+            (abs_diff.x == 1 && abs_diff.y == 2) || (abs_diff.x == 2 && abs_diff.y == 1)
+        }
         PieceType::Pawn => {
             if is_capture {
                 // Pawns capture in any of the 4 diagonal directions

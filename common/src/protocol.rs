@@ -1,8 +1,8 @@
-use serde::{Deserialize, Serialize};
-use uuid::Uuid;
+use crate::models::{GameState, KitType, Piece, PieceType, Player, Shop};
 use glam::IVec2;
-use crate::models::{PieceType, GameState, Player, Piece, Shop, KitType};
+use serde::{Deserialize, Serialize};
 use std::fmt;
+use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum GameError {
@@ -36,7 +36,9 @@ impl fmt::Display for GameError {
             Self::ShopNotFound => write!(f, "Shop not found at this position"),
             Self::ShopDepleted => write!(f, "This shop has been depleted"),
             Self::PlayerNotFound => write!(f, "Player not found"),
-            Self::InsufficientScore { needed, have } => write!(f, "Insufficient score. Need {}, have {}", needed, have),
+            Self::InsufficientScore { needed, have } => {
+                write!(f, "Insufficient score. Need {}, have {}", needed, have)
+            }
             Self::NoSpaceNearby => write!(f, "No free space nearby"),
             Self::Internal(s) => write!(f, "Internal error: {}", s),
         }
@@ -45,19 +47,29 @@ impl fmt::Display for GameError {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ClientMessage {
-    Join { name: String, kit: KitType, player_id: Option<Uuid> },
-    MovePiece { piece_id: Uuid, target: IVec2 },
-    BuyPiece { shop_pos: IVec2, piece_type: PieceType },
+    Join {
+        name: String,
+        kit: KitType,
+        player_id: Option<Uuid>,
+    },
+    MovePiece {
+        piece_id: Uuid,
+        target: IVec2,
+    },
+    BuyPiece {
+        shop_pos: IVec2,
+        piece_type: PieceType,
+    },
     Ping(u64),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ServerMessage {
-    Init { 
-        player_id: Uuid, 
-        state: GameState 
+    Init {
+        player_id: Uuid,
+        state: GameState,
     },
-    UpdateState { 
+    UpdateState {
         players: Vec<Player>,
         pieces: Vec<Piece>,
         shops: Vec<Shop>,
@@ -66,7 +78,7 @@ pub enum ServerMessage {
         board_size: i32,
     },
     Error(GameError),
-    GameOver { 
+    GameOver {
         final_score: u64,
         kills: u32,
         pieces_captured: u32,

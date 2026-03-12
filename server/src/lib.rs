@@ -1,6 +1,9 @@
-pub mod state;
-pub mod handlers;
-pub mod npc;
-pub mod state_extensions;
 pub mod colors;
+pub mod handlers;
+pub mod movement;
+pub mod npc;
+pub mod player;
+pub mod shop;
 pub mod spawning;
+pub mod state;
+pub mod tick;

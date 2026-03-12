@@ -1,14 +1,7 @@
-use axum::{
-    routing::get,
-    Router,
-};
-use std::sync::Arc;
+use axum::{Router, routing::get};
 use server::state::ServerState;
-use tower_http::{
-    cors::CorsLayer,
-    services::ServeDir,
-    trace::TraceLayer,
-};
+use std::sync::Arc;
+use tower_http::{cors::CorsLayer, services::ServeDir, trace::TraceLayer};
 
 #[tokio::main]
 async fn main() {
@@ -31,7 +24,10 @@ async fn main() {
     // Serve the API routes under "/api"
     let app = Router::new()
         .route("/ping", get(|| async { "pong" }))
-        .nest("/api", Router::new().route("/ws", get(server::handlers::ws_handler)))
+        .nest(
+            "/api",
+            Router::new().route("/ws", get(server::handlers::ws_handler)),
+        )
         .fallback_service(ServeDir::new("client/dist"))
         .with_state(state)
         .layer(TraceLayer::new_for_http())

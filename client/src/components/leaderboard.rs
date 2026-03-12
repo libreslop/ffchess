@@ -1,6 +1,6 @@
-use yew::prelude::*;
 use common::models::Player;
 use uuid::Uuid;
+use yew::prelude::*;
 
 #[derive(Properties, PartialEq)]
 pub struct LeaderboardProps {
@@ -12,7 +12,7 @@ pub struct LeaderboardProps {
 pub fn leaderboard(props: &LeaderboardProps) -> Html {
     let mut players = props.players.clone();
     players.sort_by(|a, b| b.score.cmp(&a.score));
-    
+
     html! {
         <div style="position: absolute; top: 20px; right: 20px; background: transparent; padding: 15px; width: 200px; z-index: 60; pointer-events: none;">
             <div style="display: flex; flex-direction: column; gap: 5px;">

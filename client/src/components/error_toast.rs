@@ -1,5 +1,5 @@
-use yew::prelude::*;
 use common::protocol::GameError;
+use yew::prelude::*;
 
 #[derive(Properties, PartialEq)]
 pub struct ErrorToastProps {

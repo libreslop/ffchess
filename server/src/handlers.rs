@@ -1,11 +1,14 @@
+use crate::state::ServerState;
 use axum::{
-    extract::{ws::{Message, WebSocket, WebSocketUpgrade}, State},
+    extract::{
+        State,
+        ws::{Message, WebSocket, WebSocketUpgrade},
+    },
     response::IntoResponse,
 };
 use common::*;
-use crate::state::ServerState;
+use futures_util::{SinkExt, StreamExt};
 use std::sync::Arc;
-use futures_util::{StreamExt, SinkExt};
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
@@ -31,14 +34,18 @@ async fn handle_socket(socket: WebSocket, state: Arc<ServerState>) {
 
     // Add to channels immediately so they get updates even before joining
     let conn_id = Uuid::new_v4();
-    state.player_channels.write().await.insert(conn_id, tx.clone());
+    state
+        .player_channels
+        .write()
+        .await
+        .insert(conn_id, tx.clone());
 
     // Send initial state immediately for background viewing
     {
         let game = state.game.read().await;
-        let _ = tx.send(ServerMessage::Init { 
+        let _ = tx.send(ServerMessage::Init {
             player_id: Uuid::nil(), // Nil UUID means not joined yet
-            state: game.clone() 
+            state: game.clone(),
         });
     }
 
@@ -49,31 +56,41 @@ async fn handle_socket(socket: WebSocket, state: Arc<ServerState>) {
             match serde_json::from_str::<ClientMessage>(&text) {
                 Ok(client_msg) => {
                     match client_msg {
-                        ClientMessage::Join { name, kit, player_id: pid } => {
+                        ClientMessage::Join {
+                            name,
+                            kit,
+                            player_id: pid,
+                        } => {
                             tracing::info!(?name, ?kit, ?pid, "Player joining");
                             // Remove anonymous channel
                             state.player_channels.write().await.remove(&conn_id);
-                            
+
                             let id = state.add_player(name, kit, tx.clone(), pid).await;
                             player_id = Some(id);
-                            
+
                             // Re-send Init with proper player_id
                             let game = state.game.read().await;
-                            let _ = tx.send(ServerMessage::Init { 
-                                player_id: id, 
-                                state: game.clone() 
+                            let _ = tx.send(ServerMessage::Init {
+                                player_id: id,
+                                state: game.clone(),
                             });
                         }
                         ClientMessage::MovePiece { piece_id, target } => {
                             if let Some(pid) = player_id
-                                && let Err(e) = state.handle_move(pid, piece_id, target).await {
+                                && let Err(e) = state.handle_move(pid, piece_id, target).await
+                            {
                                 tracing::warn!(?pid, ?piece_id, ?target, error = %e, "Invalid move");
                                 let _ = tx.send(ServerMessage::Error(e));
                             }
                         }
-                        ClientMessage::BuyPiece { shop_pos, piece_type } => {
+                        ClientMessage::BuyPiece {
+                            shop_pos,
+                            piece_type,
+                        } => {
                             if let Some(pid) = player_id
-                                && let Err(e) = state.handle_shop_buy(pid, shop_pos, piece_type).await {
+                                && let Err(e) =
+                                    state.handle_shop_buy(pid, shop_pos, piece_type).await
+                            {
                                 tracing::warn!(?pid, ?shop_pos, ?piece_type, error = %e, "Shop buy failed");
                                 let _ = tx.send(ServerMessage::Error(e));
                             }
