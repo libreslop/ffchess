@@ -42,7 +42,13 @@ async fn main() {
         .layer(TraceLayer::new_for_http())
         .layer(CorsLayer::permissive());
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await.unwrap();
-    println!("[INFO] FFchess listening on :8080");
+    let port = std::env::var("PORT")
+        .ok()
+        .and_then(|p| p.parse::<u16>().ok())
+        .unwrap_or(8080);
+
+    let addr = format!("0.0.0.0:{}", port);
+    let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
+    println!("[INFO] FFchess listening on :{}", port);
     axum::serve(listener, app).await.unwrap();
 }
