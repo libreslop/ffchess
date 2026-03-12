@@ -9,6 +9,8 @@ pub struct Pmove {
     pub piece_id: Uuid,
     pub target: IVec2,
     pub pending: bool,
+    pub old_last_move_time: i64,
+    pub old_cooldown_ms: i64,
 }
 
 #[derive(Default, Clone, PartialEq)]
@@ -23,6 +25,7 @@ pub struct GameStateReducer {
     pub last_survival_secs: u64,
     pub ping_ms: u64,
     pub fps: u32,
+    pub disconnected: bool,
 }
 
 pub enum GameAction {
@@ -42,6 +45,7 @@ pub enum GameAction {
     Tick(MsgSender),
     Pong(u64),
     SetFPS(u32),
+    SetDisconnected(bool),
 }
 
 #[derive(Clone)]
@@ -137,6 +141,16 @@ impl Reducible for GameStateReducer {
                         pm.pending = false;
                     }
                 } else {
+                    // Revert cooldowns for all pending moves that were in the queue
+                    // Use reverse order to ensure we revert to the absolute oldest state for a piece
+                    for pm in next.pm_queue.iter().rev() {
+                        if pm.pending {
+                            if let Some(p) = next.state.pieces.get_mut(&pm.piece_id) {
+                                p.last_move_time = pm.old_last_move_time;
+                                p.cooldown_ms = pm.old_cooldown_ms;
+                            }
+                        }
+                    }
                     next.pm_queue.clear();
                 }
             }
@@ -175,6 +189,8 @@ impl Reducible for GameStateReducer {
 
                             // Update local state for immediate visual feedback
                             if let Some(p) = next.state.pieces.get_mut(&pm.piece_id) {
+                                pm.old_last_move_time = p.last_move_time;
+                                pm.old_cooldown_ms = p.cooldown_ms;
                                 p.cooldown_ms = calculate_cooldown(p.piece_type, p.position, pm.target, &next.state.cooldown_config);
                                 p.last_move_time = now;
                             }
@@ -190,6 +206,9 @@ impl Reducible for GameStateReducer {
             }
             GameAction::SetFPS(fps) => {
                 next.fps = fps;
+            }
+            GameAction::SetDisconnected(d) => {
+                next.disconnected = d;
             }
         }
         next.into()
@@ -230,6 +249,8 @@ mod tests {
             piece_id,
             target,
             pending: false,
+            old_last_move_time: 0,
+            old_cooldown_ms: 0,
         }));
 
         assert_eq!(reducer.pm_queue.len(), 1);
@@ -278,8 +299,8 @@ mod tests {
         next.state.pieces.insert(piece_id, piece);
         let reducer = Rc::new(next);
 
-        let reducer = reducer.reduce(GameAction::AddPmove(Pmove { piece_id, target: IVec2::new(0, 1), pending: false }));
-        let reducer = reducer.reduce(GameAction::AddPmove(Pmove { piece_id, target: IVec2::new(0, 2), pending: false }));
+        let reducer = reducer.reduce(GameAction::AddPmove(Pmove { piece_id, target: IVec2::new(0, 1), pending: false, old_last_move_time: 0, old_cooldown_ms: 0 }));
+        let reducer = reducer.reduce(GameAction::AddPmove(Pmove { piece_id, target: IVec2::new(0, 2), pending: false, old_last_move_time: 0, old_cooldown_ms: 0 }));
 
         let (tx, mut rx) = mpsc::unbounded_channel();
         let _reducer_after_tick = reducer.clone().reduce(GameAction::Tick(MsgSender(tx)));
@@ -336,9 +357,9 @@ mod tests {
         let reducer = Rc::new(next);
 
         // Queue: (0,1), (0,2), (0,3)
-        let reducer = reducer.reduce(GameAction::AddPmove(Pmove { piece_id, target: IVec2::new(0, 1), pending: false }));
-        let reducer = reducer.reduce(GameAction::AddPmove(Pmove { piece_id, target: IVec2::new(0, 2), pending: false }));
-        let reducer = reducer.reduce(GameAction::AddPmove(Pmove { piece_id, target: IVec2::new(0, 3), pending: false }));
+        let reducer = reducer.reduce(GameAction::AddPmove(Pmove { piece_id, target: IVec2::new(0, 1), pending: false, old_last_move_time: 0, old_cooldown_ms: 0 }));
+        let reducer = reducer.reduce(GameAction::AddPmove(Pmove { piece_id, target: IVec2::new(0, 2), pending: false, old_last_move_time: 0, old_cooldown_ms: 0 }));
+        let reducer = reducer.reduce(GameAction::AddPmove(Pmove { piece_id, target: IVec2::new(0, 3), pending: false, old_last_move_time: 0, old_cooldown_ms: 0 }));
 
         assert_eq!(reducer.pm_queue.len(), 3);
 

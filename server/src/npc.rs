@@ -41,7 +41,7 @@ impl ServerState {
                 
                 // Don't spawn NPC too close to any player
                 let too_close = game.pieces.values().any(|p| {
-                    p.owner_id.is_some() && (p.position - pos).as_vec2().length() < 15.0
+                    p.owner_id.is_some() && (p.position - pos).abs().max_element() <= 10
                 });
 
                 if !too_close {

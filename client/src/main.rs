@@ -11,6 +11,7 @@ use futures_util::{StreamExt, SinkExt};
 use wasm_bindgen_futures::spawn_local;
 use web_sys::HtmlCanvasElement;
 use tokio::sync::mpsc;
+use std::rc::Rc;
 use glam::IVec2;
 use uuid::Uuid;
 use gloo_events::EventListener;
@@ -127,32 +128,57 @@ pub fn app() -> Html {
             });
 
             let listener_reducer_ref = reducer_ref.clone();
+            let current_ws_tx = Rc::new(std::cell::RefCell::new(None::<mpsc::UnboundedSender<Message>>));
+            
+            // Outgoing Message Loop
+            let sender_ws_tx = current_ws_tx.clone();
+            spawn_local(async move {
+                while let Some(msg) = client_rx.recv().await {
+                    if let Some(tx) = &*sender_ws_tx.borrow() {
+                        let _ = tx.send(Message::Text(serde_json::to_string(&msg).unwrap()));
+                    }
+                }
+            });
+
+            // Reconnection & Listener Loop
             spawn_local(async move {
                 let window = web_sys::window().unwrap();
                 let host = window.location().host().unwrap();
                 let protocol = if window.location().protocol().unwrap() == "https:" { "wss:" } else { "ws:" };
                 let ws_url = format!("{}//{}/api/ws", protocol, host);
                 
-                if let Ok(ws) = WebSocket::open(&ws_url) {
-                    let (mut write, mut read) = ws.split();
-                    spawn_local(async move {
-                        while let Some(msg) = client_rx.recv().await {
-                            let _ = write.send(Message::Text(serde_json::to_string(&msg).unwrap())).await;
-                        }
-                    });
+                loop {
+                    if let Ok(ws) = WebSocket::open(&ws_url) {
+                        let (mut write, mut read) = ws.split();
+                        let (internal_tx, mut internal_rx) = mpsc::unbounded_channel::<Message>();
+                        *current_ws_tx.borrow_mut() = Some(internal_tx);
+                        
+                        listener_reducer_ref.borrow().clone().dispatch(GameAction::SetDisconnected(false));
+                        
+                        // Bridge outgoing
+                        spawn_local(async move {
+                            while let Some(m) = internal_rx.recv().await {
+                                let _ = write.send(m).await;
+                            }
+                        });
 
-                    while let Some(msg) = read.next().await {
-                        if let Ok(Message::Text(text)) = msg
-                            && let Ok(server_msg) = serde_json::from_str::<ServerMessage>(&text) {
-                            listener_reducer_ref.borrow().clone().dispatch(match server_msg {
-                                ServerMessage::Init { player_id, state } => GameAction::SetInit { player_id, state },
-                                ServerMessage::UpdateState { players, pieces, shops, removed_pieces, removed_players, board_size } => GameAction::UpdateState { players, pieces, shops, removed_pieces, removed_players, board_size },
-                                ServerMessage::Error(e) => GameAction::SetError(e),
-                                ServerMessage::GameOver { final_score, kills, pieces_captured, time_survived_secs } => GameAction::GameOver { final_score, kills, pieces_captured, time_survived_secs },
-                                ServerMessage::Pong(t) => GameAction::Pong(t),
-                            });
+                        while let Some(msg) = read.next().await {
+                            if let Ok(Message::Text(text)) = msg
+                                && let Ok(server_msg) = serde_json::from_str::<ServerMessage>(&text) {
+                                listener_reducer_ref.borrow().clone().dispatch(match server_msg {
+                                    ServerMessage::Init { player_id, state } => GameAction::SetInit { player_id, state },
+                                    ServerMessage::UpdateState { players, pieces, shops, removed_pieces, removed_players, board_size } => GameAction::UpdateState { players, pieces, shops, removed_pieces, removed_players, board_size },
+                                    ServerMessage::Error(e) => GameAction::SetError(e),
+                                    ServerMessage::GameOver { final_score, kills, pieces_captured, time_survived_secs } => GameAction::GameOver { final_score, kills, pieces_captured, time_survived_secs },
+                                    ServerMessage::Pong(t) => GameAction::Pong(t),
+                                });
+                            }
                         }
+                        *current_ws_tx.borrow_mut() = None;
                     }
+                    
+                    listener_reducer_ref.borrow().clone().dispatch(GameAction::SetDisconnected(true));
+                    gloo_timers::future::TimeoutFuture::new(2000).await;
                 }
             });
             || drop(interval)
@@ -180,9 +206,10 @@ pub fn app() -> Html {
         let join_step = join_step.clone();
         let player_name = player_name.clone();
         let landing_cooldown = landing_cooldown.clone();
+        let reducer = reducer.clone();
         Callback::from(move |e: SubmitEvent| {
             e.prevent_default();
-            if *landing_cooldown > 0 { return; }
+            if *landing_cooldown > 0 || reducer.disconnected { return; }
             let mut name = (*player_name).trim().to_string();
             if name.is_empty() {
                 name = generate_random_name();
@@ -243,14 +270,16 @@ pub fn app() -> Html {
         let rc_ref = rc_ref.clone();
         let join_step = join_step.clone();
         let on_rejoin = on_rejoin.clone();
+        let reducer = reducer.clone();
         use_effect_with((is_dead, rc_ref, join_step), move |(is_dead, rc_ref, join_step)| {
             let is_dead = *is_dead;
             let rc_ref = rc_ref.clone();
             let join_step = join_step.clone();
             let on_rejoin = on_rejoin.clone();
+            let reducer = reducer.clone();
             let listener = EventListener::new(&web_sys::window().unwrap(), "keydown", move |e| {
                 let e = e.dyn_ref::<web_sys::KeyboardEvent>().unwrap();
-                if e.key() == "Enter" {
+                if e.key() == "Enter" && !reducer.disconnected {
                     if is_dead && *rc_ref.borrow() == 0 {
                         on_rejoin.emit(MouseEvent::new("click").unwrap());
                     } else if !is_dead && *join_step == 0 {
@@ -291,9 +320,18 @@ pub fn app() -> Html {
                 </div>
             }
 
+            if reducer.disconnected && is_joined {
+                <div style="position: absolute; inset: 0; background: #ef4444; z-index: 150; animation: simpleFadeIn 0.3s ease-out; display: flex; align-items: center; justify-content: center;">
+                    <div style="text-align: center; color: #fff; padding: 20px; animation: fadeIn 0.3s ease-out;">
+                        <h1 style="color: #fff; margin: 0; font-size: 4em; letter-spacing: 4px; text-shadow: 0 4px 8px rgba(0,0,0,0.5);">{"DISCONNECTED"}</h1>
+                        <p style="margin: 20px 0 0; font-size: 1.2em; color: #fff; letter-spacing: 1px;">{"The connection to the server was lost."}</p>
+                    </div>
+                </div>
+            }
+
             if is_joined {
                 if is_dead {
-                    <div style="position: absolute; inset: 0; background: rgba(0,0,0,0.6); z-index: 90; animation: fadeIn 0.3s ease-out;"></div>
+                    <div style="position: absolute; inset: 0; background: rgba(0,0,0,0.6); z-index: 90; animation: simpleFadeIn 0.3s ease-out;"></div>
                     <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 100; text-align: center; width: 400px; color: #fff; animation: fadeIn 0.3s ease-out;">
                         <h1 style="color: #ef4444; margin-top: 0; font-size: 4em; letter-spacing: 4px; text-shadow: 0 4px 8px rgba(0,0,0,0.5);">{"DEFEAT"}</h1>
                         
@@ -330,7 +368,7 @@ pub fn app() -> Html {
                                 {"PLAY AGAIN"}
                             }
                         </button>
-                        <p style="margin-top: 25px; font-size: 0.9em; color: #cbd5e1; letter-spacing: 1px;">{"Tip: Press ENTER to rejoin when ready"}</p>
+                        <p style="margin-top: 25px; font-size: 0.9em; color: #cbd5e1; letter-spacing: 1px;">{"Tip: Press ENTER to play again"}</p>
                     </div>
                 } else {
                     <div style="position: absolute; top: 20px; right: 20px; background: transparent; padding: 15px; width: 200px; z-index: 60; pointer-events: none;">
@@ -381,7 +419,10 @@ pub fn app() -> Html {
                             </div>
                         </div>
                     }
-                    <style>{"@keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }"}</style>
+                    <style>{"
+                        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+                        @keyframes simpleFadeIn { from { opacity: 0; } to { opacity: 1; } }
+                    "}</style>
                 </div>
             }
         </div>
@@ -817,7 +858,7 @@ fn game_view(props: &GameViewProps) -> Html {
                         let is_capture = target_occupied.is_some() && target_occupied.unwrap().owner_id != Some(player_id);
                         if is_valid_chess_move(p.piece_type, p.position, target, is_capture, reducer.state.board_size) {
                             if p.piece_type == PieceType::Knight || !is_move_blocked(p.position, target, &current_ghosts) {
-                                reducer.dispatch(GameAction::AddPmove(Pmove { piece_id: sid, target, pending: false }));
+                                reducer.dispatch(GameAction::AddPmove(Pmove { piece_id: sid, target, pending: false, old_last_move_time: 0, old_cooldown_ms: 0 }));
                             }
                         }
                     }
@@ -860,9 +901,6 @@ fn game_view(props: &GameViewProps) -> Html {
             <div style="position: absolute; top: 40px; left: 20px; pointer-events: none; display: flex; flex-direction: column; gap: 10px;">
                 if is_alive {
                     <div style="background: transparent; padding: 10px 20px; font-weight: bold; font-size: 1.5em; pointer-events: auto;">{"Score: "}{props.reducer.last_score}</div>
-                }
-                if let Some(error) = &props.reducer.error {
-                    <div style="background: rgba(254, 226, 226, 0.9); color: #dc2626; padding: 10px 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); pointer-events: auto;">{error}</div>
                 }
             </div>
             if let Some(shop) = shop_nearby {
