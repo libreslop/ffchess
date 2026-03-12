@@ -36,7 +36,7 @@ impl ServerState {
     pub fn new() -> Self {
         Self {
             game: RwLock::new(GameState {
-                board_size: 30,
+                board_size: 25,
                 ..Default::default()
             }),
             player_channels: RwLock::new(HashMap::new()),
@@ -48,9 +48,9 @@ impl ServerState {
     }
 
     pub fn calculate_board_size(player_count: usize) -> i32 {
-        // (starts at 30x30, scales with player count using a square-root formula up to 200x200).
-        // Hit ~200 at 100 players: 30 + sqrt(100) * 17 = 200
-        (30.0 + (player_count as f32).sqrt() * 17.0).clamp(30.0, 200.0) as i32
+        // (starts at 25x25, scales with player count using a square-root formula up to 200x200).
+        // Hit ~200 at 100 players: 25 + sqrt(100) * 17.5 = 200
+        (25.0 + (player_count as f32).sqrt() * 17.5).clamp(25.0, 200.0) as i32
     }
 
     async fn get_or_assign_color(&self, player_id: Uuid) -> String {
@@ -334,10 +334,11 @@ impl ServerState {
             }
         }
 
+        let config = game.cooldown_config.clone();
         if let Some(p) = game.pieces.get_mut(&piece_id) {
             p.position = target;
             p.last_move_time = now;
-            p.cooldown_ms = calculate_cooldown(piece_type, start_pos, target);
+            p.cooldown_ms = calculate_cooldown(piece_type, start_pos, target, &config);
         }
 
         if let Some(cp_id) = captured_player_id {

@@ -9,7 +9,7 @@ The project is organized as a Cargo Workspace:
 - `client/`: Yew-based WebAssembly frontend. Handles rendering (Canvas), user input, and state synchronization.
 
 ## 2. Core Mechanics
-- **Board:** A dynamic grid (starts at 30x30, scales with player count using a square-root formula up to 200x200).
+- **Board:** A dynamic grid (starts at 25x25, scales with player count using a square-root formula up to 200x200).
 - **Movement:** Standard chess moves (King, Queen, Rook, Bishop, Knight). Pawns move/capture in 4 directions (adjacent/diagonal).
 - **Cooldowns:** Every move triggers a cooldown based on piece type and distance moved.
 - **Combat:** Capturing a piece immediately removes it. Capturing a King eliminates the player and all their pieces.

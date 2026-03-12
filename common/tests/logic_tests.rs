@@ -61,13 +61,14 @@ fn test_cooldown_calculation() {
     let start = IVec2::new(0, 0);
     let end_close = IVec2::new(1, 0);
     let end_far = IVec2::new(10, 0);
+    let config = CooldownConfig::default();
 
-    let _cd_pawn_close = calculate_cooldown(PieceType::Pawn, start, end_close);
-    let _cd_pawn_far = calculate_cooldown(PieceType::Pawn, start, end_far);
+    let _cd_pawn_close = calculate_cooldown(PieceType::Pawn, start, end_close, &config);
+    let _cd_pawn_far = calculate_cooldown(PieceType::Pawn, start, end_far, &config);
 
     // Dynamic cooldown check: Bishop base 1200 + 400 * dist
-    let cd_bishop_1 = calculate_cooldown(PieceType::Bishop, start, IVec2::new(1, 0));
-    let cd_bishop_2 = calculate_cooldown(PieceType::Bishop, start, IVec2::new(2, 0));
+    let cd_bishop_1 = calculate_cooldown(PieceType::Bishop, start, IVec2::new(1, 0), &config);
+    let cd_bishop_2 = calculate_cooldown(PieceType::Bishop, start, IVec2::new(2, 0), &config);
     assert!(cd_bishop_2 > cd_bishop_1);
 }
 

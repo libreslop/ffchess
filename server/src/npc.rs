@@ -266,10 +266,11 @@ impl ServerState {
                                 self.record_piece_removal(tid).await;
                             }
 
+                            let config = game.cooldown_config.clone();
                             if let Some(p) = game.pieces.get_mut(&id) {
                                 p.position = t;
                                 p.last_move_time = now;
-                                p.cooldown_ms = calculate_cooldown(p_type, pos, t);
+                                p.cooldown_ms = calculate_cooldown(p_type, pos, t, &config);
                                 moves_this_tick += 1;
                             }
 

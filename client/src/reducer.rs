@@ -69,7 +69,12 @@ impl Reducible for GameStateReducer {
             GameAction::UpdateState { players, pieces, shops, removed_pieces, removed_players, board_size } => {
                 next.error = None;
                 next.state.board_size = board_size;
+                let player_id_val = next.player_id.unwrap_or_else(Uuid::nil);
+                #[cfg(target_arch = "wasm32")]
                 let now_secs = (js_sys::Date::now() / 1000.0) as i64;
+                #[cfg(not(target_arch = "wasm32"))]
+                let now_secs = chrono::Utc::now().timestamp();
+
                 for p in players { 
                     if next.player_id == Some(p.id) {
                         next.last_score = p.score;
@@ -79,7 +84,27 @@ impl Reducible for GameStateReducer {
                     }
                     next.state.players.insert(p.id, p); 
                 }
-                for p in pieces { 
+                for mut p in pieces { 
+                    // Carry over local state for our own pieces since the server doesn't send it
+                    if p.owner_id == Some(player_id_val) {
+                        if let Some(old_p) = next.state.pieces.get(&p.id) {
+                            p.last_move_time = old_p.last_move_time;
+                            p.cooldown_ms = old_p.cooldown_ms;
+                        }
+                    }
+
+                    // Predicted State Protection:
+                    // If we have a pending move for this piece, don't let the server overwrite its position
+                    // with old data until the server confirms it's at the new location.
+                    if let Some(pm) = next.pm_queue.iter().find(|pm| pm.piece_id == p.id && pm.pending) {
+                        if p.position != pm.target {
+                            // Server hasn't seen our move yet, keep our local prediction
+                            if let Some(old_p) = next.state.pieces.get(&p.id) {
+                                p.position = old_p.position;
+                            }
+                        }
+                    }
+
                     // Robust cleanup: remove the match AND any preceding moves for this piece
                     if let Some(match_idx) = next.pm_queue.iter().rposition(|pm| pm.piece_id == p.id && pm.target == p.position) {
                         let mut i = 0;
@@ -147,6 +172,12 @@ impl Reducible for GameStateReducer {
                             });
                             pm.pending = true;
                             processed_pieces.insert(pm.piece_id);
+
+                            // Update local state for immediate visual feedback
+                            if let Some(p) = next.state.pieces.get_mut(&pm.piece_id) {
+                                p.cooldown_ms = calculate_cooldown(p.piece_type, p.position, pm.target, &next.state.cooldown_config);
+                                p.last_move_time = now;
+                            }
                         }
                     }
                 }
@@ -173,7 +204,7 @@ mod tests {
 
     fn setup() -> Rc<GameStateReducer> {
         let mut reducer = GameStateReducer::default();
-        reducer.state.board_size = 30;
+        reducer.state.board_size = 25;
         Rc::new(reducer)
     }
 
@@ -224,7 +255,7 @@ mod tests {
             shops: vec![],
             removed_pieces: vec![],
             removed_players: vec![],
-            board_size: 30,
+            board_size: 25,
         });
 
         assert_eq!(reducer.pm_queue.len(), 0);
@@ -272,7 +303,7 @@ mod tests {
             shops: vec![],
             removed_pieces: vec![],
             removed_players: vec![],
-            board_size: 30,
+            board_size: 25,
         });
 
         assert_eq!(reducer.pm_queue.len(), 1);
@@ -320,7 +351,7 @@ mod tests {
             shops: vec![],
             removed_pieces: vec![],
             removed_players: vec![],
-            board_size: 30,
+            board_size: 25,
         });
 
         // Should have removed BOTH (0,1) and (0,2)

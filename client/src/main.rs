@@ -83,16 +83,24 @@ pub fn app() -> Html {
         let diff = 5 - (now - ts);
         if diff > 0 { diff as i32 } else { 0 }
     });
+    let lc_ref = use_mut_ref(|| *landing_cooldown);
 
     {
         let lc = landing_cooldown.clone();
-        use_effect_with((), move |_| {
+        let lc_ref = lc_ref.clone();
+        use_effect_with((*lc).clone(), move |&initial_lc| {
             let mut interval = None;
-            if *lc > 0 {
+            if initial_lc > 0 {
+                *lc_ref.borrow_mut() = initial_lc;
                 let lc_inner = lc.clone();
+                let lr = lc_ref.clone();
                 interval = Some(Interval::new(1000, move || {
-                    let cur = *lc_inner;
-                    if cur > 0 { lc_inner.set(cur - 1); }
+                    let mut cur = *lr.borrow();
+                    if cur > 0 { 
+                        cur -= 1;
+                        *lr.borrow_mut() = cur;
+                        lc_inner.set(cur);
+                    }
                 }));
             }
             || drop(interval)
@@ -272,7 +280,7 @@ pub fn app() -> Html {
     html! {
         <div style="margin: 0; padding: 0; width: 100vw; height: 100vh; overflow: hidden; position: relative; background: #f0f2f5;">
             if let Some(sender) = (*tx).clone() {
-                <GameView reducer={reducer.clone()} tx={sender} />
+                <GameView key={player_id.to_string()} reducer={reducer.clone()} tx={sender} />
             } else {
                 <div style="position: absolute; inset: 0; background: #f0f2f5; display: flex; align-items: center; justify-content: center; z-index: 200;">
                     <div style="text-align: center;">
@@ -285,43 +293,44 @@ pub fn app() -> Html {
 
             if is_joined {
                 if is_dead {
-                    <div style="position: absolute; inset: 0; background: rgba(0,0,0,0.7); z-index: 90;"></div>
-                    <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #fff; padding: 40px; border-radius: 0; border: 4px solid #1e293b; z-index: 100; text-align: center; width: 400px;">
-                        <h1 style="color: #dc2626; margin-top: 0; font-size: 3em; letter-spacing: 2px;">{"DEFEAT"}</h1>
+                    <div style="position: absolute; inset: 0; background: rgba(0,0,0,0.6); z-index: 90; animation: fadeIn 0.3s ease-out;"></div>
+                    <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 100; text-align: center; width: 400px; color: #fff; animation: fadeIn 0.3s ease-out;">
+                        <h1 style="color: #ef4444; margin-top: 0; font-size: 4em; letter-spacing: 4px; text-shadow: 0 4px 8px rgba(0,0,0,0.5);">{"DEFEAT"}</h1>
                         
                         <div style="margin: 30px 0; display: flex; flex-direction: column; gap: 15px;">
-                            <div style="background: #f8fafc; padding: 15px; border: 2px solid #cbd5e1;">
-                                <span style="display: block; font-size: 0.8em; text-transform: uppercase; color: #64748b; margin-bottom: 5px;">{"Final Score"}</span>
-                                <span style="font-size: 2.5em; font-weight: bold; color: #1e293b;">{reducer.last_score}</span>
+                            <div style="padding: 15px;">
+                                <span style="display: block; font-size: 0.9em; text-transform: uppercase; color: #cbd5e1; margin-bottom: 5px; letter-spacing: 1px;">{"Final Score"}</span>
+                                <span style="font-size: 3em; font-weight: 900; color: #fff;">{reducer.last_score}</span>
                             </div>
                             
                             <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;">
-                                <div style="background: #f8fafc; padding: 10px; border: 2px solid #cbd5e1;">
-                                    <span style="display: block; font-size: 0.7em; text-transform: uppercase; color: #64748b;">{"Kills"}</span>
-                                    <span style="font-size: 1.5em; font-weight: bold;">{reducer.last_kills}</span>
+                                <div style="padding: 10px;">
+                                    <span style="display: block; font-size: 0.7em; text-transform: uppercase; color: #cbd5e1; letter-spacing: 1px;">{"Kills"}</span>
+                                    <span style="font-size: 1.8em; font-weight: bold;">{reducer.last_kills}</span>
                                 </div>
-                                <div style="background: #f8fafc; padding: 10px; border: 2px solid #cbd5e1;">
-                                    <span style="display: block; font-size: 0.7em; text-transform: uppercase; color: #64748b;">{"Taken"}</span>
-                                    <span style="font-size: 1.5em; font-weight: bold;">{reducer.last_captured}</span>
+                                <div style="padding: 10px;">
+                                    <span style="display: block; font-size: 0.7em; text-transform: uppercase; color: #cbd5e1; letter-spacing: 1px;">{"Taken"}</span>
+                                    <span style="font-size: 1.8em; font-weight: bold;">{reducer.last_captured}</span>
                                 </div>
-                                <div style="background: #f8fafc; padding: 10px; border: 2px solid #cbd5e1;">
-                                    <span style="display: block; font-size: 0.7em; text-transform: uppercase; color: #64748b;">{"Survived"}</span>
-                                    <span style="font-size: 1.5em; font-weight: bold;">{format!("{}m {}s", reducer.last_survival_secs / 60, reducer.last_survival_secs % 60)}</span>
+                                <div style="padding: 10px;">
+                                    <span style="display: block; font-size: 0.7em; text-transform: uppercase; color: #cbd5e1; letter-spacing: 1px;">{"Survived"}</span>
+                                    <span style="font-size: 1.8em; font-weight: bold;">{format!("{}m {}s", reducer.last_survival_secs / 60, reducer.last_survival_secs % 60)}</span>
                                 </div>
                             </div>
                         </div>
 
                         <button onclick={on_rejoin} disabled={*rejoin_cooldown > 0}
-                            style={format!("padding: 15px; font-size: 1.2em; cursor: {}; background: {}; color: white; border: none; border-radius: 0; font-weight: bold; width: 100%; transition: all 0.2s;", 
+                            style={format!("padding: 15px 40px; font-size: 1.2em; cursor: {}; background: {}; color: white; border: 3px solid {}; border-radius: 0; font-weight: 900; width: auto; transition: all 0.2s; text-transform: uppercase; letter-spacing: 2px;", 
                                 if *rejoin_cooldown > 0 { "not-allowed" } else { "pointer" },
-                                if *rejoin_cooldown > 0 { "#94a3b8" } else { "#1e293b" })}>
+                                if *rejoin_cooldown > 0 { "rgba(148, 163, 184, 0.2)" } else { "rgba(30, 41, 59, 0.4)" },
+                                if *rejoin_cooldown > 0 { "#94a3b8" } else { "#fff" })}>
                             if *rejoin_cooldown > 0 {
                                 {format!("Wait ({}s)", *rejoin_cooldown)}
                             } else {
                                 {"PLAY AGAIN"}
                             }
                         </button>
-                        <p style="margin-top: 15px; font-size: 0.8em; color: #64748b;">{"Tip: Press ENTER to rejoin when ready"}</p>
+                        <p style="margin-top: 25px; font-size: 0.9em; color: #cbd5e1; letter-spacing: 1px;">{"Tip: Press ENTER to rejoin when ready"}</p>
                     </div>
                 } else {
                     <div style="position: absolute; top: 20px; right: 20px; background: transparent; padding: 15px; width: 200px; z-index: 60; pointer-events: none;">
@@ -357,17 +366,17 @@ pub fn app() -> Html {
                         <div style="animation: fadeIn 0.3s ease-out; display: flex; flex-direction: column; align-items: center;">
                             <h3 style="color: #fff; margin-bottom: 25px; text-transform: uppercase; letter-spacing: 2px; text-shadow: 0 2px 4px rgba(0,0,0,0.3);">{"CHOOSE YOUR ARMY"}</h3>
                             <div style="display: grid; grid-template-columns: 1fr; gap: 12px; width: 100%;">
-                                <button onclick={on_join.reform(|_| KitType::Standard)} style="padding: 15px; cursor: pointer; border-radius: 0; border: 2px solid #cbd5e1; background: #fff; font-weight: bold; transition: all 0.2s;">
-                                    {"STANDARD"}<br/><span style="font-weight: normal; font-size: 0.8em; color: #475569;">{"2 Pawns, 2 Knights"}</span>
+                                <button onclick={on_join.reform(|_| KitType::Standard)} style="padding: 15px; cursor: pointer; border-radius: 0; border: 2px solid rgba(255,255,255,0.5); background: rgba(255,255,255,0.1); color: #fff; font-weight: bold; transition: all 0.2s;">
+                                    {"STANDARD"}<br/><span style="font-weight: normal; font-size: 0.8em; color: #cbd5e1;">{"2 Pawns, 2 Knights"}</span>
                                 </button>
-                                <button onclick={on_join.reform(|_| KitType::Shield)} style="padding: 15px; cursor: pointer; border-radius: 0; border: 2px solid #cbd5e1; background: #fff; font-weight: bold; transition: all 0.2s;">
-                                    {"SHIELD"}<br/><span style="font-weight: normal; font-size: 0.8em; color: #475569;">{"6 Pawns"}</span>
+                                <button onclick={on_join.reform(|_| KitType::Shield)} style="padding: 15px; cursor: pointer; border-radius: 0; border: 2px solid rgba(255,255,255,0.5); background: rgba(255,255,255,0.1); color: #fff; font-weight: bold; transition: all 0.2s;">
+                                    {"SHIELD"}<br/><span style="font-weight: normal; font-size: 0.8em; color: #cbd5e1;">{"6 Pawns"}</span>
                                 </button>
-                                <button onclick={on_join.reform(|_| KitType::Scout)} style="padding: 15px; cursor: pointer; border-radius: 0; border: 2px solid #cbd5e1; background: #fff; font-weight: bold; transition: all 0.2s;">
-                                    {"SCOUT"}<br/><span style="font-weight: normal; font-size: 0.8em; color: #475569;">{"1 Pawn, 2 Bishops"}</span>
+                                <button onclick={on_join.reform(|_| KitType::Scout)} style="padding: 15px; cursor: pointer; border-radius: 0; border: 2px solid rgba(255,255,255,0.5); background: rgba(255,255,255,0.1); color: #fff; font-weight: bold; transition: all 0.2s;">
+                                    {"SCOUT"}<br/><span style="font-weight: normal; font-size: 0.8em; color: #cbd5e1;">{"1 Pawn, 2 Bishops"}</span>
                                 </button>
-                                <button onclick={on_join.reform(|_| KitType::Tank)} style="padding: 15px; cursor: pointer; border-radius: 0; border: 2px solid #cbd5e1; background: #fff; font-weight: bold; transition: all 0.2s;">
-                                    {"TANK"}<br/><span style="font-weight: normal; font-size: 0.8em; color: #475569;">{"1 Rook"}</span>
+                                <button onclick={on_join.reform(|_| KitType::Tank)} style="padding: 15px; cursor: pointer; border-radius: 0; border: 2px solid rgba(255,255,255,0.5); background: rgba(255,255,255,0.1); color: #fff; font-weight: bold; transition: all 0.2s;">
+                                    {"TANK"}<br/><span style="font-weight: normal; font-size: 0.8em; color: #cbd5e1;">{"1 Rook"}</span>
                                 </button>
                             </div>
                         </div>
@@ -392,6 +401,7 @@ fn game_view(props: &GameViewProps) -> Html {
     
     // Using Refs for interpolation to avoid stale closures and redundant renders
     let camera_ref = use_mut_ref(|| (0.0, 0.0));
+    let target_camera_ref = use_mut_ref(|| (0.0, 0.0));
     let zoom_ref = use_mut_ref(|| 1.0f64);
     let target_zoom_ref = use_mut_ref(|| 1.0f64);
     let mouse_ref = use_mut_ref(|| (0.0, 0.0));
@@ -403,6 +413,7 @@ fn game_view(props: &GameViewProps) -> Html {
     // States for rendering triggering
     let zoom_state = use_state(|| 1.0f64);
     let cam_state = use_state(|| (0.0, 0.0));
+    let frame_id = use_state(|| 0u64);
     let drag_start = use_state(|| None::<(f64, f64, bool)>);
 
     // Track death state transition
@@ -427,15 +438,13 @@ fn game_view(props: &GameViewProps) -> Html {
         } else if *was_alive {
             // Just died
             let pos = *last_king_pos_ref.borrow();
-            *camera_ref.borrow_mut() = pos;
-            cam_state.set(pos);
+            *target_camera_ref.borrow_mut() = pos;
             *target_zoom_ref.borrow_mut() = 1.3;
             *was_alive = false;
         } else if player_id == Uuid::nil() && !*was_alive {
             // On kit selection screen (reset camera)
-            if *camera_ref.borrow() != (0.0, 0.0) {
-                *camera_ref.borrow_mut() = (0.0, 0.0);
-                cam_state.set((0.0, 0.0));
+            if *target_camera_ref.borrow() != (0.0, 0.0) {
+                *target_camera_ref.borrow_mut() = (0.0, 0.0);
                 *target_zoom_ref.borrow_mut() = 1.0;
             }
         }
@@ -457,9 +466,13 @@ fn game_view(props: &GameViewProps) -> Html {
         let canvas_ref = canvas_ref.clone();
         let state_ref = state_ref.clone();
         
+        let target_camera_ref = target_camera_ref.clone();
+        let frame_id = frame_id.clone();
+        
         use_effect(move || {
             let interval = Interval::new(16, move || {
                 let tz = *target_zoom_ref.borrow();
+                let tc = *target_camera_ref.borrow();
                 let mut z = *zoom_ref.borrow();
                 let mut cam = *camera_ref.borrow();
                 let mut changed = false;
@@ -487,11 +500,15 @@ fn game_view(props: &GameViewProps) -> Html {
                     }
                 }
 
-                // 2. King Constraints
+                // 2. King Constraints / Smooth Pan
                 let (state, player_id) = &*state_ref.borrow();
-                if let Some(pid) = *player_id && pid != Uuid::nil() {
-                    if let Some(player) = state.players.get(&pid)
-                        && let Some(king) = state.pieces.get(&player.king_id) {
+                let player_id_val = player_id.unwrap_or_else(Uuid::nil);
+                let player = state.players.get(&player_id_val);
+                let is_alive = player.is_some() && player_id_val != Uuid::nil();
+
+                if is_alive {
+                    if let Some(p) = player
+                        && let Some(king) = state.pieces.get(&p.king_id) {
                         
                         if let Some(canvas) = canvas_ref.cast::<web_sys::HtmlElement>() {
                             let rect = canvas.get_bounding_client_rect();
@@ -522,6 +539,13 @@ fn game_view(props: &GameViewProps) -> Html {
                             }
                         }
                     }
+                } else {
+                    // Smooth pan to death/reset target when dead
+                    if (tc.0 - cam.0).abs() > 0.1 || (tc.1 - cam.1).abs() > 0.1 {
+                        cam.0 += (tc.0 - cam.0) * 0.1;
+                        cam.1 += (tc.1 - cam.1) * 0.1;
+                        changed = true;
+                    }
                 }
 
                 if changed {
@@ -529,6 +553,7 @@ fn game_view(props: &GameViewProps) -> Html {
                     zoom_state.set(z);
                     cam_state.set(cam);
                 }
+                frame_id.set(*frame_id + 1);
             });
             move || drop(interval)
         });
@@ -598,11 +623,12 @@ fn game_view(props: &GameViewProps) -> Html {
         let ghost_pieces_clone = ghost_pieces.clone();
         let cam = *cam_state;
         let zoom = *zoom_state;
+        let fid = *frame_id;
         
         let frame_count_ref = use_mut_ref(|| 0);
         let last_fps_update_ref = use_mut_ref(|| js_sys::Date::now());
 
-        use_effect_with((reducer_handle.clone(), sid, size, cam, zoom), move |(reducer, sid, size, cam, zoom)| {
+        use_effect_with((reducer_handle.clone(), sid, size, cam, zoom, fid), move |(reducer, sid, size, cam, zoom, _fid)| {
             if let Some(canvas) = canvas_ref.cast::<HtmlCanvasElement>() {
                 canvas.set_width(size.0 as u32);
                 canvas.set_height(size.1 as u32);
@@ -795,6 +821,8 @@ fn game_view(props: &GameViewProps) -> Html {
                             }
                         }
                     }
+                } else {
+                    selected_piece_id.set(None);
                 }
             } else if let Some(piece) = current_ghosts.values().find(|p| p.position == target && p.owner_id == Some(player_id)) {
                 selected_piece_id.set(Some(piece.id));
@@ -814,21 +842,23 @@ fn game_view(props: &GameViewProps) -> Html {
         })
     };
 
+    let is_alive = props.reducer.state.players.contains_key(&player_id) && player_id != Uuid::nil();
+
     html! {
         <div style="width: 100%; height: 100%; position: relative;" oncontextmenu={Callback::from(|e: MouseEvent| e.prevent_default())}>
             <canvas ref={canvas_ref} onmousedown={on_mousedown} onmousemove={on_mousemove} onmouseup={on_mouseup} style="display: block; background: #fafafa; cursor: grab;"></canvas>
             
-            // Top Stats Bar
-            <div style="position: absolute; top: 0; left: 0; right: 0; height: 24px; background: rgba(0, 0, 0, 0.4); color: #fff; font-family: monospace; font-size: 11px; display: flex; align-items: center; padding: 0 10px; gap: 15px; pointer-events: none; z-index: 100;">
-                <span>{"FPS: "}{props.reducer.fps}</span>
-                <span>{"PING: "}{props.reducer.ping_ms}{"ms"}</span>
-                <span>{"COORD: "}{format!("{}, {}", (cam_state.0 / (40.0 * *zoom_state)).floor(), (cam_state.1 / (40.0 * *zoom_state)).floor())}</span>
-                <span>{"BOARD: "}{props.reducer.state.board_size}{"x"}{props.reducer.state.board_size}</span>
-                <span>{"PLAYERS: "}{props.reducer.state.players.len()}</span>
-            </div>
+            // Bottom Right Debug Stats
+            if is_alive {
+                <div style="position: absolute; bottom: 10px; right: 10px; background: rgba(0, 0, 0, 0.4); color: #fff; font-family: monospace; font-size: 10px; padding: 5px 10px; pointer-events: none; z-index: 100; border-radius: 4px; display: flex; flex-direction: column; align-items: flex-end; gap: 2px;">
+                    <span>{"FPS: "}{props.reducer.fps}</span>
+                    <span>{"PING: "}{props.reducer.ping_ms}{"ms"}</span>
+                    <span>{"BOARD: "}{props.reducer.state.board_size}{"x"}{props.reducer.state.board_size}</span>
+                </div>
+            }
 
             <div style="position: absolute; top: 40px; left: 20px; pointer-events: none; display: flex; flex-direction: column; gap: 10px;">
-                if player_id != Uuid::nil() {
+                if is_alive {
                     <div style="background: transparent; padding: 10px 20px; font-weight: bold; font-size: 1.5em; pointer-events: auto;">{"Score: "}{props.reducer.last_score}</div>
                 }
                 if let Some(error) = &props.reducer.error {

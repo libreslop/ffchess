@@ -1,5 +1,5 @@
 use glam::IVec2;
-use crate::models::{PieceType, Piece};
+use crate::models::{PieceType, Piece, CooldownConfig};
 use std::collections::HashMap;
 use uuid::Uuid;
 
@@ -20,16 +20,16 @@ pub fn get_piece_base_cooldown(piece_type: PieceType) -> i64 {
     }
 }
 
-pub fn calculate_cooldown(piece_type: PieceType, start: IVec2, end: IVec2) -> i64 {
-    let distance = (end - start).as_vec2().length();
+pub fn calculate_cooldown(piece_type: PieceType, start: IVec2, end: IVec2, config: &CooldownConfig) -> i64 {
+    let distance = (end - start).as_vec2().length() as f64;
     
     match piece_type {
-        PieceType::Pawn => 1000, // Pawns always move 1 square (or capture 1 square)
-        PieceType::Knight => 2000, // Knights have a fixed "jump" cost
-        PieceType::King => 4000, // Kings are slow and move 1 square
-        PieceType::Bishop => 1200 + (400.0 * distance) as i64,
-        PieceType::Rook => 1500 + (400.0 * distance) as i64,
-        PieceType::Queen => 2000 + (500.0 * distance) as i64,
+        PieceType::Pawn => config.pawn_base,
+        PieceType::Knight => config.knight_base,
+        PieceType::King => config.king_base,
+        PieceType::Bishop => config.bishop_base + (config.bishop_dist * distance) as i64,
+        PieceType::Rook => config.rook_base + (config.rook_dist * distance) as i64,
+        PieceType::Queen => config.queen_base + (config.queen_dist * distance) as i64,
     }
 }
 

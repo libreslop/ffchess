@@ -9,7 +9,7 @@
 - **State Management:** In-memory board state (no persistent DB for now).
 
 ## 2. Gameplay Mechanics
-- **World:** A dynamic grid that starts at 30x30 and scales with player count (up to 200x200).
+- **World:** A dynamic grid that starts at 25x25 and scales with player count (up to 200x200).
 - **Multiplayer:** Many players coexist on the same board simultaneously.
 - **Move Interference:** First-come-first-served. Pieces block movement (except Knights).
 - **Pieces:** 
