@@ -308,17 +308,24 @@ pub fn game_view(props: &GameViewProps) -> Html {
         Callback::from(move |(cx, cy, is_right_click): (f64, f64, bool)| {
             let start = *drag_start;
             drag_start.set(None);
+            
+            let mut is_tap = true;
             if let Some((sx, sy, allow_panning)) = start {
                 let dx = cx - sx;
                 let dy = cy - sy;
-                if allow_panning && (dx * dx + dy * dy).sqrt() > 5.0 {
-                    return;
+                let dist = (dx * dx + dy * dy).sqrt();
+                if allow_panning && dist > 10.0 {
+                    is_tap = false;
                 }
                 if !allow_panning {
                     manager_ref.borrow_mut().velocity = (0.0, 0.0);
                 }
             } else {
                 manager_ref.borrow_mut().velocity = (0.0, 0.0);
+            }
+
+            if !is_tap {
+                return;
             }
 
             let canvas = canvas_ref.cast::<HtmlCanvasElement>().unwrap();
@@ -426,6 +433,9 @@ pub fn game_view(props: &GameViewProps) -> Html {
             if touches.length() == 1 {
                 let touch = touches.get(0).unwrap();
                 handle_input_start.emit((touch.client_x() as f64, touch.client_y() as f64, false));
+                // We don't always want to prevent default on start as it might block other things, 
+                // but for the canvas it's usually needed.
+                e.prevent_default();
             } else if touches.length() == 2 {
                 let t1 = touches.get(0).unwrap();
                 let t2 = touches.get(1).unwrap();
@@ -433,6 +443,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
                 let dy = t1.client_y() - t2.client_y();
                 let dist = ((dx * dx + dy * dy) as f64).sqrt();
                 last_touch_dist.set(Some(dist));
+                e.prevent_default();
             }
         })
     };
@@ -447,6 +458,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
             if touches.length() == 1 {
                 let touch = touches.get(0).unwrap();
                 handle_input_move.emit((touch.client_x() as f64, touch.client_y() as f64));
+                e.prevent_default();
             } else if touches.length() == 2 {
                 let t1 = touches.get(0).unwrap();
                 let t2 = touches.get(1).unwrap();
@@ -460,6 +472,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
                     manager.target_zoom = (manager.target_zoom * ratio).clamp(0.2, 2.0);
                     last_touch_dist.set(Some(dist));
                 }
+                e.prevent_default();
             }
         })
     };
@@ -474,6 +487,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
             if touches.length() > 0 {
                 let touch = touches.get(0).unwrap();
                 handle_input_end.emit((touch.client_x() as f64, touch.client_y() as f64, false));
+                e.prevent_default();
             }
         })
     };
