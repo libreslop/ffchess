@@ -11,6 +11,7 @@ pub struct CameraManager {
     pub velocity: (f64, f64),
     pub was_alive: bool,
     pub last_king_grid_pos: glam::IVec2,
+    pub last_touch_dist: Option<f64>,
 }
 
 impl CameraManager {
@@ -24,6 +25,7 @@ impl CameraManager {
             velocity: (0.0, 0.0),
             was_alive: false,
             last_king_grid_pos: glam::IVec2::ZERO,
+            last_touch_dist: None,
         }
     }
 }

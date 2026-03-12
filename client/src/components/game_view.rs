@@ -27,7 +27,6 @@ pub fn game_view(props: &GameViewProps) -> Html {
     let zoom_state = use_state(|| 1.0f64);
     let frame_id = use_state(|| 0u64);
     let drag_start = use_state(|| None::<(f64, f64, bool)>);
-    let last_touch_dist = use_state(|| None::<f64>);
 
     let window_size = use_state(|| {
         (
@@ -426,15 +425,13 @@ pub fn game_view(props: &GameViewProps) -> Html {
 
     let on_touchstart = {
         let handle_input_start = handle_input_start.clone();
-        let last_touch_dist = last_touch_dist.clone();
+        let manager_ref = manager_ref.clone();
         Callback::from(move |e: TouchEvent| {
             let e = e.dyn_ref::<web_sys::TouchEvent>().unwrap();
             let touches = e.touches();
             if touches.length() == 1 {
                 let touch = touches.get(0).unwrap();
                 handle_input_start.emit((touch.client_x() as f64, touch.client_y() as f64, false));
-                // We don't always want to prevent default on start as it might block other things, 
-                // but for the canvas it's usually needed.
                 e.prevent_default();
             } else if touches.length() == 2 {
                 let t1 = touches.get(0).unwrap();
@@ -442,7 +439,16 @@ pub fn game_view(props: &GameViewProps) -> Html {
                 let dx = t1.client_x() - t2.client_x();
                 let dy = t1.client_y() - t2.client_y();
                 let dist = ((dx * dx + dy * dy) as f64).sqrt();
-                last_touch_dist.set(Some(dist));
+                
+                let mut manager = manager_ref.borrow_mut();
+                manager.last_touch_dist = Some(dist);
+                
+                // Centering zoom on midpoint of two fingers
+                manager.mouse_pos = (
+                    (t1.client_x() + t2.client_x()) as f64 / 2.0,
+                    (t1.client_y() + t2.client_y()) as f64 / 2.0
+                );
+                
                 e.prevent_default();
             }
         })
@@ -450,7 +456,6 @@ pub fn game_view(props: &GameViewProps) -> Html {
 
     let on_touchmove = {
         let handle_input_move = handle_input_move.clone();
-        let last_touch_dist = last_touch_dist.clone();
         let manager_ref = manager_ref.clone();
         Callback::from(move |e: TouchEvent| {
             let e = e.dyn_ref::<web_sys::TouchEvent>().unwrap();
@@ -466,11 +471,16 @@ pub fn game_view(props: &GameViewProps) -> Html {
                 let dy = t1.client_y() - t2.client_y();
                 let dist = ((dx * dx + dy * dy) as f64).sqrt();
 
-                if let Some(last_dist) = *last_touch_dist {
+                let mut manager = manager_ref.borrow_mut();
+                if let Some(last_dist) = manager.last_touch_dist {
                     let ratio = dist / last_dist;
-                    let mut manager = manager_ref.borrow_mut();
                     manager.target_zoom = (manager.target_zoom * ratio).clamp(0.2, 2.0);
-                    last_touch_dist.set(Some(dist));
+                    manager.last_touch_dist = Some(dist);
+                    
+                    manager.mouse_pos = (
+                        (t1.client_x() + t2.client_x()) as f64 / 2.0,
+                        (t1.client_y() + t2.client_y()) as f64 / 2.0
+                    );
                 }
                 e.prevent_default();
             }
@@ -479,10 +489,13 @@ pub fn game_view(props: &GameViewProps) -> Html {
 
     let on_touchend = {
         let handle_input_end = handle_input_end.clone();
-        let last_touch_dist = last_touch_dist.clone();
+        let manager_ref = manager_ref.clone();
         Callback::from(move |e: TouchEvent| {
             let e = e.dyn_ref::<web_sys::TouchEvent>().unwrap();
-            last_touch_dist.set(None);
+            {
+                let mut manager = manager_ref.borrow_mut();
+                manager.last_touch_dist = None;
+            }
             let touches = e.changed_touches();
             if touches.length() > 0 {
                 let touch = touches.get(0).unwrap();
