@@ -1,4 +1,4 @@
-# FFChess (Free-For-All Chess) Project Overview
+# FFchess (MMO battle chess) Project Overview
 
 This document provides a comprehensive overview of the `ffchess-server` project, its current state, architecture, and core mechanics to assist future development.
 

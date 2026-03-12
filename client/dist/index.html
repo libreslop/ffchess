@@ -2,7 +2,18 @@
 <html>
     <head>
         <meta charset="utf-8" />
-        <title>FFChess</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>FFchess: MMO battle chess</title>
+        <meta name="description" content="Command your army in a real-time, multiplayer chess world. Scale your board, capture territories, and outsmart players in a dynamic, expanding battlefield.">
+
+        <!-- Discord & Social Embeds -->
+        <meta property="og:title" content="FFchess: MMO battle chess">
+        <meta property="og:description" content="Real-time, multiplayer chess on a dynamic, expanding board. Join the battle and command your army!">
+        <meta property="og:type" content="website">
+        <meta property="og:image" content="/assets/social-preview.png"> <!-- Placeholder for future asset -->
+        <meta name="twitter:card" content="summary_large_image">
+        <meta name="theme-color" content="#2563eb">
+
         <link rel="preconnect" href="https://fonts.googleapis.com">
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
         <link href="https://fonts.googleapis.com/css2?family=Arbutus&display=swap" rel="stylesheet">
@@ -20,11 +31,11 @@
                 font-family: inherit;
             }
         </style>
-    <link rel="modulepreload" href="/client-e9ec0e28180ded98.js" crossorigin="anonymous" integrity="sha384-uv4unLlcTuDeLFxvcAd4ID9HH82HzoFbhzHC4ZoxzUJj99ak2X8r+z9/oRFAKDi6"><link rel="preload" href="/client-e9ec0e28180ded98_bg.wasm" crossorigin="anonymous" integrity="sha384-TMXvRZbT6gGiHKUtx/azSeagLJ7h7tdvujgxA7cQZLYk7Q4cbr0IfvFofTTA8E0t" as="fetch" type="application/wasm"></head>
+    <link rel="modulepreload" href="/client-34a2e889aad1b4ff.js" crossorigin="anonymous" integrity="sha384-uv4unLlcTuDeLFxvcAd4ID9HH82HzoFbhzHC4ZoxzUJj99ak2X8r+z9/oRFAKDi6"><link rel="preload" href="/client-34a2e889aad1b4ff_bg.wasm" crossorigin="anonymous" integrity="sha384-LkGAYw6GAphd7PJZL2OcSB7XeFJOmlkaYGY3YUwIE6DpgWW0kB4q+DfkZZiuSh06" as="fetch" type="application/wasm"></head>
     <body>
 <script type="module">
-import init, * as bindings from '/client-e9ec0e28180ded98.js';
-const wasm = await init({ module_or_path: '/client-e9ec0e28180ded98_bg.wasm' });
+import init, * as bindings from '/client-34a2e889aad1b4ff.js';
+const wasm = await init({ module_or_path: '/client-34a2e889aad1b4ff_bg.wasm' });
 
 
 window.wasmBindings = bindings;

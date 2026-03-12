@@ -1,9 +1,9 @@
-# FFChess (Free-For-All Chess)
+# FFchess (MMO battle chess)
 
-A real-time, multiplayer, massive-scale chess game where players compete on a shared board that scales dynamically.
+Command your army in a real-time, multiplayer chess world. Scale your board, capture territories, and outfox your opponents in a dynamic, expanding battlefield.
 
 ## 🚀 Features
-- **Dynamic Board:** The board size scales from 25x25 up to 200x200 based on the number of active players.
+- **Dynamic Board:** The board size scales based on the number of active players.
 - **Independent Cooldowns:** Every piece has its own cooldown timer based on its type and travel distance.
 - **King-Centric Strategy:** Lose your King, lose your entire army.
 - **Dynamic Viewport:** Your vision (Fog of War) expands as your army grows.

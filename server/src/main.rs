@@ -43,6 +43,6 @@ async fn main() {
         .layer(CorsLayer::permissive());
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await.unwrap();
-    println!("[INFO] FFChess listening on :8080");
+    println!("[INFO] FFchess listening on :8080");
     axum::serve(listener, app).await.unwrap();
 }

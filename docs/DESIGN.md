@@ -1,4 +1,4 @@
-# FFChess (Free-For-All Chess) Design Document
+# FFchess (MMO battle chess) Design Document
 
 ## 1. Technical Stack
 - **Language:** Rust (Full-stack)
