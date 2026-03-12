@@ -1,6 +1,6 @@
-use common::*;
-use uuid::Uuid;
 use yew::prelude::*;
+use uuid::Uuid;
+use common::*;
 
 pub struct CameraManager {
     pub camera: (f64, f64),
@@ -45,7 +45,7 @@ pub fn update_camera(
         let factor = 0.15;
         let old_z = manager.zoom;
         manager.zoom += (manager.target_zoom - manager.zoom) * factor;
-
+        
         if let Some(canvas) = canvas_ref.cast::<web_sys::HtmlElement>() {
             let rect = canvas.get_bounding_client_rect();
             let px = manager.mouse_pos.0 - rect.left();
@@ -75,57 +75,33 @@ pub fn update_camera(
     // 3. King Following / Death Focusing
     if is_alive {
         if let Some(p) = player
-            && let Some(king) = state.pieces.get(&p.king_id)
-        {
+            && let Some(king) = state.pieces.get(&p.king_id) {
             manager.last_king_grid_pos = king.position;
             manager.was_alive = true;
 
-            if !is_dragging {
-                if let Some(canvas) = canvas_ref.cast::<web_sys::HtmlElement>() {
-                    let rect = canvas.get_bounding_client_rect();
-                    let tile_size = 40.0 * manager.zoom;
-                    let kpx = king.position.x as f64 * tile_size + tile_size / 2.0;
-                    let kpy = king.position.y as f64 * tile_size + tile_size / 2.0;
-                    let ksx = kpx - manager.camera.0 + rect.width() / 2.0;
-                    let ksy = kpy - manager.camera.1 + rect.height() / 2.0;
+            if !is_dragging
+                && let Some(canvas) = canvas_ref.cast::<web_sys::HtmlElement>() {
+                let rect = canvas.get_bounding_client_rect();
+                let tile_size = 40.0 * manager.zoom;
+                let kpx = king.position.x as f64 * tile_size + tile_size / 2.0;
+                let kpy = king.position.y as f64 * tile_size + tile_size / 2.0;
+                let ksx = kpx - manager.camera.0 + rect.width() / 2.0;
+                let ksy = kpy - manager.camera.1 + rect.height() / 2.0;
+                
+                let pad = 150.0 * manager.zoom.sqrt().min(1.0);
+                let mut target_cam = manager.camera;
+                let mut force_speed = false;
 
-                    let pad = 150.0 * manager.zoom.sqrt().min(1.0);
-                    let mut target_cam = manager.camera;
-                    let mut force_speed = false;
+                if ksx < pad { target_cam.0 -= pad - ksx; if ksx < 0.0 { force_speed = true; } }
+                if ksx > rect.width() - pad { target_cam.0 += ksx - (rect.width() - pad); if ksx > rect.width() { force_speed = true; } }
+                if ksy < pad { target_cam.1 -= pad - ksy; if ksy < 0.0 { force_speed = true; } }
+                if ksy > rect.height() - pad { target_cam.1 += ksy - (rect.height() - pad); if ksy > rect.height() { force_speed = true; } }
 
-                    if ksx < pad {
-                        target_cam.0 -= pad - ksx;
-                        if ksx < 0.0 {
-                            force_speed = true;
-                        }
-                    }
-                    if ksx > rect.width() - pad {
-                        target_cam.0 += ksx - (rect.width() - pad);
-                        if ksx > rect.width() {
-                            force_speed = true;
-                        }
-                    }
-                    if ksy < pad {
-                        target_cam.1 -= pad - ksy;
-                        if ksy < 0.0 {
-                            force_speed = true;
-                        }
-                    }
-                    if ksy > rect.height() - pad {
-                        target_cam.1 += ksy - (rect.height() - pad);
-                        if ksy > rect.height() {
-                            force_speed = true;
-                        }
-                    }
-
-                    if (target_cam.0 - manager.camera.0).abs() > 0.1
-                        || (target_cam.1 - manager.camera.1).abs() > 0.1
-                    {
-                        let move_factor = if force_speed { 0.3 } else { 0.1 };
-                        manager.camera.0 += (target_cam.0 - manager.camera.0) * move_factor;
-                        manager.camera.1 += (target_cam.1 - manager.camera.1) * move_factor;
-                        changed = true;
-                    }
+                if (target_cam.0 - manager.camera.0).abs() > 0.1 || (target_cam.1 - manager.camera.1).abs() > 0.1 {
+                    let move_factor = if force_speed { 0.3 } else { 0.1 };
+                    manager.camera.0 += (target_cam.0 - manager.camera.0) * move_factor;
+                    manager.camera.1 += (target_cam.1 - manager.camera.1) * move_factor;
+                    changed = true;
                 }
             }
         }
@@ -136,18 +112,14 @@ pub fn update_camera(
         let tile_size = 40.0 * target_zoom;
         manager.target_camera = (
             grid_pos.x as f64 * tile_size + tile_size / 2.0,
-            grid_pos.y as f64 * tile_size + tile_size / 2.0,
+            grid_pos.y as f64 * tile_size + tile_size / 2.0
         );
         manager.target_zoom = target_zoom;
         manager.was_alive = false;
         changed = true;
     }
 
-    if !is_alive
-        && !is_dragging
-        && ((manager.target_camera.0 - manager.camera.0).abs() > 0.1
-            || (manager.target_camera.1 - manager.camera.1).abs() > 0.1)
-    {
+    if !is_alive && !is_dragging && ((manager.target_camera.0 - manager.camera.0).abs() > 0.1 || (manager.target_camera.1 - manager.camera.1).abs() > 0.1) {
         manager.camera.0 += (manager.target_camera.0 - manager.camera.0) * 0.1;
         manager.camera.1 += (manager.target_camera.1 - manager.camera.1) * 0.1;
         changed = true;

@@ -1,7 +1,6 @@
 use common::*;
 use glam::IVec2;
 use rand::Rng;
-use uuid::Uuid;
 
 pub async fn find_npc_target(game: &GameState, pos: IVec2, p_type: PieceType) -> Option<IVec2> {
     let board_size = game.board_size;

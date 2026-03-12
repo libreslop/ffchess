@@ -69,3 +69,9 @@ impl ColorManager {
         color
     }
 }
+
+impl Default for ColorManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
