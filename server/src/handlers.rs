@@ -45,6 +45,7 @@ async fn handle_socket(socket: WebSocket, state: Arc<ServerState>) {
         let game = state.game.read().await;
         let _ = tx.send(ServerMessage::Init {
             player_id: Uuid::nil(), // Nil UUID means not joined yet
+            session_secret: Uuid::nil(),
             state: game.clone(),
         });
     }
@@ -60,6 +61,7 @@ async fn handle_socket(socket: WebSocket, state: Arc<ServerState>) {
                             name,
                             kit,
                             player_id: pid,
+                            session_secret: secret,
                         } => {
                             tracing::info!(?name, ?kit, ?pid, "Player joining");
 
@@ -72,22 +74,29 @@ async fn handle_socket(socket: WebSocket, state: Arc<ServerState>) {
                                         title: "DUPLICATE SESSION".to_string(),
                                         message: "You are already in a game in another tab.".to_string(),
                                     }));
-                                    // Give them a moment to receive the message before closing
                                     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
                                     break; 
                                 }
                             }
 
+                            // If this connection already has a player_id (re-joining without disconnect)
+                            // Remove the old player before adding the new one to prevent leaks.
+                            if let Some(old_pid) = player_id {
+                                state.remove_player(old_pid).await;
+                                player_id = None;
+                            }
+
                             // Remove anonymous channel
                             state.player_channels.write().await.remove(&conn_id);
 
-                            match state.add_player(name, kit, tx.clone(), pid).await {
-                                Ok(id) => {
+                            match state.add_player(name, kit, tx.clone(), pid, secret).await {
+                                Ok((id, secret)) => {
                                     player_id = Some(id);
-                                    // Re-send Init with proper player_id
+                                    // Re-send Init with proper player_id and session_secret
                                     let game = state.game.read().await;
                                     let _ = tx.send(ServerMessage::Init {
                                         player_id: id,
+                                        session_secret: secret,
                                         state: game.clone(),
                                     });
                                 }

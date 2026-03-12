@@ -11,8 +11,8 @@ async fn test_respawn_cooldown_enforcement() {
     let (tx, _rx) = mpsc::unbounded_channel();
 
     // 1. Join for the first time
-    state
-        .add_player("Test".to_string(), KitType::Standard, tx.clone(), Some(player_id))
+    let (_pid, secret) = state
+        .add_player("Test".to_string(), KitType::Standard, tx.clone(), Some(player_id), None)
         .await
         .expect("Initial join should succeed");
 
@@ -21,7 +21,7 @@ async fn test_respawn_cooldown_enforcement() {
 
     // 3. Attempt immediate rejoin (should fail)
     let result = state
-        .add_player("Test".to_string(), KitType::Standard, tx.clone(), Some(player_id))
+        .add_player("Test".to_string(), KitType::Standard, tx.clone(), Some(player_id), Some(secret))
         .await;
 
     assert!(result.is_err());
@@ -39,8 +39,40 @@ async fn test_respawn_cooldown_enforcement() {
 
     // 5. Attempt rejoin again (should succeed)
     let result = state
-        .add_player("Test".to_string(), KitType::Standard, tx.clone(), Some(player_id))
+        .add_player("Test".to_string(), KitType::Standard, tx.clone(), Some(player_id), Some(secret))
         .await;
 
     assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn test_session_hijack_prevention() {
+    let state = Arc::new(ServerState::new());
+    let player_id = Uuid::new_v4();
+    let (tx, _rx) = mpsc::unbounded_channel::<ServerMessage>();
+
+    // 1. P1 joins
+    let _ = state
+        .add_player("P1".to_string(), KitType::Standard, tx.clone(), Some(player_id), None)
+        .await
+        .expect("P1 join should succeed");
+
+    // 2. P2 attempts to hijack with same player_id but no secret (or wrong secret)
+    let hijack_result = state
+        .add_player("Hijacker".to_string(), KitType::Standard, tx.clone(), Some(player_id), None)
+        .await;
+
+    assert!(hijack_result.is_err());
+    if let Err(GameError::Custom { title, .. }) = hijack_result {
+        assert_eq!(title, "SESSION ERROR");
+    } else {
+        panic!("Should have failed with SESSION ERROR");
+    }
+
+    let wrong_secret = Uuid::new_v4();
+    let hijack_result_2 = state
+        .add_player("Hijacker".to_string(), KitType::Standard, tx.clone(), Some(player_id), Some(wrong_secret))
+        .await;
+
+    assert!(hijack_result_2.is_err());
 }

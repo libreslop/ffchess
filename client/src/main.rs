@@ -192,11 +192,12 @@ pub fn app() -> Html {
                                     .borrow()
                                     .clone()
                                     .dispatch(match server_msg {
-                                        ServerMessage::Init { player_id, state } => {
+                                        ServerMessage::Init { player_id, session_secret, state } => {
                                             if player_id != Uuid::nil() {
                                                 set_stored_id(player_id);
+                                                set_stored_secret(session_secret);
                                             }
-                                            GameAction::SetInit { player_id, state }
+                                            GameAction::SetInit { player_id, session_secret, state }
                                         }
                                         ServerMessage::UpdateState {
                                             players,
@@ -276,10 +277,12 @@ pub fn app() -> Html {
             }
             if let Some(sender) = (*tx).as_ref() {
                 let stored_id = get_stored_id();
+                let stored_secret = get_stored_secret();
                 let _ = sender.0.send(ClientMessage::Join {
                     name: (*player_name).clone(),
                     kit,
                     player_id: stored_id,
+                    session_secret: stored_secret,
                 });
             }
         })
@@ -363,6 +366,7 @@ pub fn app() -> Html {
                 }
                 reducer.dispatch(GameAction::SetInit {
                     player_id: Uuid::nil(),
+                    session_secret: Uuid::nil(),
                     state: reducer.state.clone(),
                 });
                 join_step.set(1);

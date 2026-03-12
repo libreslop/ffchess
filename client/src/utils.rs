@@ -37,6 +37,24 @@ pub fn set_stored_id(id: Uuid) {
     }
 }
 
+pub fn get_stored_secret() -> Option<Uuid> {
+    let window = web_sys::window().unwrap();
+    if let Ok(Some(storage)) = window.local_storage() {
+        return storage
+            .get_item("ffchess_session_secret")
+            .unwrap_or_default()
+            .and_then(|s| Uuid::parse_str(&s).ok());
+    }
+    None
+}
+
+pub fn set_stored_secret(secret: Uuid) {
+    let window = web_sys::window().unwrap();
+    if let Ok(Some(storage)) = window.local_storage() {
+        let _ = storage.set_item("ffchess_session_secret", &secret.to_string());
+    }
+}
+
 pub fn get_death_timestamp() -> i64 {
     let window = web_sys::window().unwrap();
     if let Ok(Some(storage)) = window.local_storage() {

@@ -7,6 +7,7 @@ use uuid::Uuid;
 pub struct ServerState {
     pub game: RwLock<GameState>,
     pub player_channels: RwLock<HashMap<Uuid, tokio::sync::mpsc::UnboundedSender<ServerMessage>>>,
+    pub session_secrets: RwLock<HashMap<Uuid, Uuid>>,
     pub removed_pieces: RwLock<Vec<Uuid>>,
     pub removed_players: RwLock<Vec<Uuid>>,
     pub color_manager: RwLock<ColorManager>,
@@ -22,6 +23,7 @@ impl ServerState {
                 ..Default::default()
             }),
             player_channels: RwLock::new(HashMap::new()),
+            session_secrets: RwLock::new(HashMap::new()),
             removed_pieces: RwLock::new(Vec::new()),
             removed_players: RwLock::new(Vec::new()),
             color_manager: RwLock::new(ColorManager::new()),

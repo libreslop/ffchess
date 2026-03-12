@@ -11,12 +11,12 @@ mod tests {
         let state = ServerState::new();
         let (tx, _) = mpsc::unbounded_channel();
 
-        let p1 = state
-            .add_player("P1".to_string(), KitType::Standard, tx.clone(), None)
+        let (p1, _p1_secret) = state
+            .add_player("P1".to_string(), KitType::Standard, tx.clone(), None, None)
             .await
             .expect("Initial join should succeed");
-        let p2 = state
-            .add_player("P2".to_string(), KitType::Tank, tx.clone(), None)
+        let (p2, _p2_secret) = state
+            .add_player("P2".to_string(), KitType::Tank, tx.clone(), None, None)
             .await
             .expect("Initial join should succeed");
 
@@ -45,12 +45,12 @@ mod tests {
         let state = ServerState::new();
         let (tx, _) = mpsc::unbounded_channel();
 
-        let p1_id = state
-            .add_player("P1".to_string(), KitType::Standard, tx.clone(), None)
+        let (p1_id, _p1_secret) = state
+            .add_player("P1".to_string(), KitType::Standard, tx.clone(), None, None)
             .await
             .expect("Initial join should succeed");
-        let p2_id = state
-            .add_player("P2".to_string(), KitType::Standard, tx.clone(), None)
+        let (p2_id, _p2_secret) = state
+            .add_player("P2".to_string(), KitType::Standard, tx.clone(), None, None)
             .await
             .expect("Initial join should succeed");
 

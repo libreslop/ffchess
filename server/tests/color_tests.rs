@@ -12,7 +12,7 @@ mod tests {
 
         let mut colors = std::collections::HashSet::new();
         for i in 0..5 {
-            let id = state.add_player(format!("P{}", i), KitType::Standard, tx.clone(), None).await.expect("Initial join should succeed");
+            let (id, _secret) = state.add_player(format!("P{}", i), KitType::Standard, tx.clone(), None, None).await.expect("Initial join should succeed");
             let game = state.game.read().await;
             let player = game.players.get(&id).unwrap();
             assert!(colors.insert(player.color.clone()), "Duplicate color assigned");
@@ -26,7 +26,7 @@ mod tests {
         let player_id = Uuid::new_v4();
 
         // Join first time
-        state.add_player("P1".to_string(), KitType::Standard, tx.clone(), Some(player_id)).await.expect("Initial join should succeed");
+        let (_id, secret) = state.add_player("P1".to_string(), KitType::Standard, tx.clone(), Some(player_id), None).await.expect("Initial join should succeed");
         let color1 = {
             let game = state.game.read().await;
             game.players.get(&player_id).expect("Player not found in game state").color.clone()
@@ -41,7 +41,7 @@ mod tests {
             deaths.insert(player_id, 0);
         }
 
-        state.add_player("P1".to_string(), KitType::Standard, tx.clone(), Some(player_id)).await.expect("Initial join should succeed");
+        let (_id, _secret) = state.add_player("P1".to_string(), KitType::Standard, tx.clone(), Some(player_id), Some(secret)).await.expect("Initial join should succeed");
         let color2 = {
             let game = state.game.read().await;
             game.players.get(&player_id).expect("Player not found in game state after rejoin").color.clone()
@@ -57,7 +57,7 @@ mod tests {
         let p1_id = Uuid::new_v4();
 
         // P1 joins and gets a color (Red is first in PREFERRED_COLORS)
-        state.add_player("P1".to_string(), KitType::Standard, tx.clone(), Some(p1_id)).await.expect("Initial join should succeed");
+        let (_id1, _s1) = state.add_player("P1".to_string(), KitType::Standard, tx.clone(), Some(p1_id), None).await.expect("Initial join should succeed");
         let p1_color = {
             let game = state.game.read().await;
             game.players.get(&p1_id).unwrap().color.clone()
@@ -77,7 +77,7 @@ mod tests {
 
         // P2 joins, should be able to take P1's color
         let p2_id = Uuid::new_v4();
-        state.add_player("P2".to_string(), KitType::Standard, tx.clone(), Some(p2_id)).await.expect("Initial join should succeed");
+        let (_id2, _s2) = state.add_player("P2".to_string(), KitType::Standard, tx.clone(), Some(p2_id), None).await.expect("Initial join should succeed");
         let p2_color = {
             let game = state.game.read().await;
             game.players.get(&p2_id).unwrap().color.clone()

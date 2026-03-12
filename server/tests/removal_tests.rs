@@ -11,12 +11,12 @@ mod tests {
         let state = ServerState::new();
         let (tx, _) = mpsc::unbounded_channel();
 
-        let p1_id = state
-            .add_player("P1".to_string(), KitType::Standard, tx.clone(), None)
+        let (p1_id, _p1_secret) = state
+            .add_player("P1".to_string(), KitType::Standard, tx.clone(), None, None)
             .await
             .expect("Initial join should succeed");
-        let p2_id = state
-            .add_player("P2".to_string(), KitType::Standard, tx.clone(), None)
+        let (p2_id, _p2_secret) = state
+            .add_player("P2".to_string(), KitType::Standard, tx.clone(), None, None)
             .await
             .expect("Initial join should succeed");
 
@@ -70,8 +70,8 @@ mod tests {
         let state = ServerState::new();
         let (tx, _) = mpsc::unbounded_channel();
 
-        let p1_id = state
-            .add_player("P1".to_string(), KitType::Standard, tx.clone(), None)
+        let (p1_id, _p1_secret) = state
+            .add_player("P1".to_string(), KitType::Standard, tx.clone(), None, None)
             .await
             .expect("Initial join should succeed");
 
@@ -100,8 +100,8 @@ mod tests {
         let state = ServerState::new();
         let (tx, _) = mpsc::unbounded_channel();
 
-        let p1_id = state
-            .add_player("P1".to_string(), KitType::Standard, tx.clone(), None)
+        let (p1_id, _p1_secret) = state
+            .add_player("P1".to_string(), KitType::Standard, tx.clone(), None, None)
             .await
             .expect("Initial join should succeed");
         state.remove_player(p1_id).await;
@@ -127,8 +127,8 @@ mod tests {
         let (tx, _) = mpsc::unbounded_channel();
 
         // Add player and NPC
-        let p1_id = state
-            .add_player("P1".to_string(), KitType::Standard, tx.clone(), None)
+        let (p1_id, _p1_secret) = state
+            .add_player("P1".to_string(), KitType::Standard, tx.clone(), None, None)
             .await
             .expect("Initial join should succeed");
 

@@ -29,8 +29,8 @@ impl ServerState {
 
         {
             let mut cm = self.color_manager.write().await;
-            let game = self.game.read().await;
-            for player_id in game.players.keys() {
+            let channels = self.player_channels.read().await;
+            for player_id in channels.keys() {
                 cm.update_activity(*player_id);
             }
         }

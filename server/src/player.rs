@@ -12,8 +12,27 @@ impl ServerState {
         kit: KitType,
         tx: tokio::sync::mpsc::UnboundedSender<ServerMessage>,
         existing_id: Option<Uuid>,
-    ) -> Result<Uuid, GameError> {
+        provided_secret: Option<Uuid>,
+    ) -> Result<(Uuid, Uuid), GameError> {
+        let name = name.chars().take(32).collect::<String>();
         let player_id = existing_id.unwrap_or_else(Uuid::new_v4);
+
+        // Session secret check
+        let mut secrets = self.session_secrets.write().await;
+        let session_secret = if let Some(stored_secret) = secrets.get(&player_id) {
+            if Some(*stored_secret) != provided_secret {
+                return Err(GameError::Custom {
+                    title: "SESSION ERROR".to_string(),
+                    message: "Invalid session secret for this player ID.".to_string(),
+                });
+            }
+            *stored_secret
+        } else {
+            let new_secret = Uuid::new_v4();
+            secrets.insert(player_id, new_secret);
+            new_secret
+        };
+        drop(secrets);
 
         {
             let deaths = self.death_timestamps.read().await;
@@ -138,7 +157,7 @@ impl ServerState {
         };
 
         game.players.insert(player_id, player);
-        Ok(player_id)
+        Ok((player_id, session_secret))
     }
 
     pub async fn remove_player(&self, player_id: Uuid) {

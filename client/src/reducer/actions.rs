@@ -5,6 +5,7 @@ use uuid::Uuid;
 pub enum GameAction {
     SetInit {
         player_id: Uuid,
+        session_secret: Uuid,
         state: GameState,
     },
     UpdateState {

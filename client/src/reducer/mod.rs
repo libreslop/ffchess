@@ -15,8 +15,9 @@ impl Reducible for GameStateReducer {
     fn reduce(self: Rc<Self>, action: Self::Action) -> Rc<Self> {
         let mut next = (*self).clone();
         match action {
-            GameAction::SetInit { player_id, state } => {
+            GameAction::SetInit { player_id, session_secret, state } => {
                 next.player_id = Some(player_id);
+                next.session_secret = Some(session_secret);
                 next.state = state;
                 next.pm_queue.clear();
                 next.error = None;

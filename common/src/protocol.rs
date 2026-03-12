@@ -53,6 +53,7 @@ pub enum ClientMessage {
         name: String,
         kit: KitType,
         player_id: Option<Uuid>,
+        session_secret: Option<Uuid>,
     },
     MovePiece {
         piece_id: Uuid,
@@ -69,6 +70,7 @@ pub enum ClientMessage {
 pub enum ServerMessage {
     Init {
         player_id: Uuid,
+        session_secret: Uuid,
         state: GameState,
     },
     UpdateState {

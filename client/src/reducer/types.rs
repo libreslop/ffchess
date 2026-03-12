@@ -15,6 +15,7 @@ pub struct Pmove {
 pub struct GameStateReducer {
     pub state: GameState,
     pub player_id: Option<Uuid>,
+    pub session_secret: Option<Uuid>,
     pub error: Option<GameError>,
     pub pm_queue: Vec<Pmove>,
     pub last_score: u64,

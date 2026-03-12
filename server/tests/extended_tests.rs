@@ -49,8 +49,8 @@ async fn test_idle_optimization() {
 async fn test_shop_behavior_pawns() {
     let state = Arc::new(ServerState::new());
     let (tx, _rx) = mpsc::unbounded_channel();
-    let player_id = state
-        .add_player("Test".to_string(), KitType::Standard, tx, None)
+    let (player_id, _player_secret) = state
+        .add_player("Test".to_string(), KitType::Standard, tx, None, None)
         .await
         .expect("Initial join should succeed");
 
@@ -117,8 +117,8 @@ async fn test_shop_behavior_pawns() {
 async fn test_shop_behavior_upgrade() {
     let state = Arc::new(ServerState::new());
     let (tx, _rx) = mpsc::unbounded_channel();
-    let player_id = state
-        .add_player("Test".to_string(), KitType::Standard, tx, None)
+    let (player_id, _player_secret) = state
+        .add_player("Test".to_string(), KitType::Standard, tx, None, None)
         .await
         .expect("Initial join should succeed");
 
@@ -163,8 +163,8 @@ async fn test_shop_behavior_upgrade() {
 async fn test_king_can_only_recruit_pawns() {
     let state = Arc::new(ServerState::new());
     let (tx, _rx) = mpsc::unbounded_channel();
-    let player_id = state
-        .add_player("Test".to_string(), KitType::Standard, tx, None)
+    let (player_id, _player_secret) = state
+        .add_player("Test".to_string(), KitType::Standard, tx, None, None)
         .await
         .expect("Initial join should succeed");
 
