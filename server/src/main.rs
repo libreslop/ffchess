@@ -1,4 +1,4 @@
-use axum::{Router, routing::get};
+use axum::{routing::get, Router};
 use server::state::ServerState;
 use std::sync::Arc;
 use tower_http::{cors::CorsLayer, services::ServeDir, trace::TraceLayer};
@@ -8,7 +8,14 @@ async fn main() {
     tracing_subscriber::fmt::init();
 
     let state = Arc::new(ServerState::new());
-    state.spawn_initial_shops().await;
+
+    // Initialize shops for all games
+    {
+        let games = state.games.read().await;
+        for instance in games.values() {
+            instance.spawn_initial_shops().await;
+        }
+    }
 
     // Spawn game loop task
     let state_clone = state.clone();
@@ -16,17 +23,18 @@ async fn main() {
         let mut interval = tokio::time::interval(tokio::time::Duration::from_millis(100));
         loop {
             interval.tick().await;
-            state_clone.handle_tick().await;
+            let games = state_clone.games.read().await;
+            for instance in games.values() {
+                instance.handle_tick().await;
+            }
         }
     });
 
-    // Serve static files from client/dist at "/"
-    // Serve the API routes under "/api"
     let app = Router::new()
         .route("/ping", get(|| async { "pong" }))
         .nest(
             "/api",
-            Router::new().route("/ws", get(server::handlers::ws_handler)),
+            Router::new().route("/ws/:mode_id", get(server::handlers::ws_handler)),
         )
         .fallback_service(ServeDir::new("client/dist"))
         .with_state(state)

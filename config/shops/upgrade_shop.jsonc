@@ -1,0 +1,49 @@
+{
+    "id": "upgrade_shop",
+    "display_name": "Upgrade Forge",
+    "default_uses": 3,
+    "groups": [
+        {
+            "applies_to": ["pawn"],
+            "items": [
+                {
+                    "display_name": "Upgrade to Knight",
+                    "price_expr": "50 + player_piece_count * 5",
+                    "replace_with": "knight",
+                    "add_pieces": []
+                },
+                {
+                    "display_name": "Upgrade to Bishop",
+                    "price_expr": "50 + player_piece_count * 5",
+                    "replace_with": "bishop",
+                    "add_pieces": []
+                }
+            ]
+        },
+        {
+            "applies_to": ["knight", "bishop"],
+            "items": [
+                {
+                    "display_name": "Upgrade to Rook",
+                    "price_expr": "100 + player_piece_count * 10",
+                    "replace_with": "rook",
+                    "add_pieces": []
+                }
+            ]
+        },
+        {
+            "applies_to": ["rook"],
+            "items": [
+                {
+                    "display_name": "Upgrade to Queen",
+                    "price_expr": "250 + player_piece_count * 20",
+                    "replace_with": "queen",
+                    "add_pieces": []
+                }
+            ]
+        }
+    ],
+    "default_group": {
+        "items": []
+    }
+}

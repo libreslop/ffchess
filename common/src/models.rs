@@ -3,52 +3,84 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub enum PieceType {
-    King,
-    Queen,
-    Rook,
-    Bishop,
-    Knight,
-    Pawn,
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PieceConfig {
+    pub id: String,
+    pub display_name: String,
+    pub char: char,
+    pub score_value: u64,
+    pub cooldown_ms: u64,
+    pub move_paths: Vec<Vec<IVec2>>,
+    pub capture_paths: Vec<Vec<IVec2>>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub enum KitType {
-    Standard,
-    Shield,
-    Scout,
-    Tank,
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ShopItemConfig {
+    pub display_name: String,
+    pub price_expr: String,
+    pub replace_with: Option<String>,
+    pub add_pieces: Vec<String>,
 }
 
-impl KitType {
-    pub fn get_pieces(&self) -> Vec<PieceType> {
-        match self {
-            KitType::Standard => vec![
-                PieceType::Pawn,
-                PieceType::Pawn,
-                PieceType::Knight,
-                PieceType::Knight,
-            ],
-            KitType::Shield => vec![
-                PieceType::Pawn,
-                PieceType::Pawn,
-                PieceType::Pawn,
-                PieceType::Pawn,
-                PieceType::Pawn,
-                PieceType::Pawn,
-            ],
-            KitType::Scout => vec![PieceType::Pawn, PieceType::Bishop, PieceType::Bishop],
-            KitType::Tank => vec![PieceType::Rook],
-        }
-    }
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ShopGroupConfig {
+    #[serde(default)]
+    pub applies_to: Vec<String>,
+    pub items: Vec<ShopItemConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ShopConfig {
+    pub id: String,
+    pub display_name: String,
+    pub default_uses: u32,
+    pub groups: Vec<ShopGroupConfig>,
+    pub default_group: ShopGroupConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct KitConfig {
+    pub name: String,
+    pub description: String,
+    pub pieces: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct NpcLimitConfig {
+    pub piece_id: String,
+    pub max_expr: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ShopCountConfig {
+    pub shop_id: String,
+    pub count: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct HookConfig {
+    pub trigger: String,
+    pub target_piece_id: String,
+    pub action: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct GameModeConfig {
+    pub id: String,
+    pub display_name: String,
+    pub max_players: u32,
+    pub board_size_expr: String,
+    pub npc_limits: Vec<NpcLimitConfig>,
+    pub shop_counts: Vec<ShopCountConfig>,
+    pub kits: Vec<KitConfig>,
+    pub hooks: Vec<HookConfig>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Piece {
     pub id: Uuid,
     pub owner_id: Option<Uuid>, // None for NPCs
-    pub piece_type: PieceType,
+    pub piece_type: String,
     pub position: IVec2,
     #[serde(skip_serializing, default)]
     pub last_move_time: i64, // Milliseconds timestamp
@@ -68,46 +100,11 @@ pub struct Player {
     pub color: String, // Hex color code
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub enum ShopType {
-    Spawn,
-    Upgrade,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Shop {
     pub position: IVec2,
     pub uses_remaining: u32,
-    pub shop_type: ShopType,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct CooldownConfig {
-    pub pawn_base: i64,
-    pub knight_base: i64,
-    pub king_base: i64,
-    pub bishop_base: i64,
-    pub bishop_dist: f64,
-    pub rook_base: i64,
-    pub rook_dist: f64,
-    pub queen_base: i64,
-    pub queen_dist: f64,
-}
-
-impl Default for CooldownConfig {
-    fn default() -> Self {
-        Self {
-            pawn_base: 1000,
-            knight_base: 2000,
-            king_base: 4000,
-            bishop_base: 1200,
-            bishop_dist: 400.0,
-            rook_base: 1500,
-            rook_dist: 400.0,
-            queen_base: 2000,
-            queen_dist: 500.0,
-        }
-    }
+    pub shop_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -116,8 +113,7 @@ pub struct GameState {
     pub pieces: HashMap<Uuid, Piece>,
     pub shops: Vec<Shop>,
     pub board_size: i32,
-    pub cooldown_config: CooldownConfig,
-    pub respawn_cooldown_ms: u64,
+    pub mode_id: String,
 }
 
 impl Default for GameState {
@@ -127,8 +123,7 @@ impl Default for GameState {
             pieces: HashMap::new(),
             shops: Vec::new(),
             board_size: 40,
-            cooldown_config: CooldownConfig::default(),
-            respawn_cooldown_ms: 5000,
+            mode_id: "ffa".to_string(),
         }
     }
 }

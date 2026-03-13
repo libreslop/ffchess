@@ -1,5 +1,6 @@
 use crate::canvas::types::{PieceDrawParams, Renderer};
-use common::*;
+use common::models::GameState;
+use common::models::Piece;
 
 impl Renderer {
     pub fn draw_piece(&self, params: PieceDrawParams) {
@@ -41,16 +42,12 @@ impl Renderer {
         ));
         let font_size = 16.0 * self.zoom;
         self.ctx.set_font(&format!("bold {}px Arbutus", font_size));
-        let label = match params.piece.piece_type {
-            PieceType::King => "K",
-            PieceType::Queen => "Q",
-            PieceType::Rook => "R",
-            PieceType::Bishop => "B",
-            PieceType::Knight => "N",
-            PieceType::Pawn => "P",
-        };
+        
+        let config = self.piece_configs.get(&params.piece.piece_type);
+        let label = config.map(|c| c.char.to_string()).unwrap_or_else(|| "?".to_string());
+        
         let _ = self.ctx.fill_text(
-            label,
+            &label,
             params.piece.position.x as f64 * self.tile_size
                 + params.offset_x
                 + self.tile_size / 2.0
@@ -114,7 +111,7 @@ impl Renderer {
         alpha: f64,
         state: &GameState,
     ) {
-        if piece.piece_type == PieceType::King
+        if piece.piece_type == "king"
             && let Some(owner_id) = piece.owner_id
             && let Some(player) = state.players.get(&owner_id)
         {

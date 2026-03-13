@@ -1,9 +1,6 @@
 pub mod colors;
+pub mod config;
 pub mod handlers;
-pub mod movement;
-pub mod npc;
-pub mod player;
-pub mod shop;
+pub mod instance;
 pub mod spawning;
 pub mod state;
-pub mod tick;

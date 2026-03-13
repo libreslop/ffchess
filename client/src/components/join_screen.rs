@@ -1,4 +1,4 @@
-use common::models::KitType;
+use common::models::GameModeConfig;
 use crate::utils::is_mobile;
 use yew::prelude::*;
 
@@ -9,9 +9,10 @@ pub struct JoinScreenProps {
     pub on_name_submit: Callback<SubmitEvent>,
     pub landing_cooldown: i32,
     pub join_step: i32,
-    pub on_join: Callback<KitType>,
+    pub on_join: Callback<String>,
     pub error: Option<common::protocol::GameError>,
     pub is_loading: bool,
+    pub mode: Option<GameModeConfig>,
 }
 
 #[function_component(JoinScreen)]
@@ -53,18 +54,19 @@ pub fn join_screen(props: &JoinScreenProps) -> Html {
                         }
 
                         <div style="display: grid; grid-template-columns: 1fr; gap: 12px; width: 100%;">
-                            <button disabled={is_disabled} onclick={props.on_join.reform(|_| KitType::Standard)} style={format!("padding: 15px; cursor: {}; border-radius: 0; border: 2px solid rgba(255,255,255,0.5); background: rgba(255,255,255,0.1); color: #fff; font-weight: bold; transition: all 0.2s; opacity: {};", if is_disabled { "not-allowed" } else { "pointer" }, if is_disabled { "0.5" } else { "1.0" })}>
-                                {"STANDARD"}<br/><span style="font-weight: normal; font-size: 0.8em; color: #cbd5e1;">{"2 Pawns, 2 Knights"}</span>
-                            </button>
-                            <button disabled={is_disabled} onclick={props.on_join.reform(|_| KitType::Shield)} style={format!("padding: 15px; cursor: {}; border-radius: 0; border: 2px solid rgba(255,255,255,0.5); background: rgba(255,255,255,0.1); color: #fff; font-weight: bold; transition: all 0.2s; opacity: {};", if is_disabled { "not-allowed" } else { "pointer" }, if is_disabled { "0.5" } else { "1.0" })}>
-                                {"SHIELD"}<br/><span style="font-weight: normal; font-size: 0.8em; color: #cbd5e1;">{"6 Pawns"}</span>
-                            </button>
-                            <button disabled={is_disabled} onclick={props.on_join.reform(|_| KitType::Scout)} style={format!("padding: 15px; cursor: {}; border-radius: 0; border: 2px solid rgba(255,255,255,0.5); background: rgba(255,255,255,0.1); color: #fff; font-weight: bold; transition: all 0.2s; opacity: {};", if is_disabled { "not-allowed" } else { "pointer" }, if is_disabled { "0.5" } else { "1.0" })}>
-                                {"SCOUT"}<br/><span style="font-weight: normal; font-size: 0.8em; color: #cbd5e1;">{"1 Pawn, 2 Bishops"}</span>
-                            </button>
-                            <button disabled={is_disabled} onclick={props.on_join.reform(|_| KitType::Tank)} style={format!("padding: 15px; cursor: {}; border-radius: 0; border: 2px solid rgba(255,255,255,0.5); background: rgba(255,255,255,0.1); color: #fff; font-weight: bold; transition: all 0.2s; opacity: {};", if is_disabled { "not-allowed" } else { "pointer" }, if is_disabled { "0.5" } else { "1.0" })}>
-                                {"TANK"}<br/><span style="font-weight: normal; font-size: 0.8em; color: #cbd5e1;">{"1 Rook"}</span>
-                            </button>
+                            if let Some(mode) = &props.mode {
+                                { for mode.kits.iter().map(|kit| {
+                                    let kit_name = kit.name.clone();
+                                    let on_click = props.on_join.reform(move |_| kit_name.clone());
+                                    html! {
+                                        <button disabled={is_disabled} onclick={on_click} style={format!("padding: 15px; cursor: {}; border-radius: 0; border: 2px solid rgba(255,255,255,0.5); background: rgba(255,255,255,0.1); color: #fff; font-weight: bold; transition: all 0.2s; opacity: {};", if is_disabled { "not-allowed" } else { "pointer" }, if is_disabled { "0.5" } else { "1.0" })}>
+                                            { kit.name.to_uppercase() }<br/><span style="font-weight: normal; font-size: 0.8em; color: #cbd5e1;">{ &kit.description }</span>
+                                        </button>
+                                    }
+                                })}
+                            } else {
+                                <div style="color: #fff;">{"Loading kits..."}</div>
+                            }
                         </div>
                     </div>
                 }

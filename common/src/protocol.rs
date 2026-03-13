@@ -1,6 +1,7 @@
-use crate::models::{GameState, KitType, Piece, PieceType, Player, Shop};
+use crate::models::{GameModeConfig, GameState, Piece, PieceConfig, Player, Shop, ShopConfig};
 use glam::IVec2;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fmt;
 use uuid::Uuid;
 
@@ -30,7 +31,7 @@ impl fmt::Display for GameError {
             Self::NotYourPiece => write!(f, "Not your piece"),
             Self::OnCooldown => write!(f, "Piece is on cooldown"),
             Self::TargetFriendly => write!(f, "Target square is occupied by a friendly piece"),
-            Self::InvalidMove => write!(f, "Invalid chess move"),
+            Self::InvalidMove => write!(f, "Invalid move"),
             Self::PathBlocked => write!(f, "Path is blocked by another piece"),
             Self::NoPieceOnShop => write!(f, "No piece of yours on the shop square"),
             Self::KingRestrictedShop => write!(f, "The King can only recruit Pawns"),
@@ -51,7 +52,7 @@ impl fmt::Display for GameError {
 pub enum ClientMessage {
     Join {
         name: String,
-        kit: KitType,
+        kit_name: String,
         player_id: Option<Uuid>,
         session_secret: Option<Uuid>,
     },
@@ -61,7 +62,7 @@ pub enum ClientMessage {
     },
     BuyPiece {
         shop_pos: IVec2,
-        piece_type: PieceType,
+        item_index: usize,
     },
     Ping(u64),
 }
@@ -72,6 +73,9 @@ pub enum ServerMessage {
         player_id: Uuid,
         session_secret: Uuid,
         state: GameState,
+        mode: GameModeConfig,
+        pieces: HashMap<String, PieceConfig>,
+        shops: HashMap<String, ShopConfig>,
     },
     UpdateState {
         players: Vec<Player>,

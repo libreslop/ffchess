@@ -1,0 +1,30 @@
+{
+    "id": "skirmish",
+    "display_name": "Skirmish",
+    "max_players": 10,
+    "board_size_expr": "20",
+    "npc_limits": [],
+    "shop_counts": [
+        { "shop_id": "spawn_shop", "count": 2 },
+        { "shop_id": "upgrade_shop", "count": 2 }
+    ],
+    "kits": [
+        {
+            "name": "Standard",
+            "description": "Standard Start",
+            "pieces": ["king", "pawn", "knight"]
+        },
+        {
+            "name": "Scout",
+            "description": "Fast Start",
+            "pieces": ["king", "bishop"]
+        }
+    ],
+    "hooks": [
+        {
+            "trigger": "OnCapture",
+            "target_piece_id": "king",
+            "action": "EliminateOwner"
+        }
+    ]
+}

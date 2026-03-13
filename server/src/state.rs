@@ -1,51 +1,40 @@
-use crate::colors::ColorManager;
+use crate::instance::GameInstance;
+use crate::config::ConfigManager;
 use common::*;
 use std::collections::HashMap;
+use std::sync::Arc;
 use tokio::sync::RwLock;
-use uuid::Uuid;
 
 pub struct ServerState {
-    pub game: RwLock<GameState>,
-    pub player_channels: RwLock<HashMap<Uuid, tokio::sync::mpsc::UnboundedSender<ServerMessage>>>,
-    pub session_secrets: RwLock<HashMap<Uuid, Uuid>>,
-    pub removed_pieces: RwLock<Vec<Uuid>>,
-    pub removed_players: RwLock<Vec<Uuid>>,
-    pub color_manager: RwLock<ColorManager>,
-    pub last_viewed_at: RwLock<i64>,
-    pub death_timestamps: RwLock<HashMap<Uuid, i64>>,
+    pub games: Arc<RwLock<HashMap<String, Arc<GameInstance>>>>,
+    pub config_manager: Arc<ConfigManager>,
 }
 
 impl ServerState {
     pub fn new() -> Self {
+        let config_manager = Arc::new(ConfigManager::load(std::path::Path::new("config")));
+        let mut games = HashMap::new();
+
+        let piece_configs = Arc::new(config_manager.pieces.clone());
+        let shop_configs = Arc::new(config_manager.shops.clone());
+
+        for (mode_id, mode_config) in &config_manager.modes {
+            let instance = Arc::new(GameInstance::new(
+                mode_config.clone(),
+                piece_configs.clone(),
+                shop_configs.clone(),
+            ));
+            games.insert(mode_id.clone(), instance);
+        }
+
         Self {
-            game: RwLock::new(GameState {
-                board_size: 40,
-                ..Default::default()
-            }),
-            player_channels: RwLock::new(HashMap::new()),
-            session_secrets: RwLock::new(HashMap::new()),
-            removed_pieces: RwLock::new(Vec::new()),
-            removed_players: RwLock::new(Vec::new()),
-            color_manager: RwLock::new(ColorManager::new()),
-            last_viewed_at: RwLock::new(chrono::Utc::now().timestamp_millis()),
-            death_timestamps: RwLock::new(HashMap::new()),
+            games: Arc::new(RwLock::new(games)),
+            config_manager,
         }
     }
 
-    pub async fn record_piece_removal(&self, piece_id: Uuid) {
-        self.removed_pieces.write().await.push(piece_id);
-    }
-
-    pub async fn broadcast(&self, msg: ServerMessage) {
-        let channels = self.player_channels.read().await;
-        for tx in channels.values() {
-            let _ = tx.send(msg.clone());
-        }
-    }
-
-    pub async fn cleanup_death_timestamps(&self, now_ms: i64, max_age_ms: i64) {
-        let mut dt = self.death_timestamps.write().await;
-        dt.retain(|_, timestamp_ms| now_ms - *timestamp_ms <= max_age_ms);
+    pub async fn get_game(&self, mode_id: &str) -> Option<Arc<GameInstance>> {
+        self.games.read().await.get(mode_id).cloned()
     }
 }
 

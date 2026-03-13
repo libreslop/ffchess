@@ -1,7 +1,8 @@
 pub mod types;
 pub mod pieces;
 
-use common::*;
+use common::models::{GameState, Piece};
+use common::logic::{is_within_board, is_valid_move};
 use glam::IVec2;
 use uuid::Uuid;
 use std::collections::HashMap;
@@ -100,7 +101,8 @@ impl Renderer {
 
         // Highlights for valid moves
         if let Some(sid) = selected_piece_id
-            && let Some(piece) = ghost_pieces.get(&sid) {
+            && let Some(piece) = ghost_pieces.get(&sid)
+            && let Some(config) = self.piece_configs.get(&piece.piece_type) {
             self.ctx.set_fill_style_str("rgba(34, 197, 94, 0.2)");
             let range = 10;
             for x in (piece.position.x - range)..(piece.position.x + range + 1) {
@@ -113,11 +115,8 @@ impl Renderer {
                     if is_friendly { continue; }
                     
                     let is_capture = target_piece.is_some();
-                    if is_valid_chess_move(piece.piece_type, piece.position, t, is_capture, state.board_size) {
-                        let blocked = piece.piece_type != PieceType::Knight && is_move_blocked(piece.position, t, &state.pieces);
-                        if !blocked {
-                            self.ctx.fill_rect(x as f64 * self.tile_size + offset_x + 2.0, y as f64 * self.tile_size + offset_y + 2.0, self.tile_size - 4.0, self.tile_size - 4.0);
-                        }
+                    if is_valid_move(config, piece.position, t, is_capture, state.board_size, &state.pieces) {
+                        self.ctx.fill_rect(x as f64 * self.tile_size + offset_x + 2.0, y as f64 * self.tile_size + offset_y + 2.0, self.tile_size - 4.0, self.tile_size - 4.0);
                     }
                 }
             }
@@ -161,7 +160,7 @@ impl Renderer {
 
         // Second pass: Draw player names on top of everything
         for piece in state.pieces.values() {
-            if piece.piece_type == PieceType::King && (piece.position - king_pos).abs().max_element() <= view_radius_squares + 2 {
+            if piece.piece_type == "king" && (piece.position - king_pos).abs().max_element() <= view_radius_squares + 2 {
                 self.draw_piece_name(piece, offset_x, offset_y, 1.0, state);
             }
         }

@@ -1,5 +1,30 @@
-use common::*;
+use common::models::{Piece, PieceConfig};
+use common::logic::{is_within_board, is_valid_move};
 use glam::IVec2;
+use std::collections::HashMap;
+use uuid::Uuid;
+
+fn mock_pawn_config() -> PieceConfig {
+    PieceConfig {
+        id: "pawn".to_string(),
+        display_name: "Pawn".to_string(),
+        char: 'P',
+        score_value: 10,
+        cooldown_ms: 1000,
+        move_paths: vec![
+            vec![IVec2::new(0, 1)],
+            vec![IVec2::new(0, -1)],
+            vec![IVec2::new(1, 0)],
+            vec![IVec2::new(-1, 0)],
+        ],
+        capture_paths: vec![
+            vec![IVec2::new(1, 1)],
+            vec![IVec2::new(1, -1)],
+            vec![IVec2::new(-1, 1)],
+            vec![IVec2::new(-1, -1)],
+        ],
+    }
+}
 
 #[test]
 fn test_is_within_board() {
@@ -16,175 +41,59 @@ fn test_is_within_board() {
 fn test_pawn_movement() {
     let size = 100;
     let start = IVec2::new(0, 0);
+    let config = mock_pawn_config();
+    let pieces = HashMap::new();
 
     // Multi-directional movement (adjacent only)
-    assert!(is_valid_chess_move(
-        PieceType::Pawn,
-        start,
-        IVec2::new(0, -1),
-        false,
-        size
-    )); // Up
-    assert!(is_valid_chess_move(
-        PieceType::Pawn,
-        start,
-        IVec2::new(0, 1),
-        false,
-        size
-    )); // Down
-    assert!(is_valid_chess_move(
-        PieceType::Pawn,
-        start,
-        IVec2::new(-1, 0),
-        false,
-        size
-    )); // Left
-    assert!(is_valid_chess_move(
-        PieceType::Pawn,
-        start,
-        IVec2::new(1, 0),
-        false,
-        size
-    )); // Right
+    assert!(is_valid_move(&config, start, IVec2::new(0, -1), false, size, &pieces));
+    assert!(is_valid_move(&config, start, IVec2::new(0, 1), false, size, &pieces));
+    assert!(is_valid_move(&config, start, IVec2::new(-1, 0), false, size, &pieces));
+    assert!(is_valid_move(&config, start, IVec2::new(1, 0), false, size, &pieces));
 
     // Diagonal movement NOT allowed without capture
-    assert!(!is_valid_chess_move(
-        PieceType::Pawn,
-        start,
-        IVec2::new(1, 1),
-        false,
-        size
-    ));
+    assert!(!is_valid_move(&config, start, IVec2::new(1, 1), false, size, &pieces));
 
     // Multi-directional captures (diagonal only)
-    assert!(is_valid_chess_move(
-        PieceType::Pawn,
-        start,
-        IVec2::new(1, -1),
-        true,
-        size
-    )); // Top-Right
-    assert!(is_valid_chess_move(
-        PieceType::Pawn,
-        start,
-        IVec2::new(-1, -1),
-        true,
-        size
-    )); // Top-Left
-    assert!(is_valid_chess_move(
-        PieceType::Pawn,
-        start,
-        IVec2::new(1, 1),
-        true,
-        size
-    )); // Bottom-Right
-    assert!(is_valid_chess_move(
-        PieceType::Pawn,
-        start,
-        IVec2::new(-1, 1),
-        true,
-        size
-    )); // Bottom-Left
+    assert!(is_valid_move(&config, start, IVec2::new(1, -1), true, size, &pieces));
+    assert!(is_valid_move(&config, start, IVec2::new(-1, -1), true, size, &pieces));
+    assert!(is_valid_move(&config, start, IVec2::new(1, 1), true, size, &pieces));
+    assert!(is_valid_move(&config, start, IVec2::new(-1, 1), true, size, &pieces));
 
     // Adjacent captures NOT allowed
-    assert!(!is_valid_chess_move(
-        PieceType::Pawn,
-        start,
-        IVec2::new(0, -1),
-        true,
-        size
-    ));
+    assert!(!is_valid_move(&config, start, IVec2::new(0, -1), true, size, &pieces));
 }
 
 #[test]
-fn test_knight_movement() {
+fn test_path_blocking() {
     let size = 100;
     let start = IVec2::new(0, 0);
-    assert!(is_valid_chess_move(
-        PieceType::Knight,
-        start,
-        IVec2::new(2, 1),
-        false,
-        size
-    ));
-    assert!(is_valid_chess_move(
-        PieceType::Knight,
-        start,
-        IVec2::new(-2, 1),
-        false,
-        size
-    ));
-    assert!(is_valid_chess_move(
-        PieceType::Knight,
-        start,
-        IVec2::new(1, 2),
-        false,
-        size
-    ));
-    assert!(!is_valid_chess_move(
-        PieceType::Knight,
-        start,
-        IVec2::new(1, 1),
-        false,
-        size
-    ));
-}
+    let mut pieces = HashMap::new();
+    let blocker_id = Uuid::new_v4();
+    pieces.insert(blocker_id, Piece {
+        id: blocker_id,
+        owner_id: None,
+        piece_type: "pawn".to_string(),
+        position: IVec2::new(0, 1),
+        last_move_time: 0,
+        cooldown_ms: 0,
+    });
 
-#[test]
-fn test_queen_movement() {
-    let size = 100;
-    let start = IVec2::new(0, 0);
-    assert!(is_valid_chess_move(
-        PieceType::Queen,
-        start,
-        IVec2::new(10, 10),
-        false,
-        size
-    ));
-    assert!(is_valid_chess_move(
-        PieceType::Queen,
-        start,
-        IVec2::new(0, 10),
-        false,
-        size
-    ));
-    assert!(is_valid_chess_move(
-        PieceType::Queen,
-        start,
-        IVec2::new(-10, 0),
-        false,
-        size
-    ));
-    assert!(!is_valid_chess_move(
-        PieceType::Queen,
-        start,
-        IVec2::new(1, 2),
-        false,
-        size
-    ));
-}
+    let mut rook_config = PieceConfig {
+        id: "rook".to_string(),
+        display_name: "Rook".to_string(),
+        char: 'R',
+        score_value: 50,
+        cooldown_ms: 3000,
+        move_paths: vec![
+            vec![IVec2::new(0, 1), IVec2::new(0, 2), IVec2::new(0, 3)],
+        ],
+        capture_paths: vec![
+            vec![IVec2::new(0, 1), IVec2::new(0, 2), IVec2::new(0, 3)],
+        ],
+    };
 
-#[test]
-fn test_cooldown_calculation() {
-    let start = IVec2::new(0, 0);
-    let end_close = IVec2::new(1, 0);
-    let end_far = IVec2::new(10, 0);
-    let config = CooldownConfig::default();
-
-    let _cd_pawn_close = calculate_cooldown(PieceType::Pawn, start, end_close, &config);
-    let _cd_pawn_far = calculate_cooldown(PieceType::Pawn, start, end_far, &config);
-
-    // Dynamic cooldown check: Bishop base 1200 + 400 * dist
-    let cd_bishop_1 = calculate_cooldown(PieceType::Bishop, start, IVec2::new(1, 0), &config);
-    let cd_bishop_2 = calculate_cooldown(PieceType::Bishop, start, IVec2::new(2, 0), &config);
-    assert!(cd_bishop_2 > cd_bishop_1);
-}
-
-#[test]
-fn test_upgrade_costs() {
-    let cost_0_pieces = get_upgrade_cost(PieceType::Queen, 0);
-    let cost_10_pieces = get_upgrade_cost(PieceType::Queen, 10);
-
-    assert!(cost_10_pieces > cost_0_pieces);
-    assert_eq!(cost_0_pieces, 250);
+    // Blocked path
+    assert!(!is_valid_move(&rook_config, start, IVec2::new(0, 2), false, size, &pieces));
+    // Not blocked
+    assert!(is_valid_move(&rook_config, start, IVec2::new(0, 1), true, size, &pieces));
 }

@@ -1,5 +1,7 @@
-pub use common::*;
+use common::models::{GameModeConfig, GameState, PieceConfig, ShopConfig};
+use common::protocol::{ClientMessage, GameError};
 use glam::IVec2;
+use std::collections::HashMap;
 use uuid::Uuid;
 
 #[derive(Clone, PartialEq, Default, Debug)]
@@ -14,6 +16,9 @@ pub struct Pmove {
 #[derive(Clone, PartialEq, Default)]
 pub struct GameStateReducer {
     pub state: GameState,
+    pub mode: Option<GameModeConfig>,
+    pub piece_configs: HashMap<String, PieceConfig>,
+    pub shop_configs: HashMap<String, ShopConfig>,
     pub player_id: Option<Uuid>,
     pub session_secret: Option<Uuid>,
     pub error: Option<GameError>,

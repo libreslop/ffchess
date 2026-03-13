@@ -2,7 +2,9 @@ use crate::camera::{update_camera, CameraManager};
 use crate::canvas::Renderer;
 use crate::reducer::{GameAction, GameStateReducer, MsgSender, Pmove};
 use crate::utils::is_mobile;
-use common::*;
+use common::models::{Piece, Shop};
+use common::logic::{is_within_board, is_valid_move};
+use common::protocol::ClientMessage;
 use glam::IVec2;
 use gloo_events::EventListener;
 use gloo_timers::callback::Interval;
@@ -143,7 +145,14 @@ pub fn game_view(props: &GameViewProps) -> Html {
                 if let Some(canvas) = canvas_ref.cast::<HtmlCanvasElement>() {
                     canvas.set_width(size.0 as u32);
                     canvas.set_height(size.1 as u32);
-                    let renderer = Renderer::new(canvas, *zoom);
+                    let renderer = Renderer {
+                        ctx: canvas.get_context("2d").unwrap().unwrap().dyn_into().unwrap(),
+                        width: size.0,
+                        height: size.1,
+                        tile_size: 40.0 * zoom,
+                        zoom: *zoom,
+                        piece_configs: reducer.piece_configs.clone(),
+                    };
                     let player_id = reducer.player_id.unwrap_or_else(Uuid::nil);
                     renderer.draw_with_ghosts(
                         &reducer.state,
@@ -216,15 +225,15 @@ pub fn game_view(props: &GameViewProps) -> Html {
                     is_interactive = true;
                 } else if let Some(sid) = *selected_piece_id
                     && let Some(piece) = ghosts.get(&sid)
-                    && is_valid_chess_move(
-                        piece.piece_type,
+                    && let Some(config) = reducer.piece_configs.get(&piece.piece_type)
+                    && is_valid_move(
+                        config,
                         piece.position,
                         target,
                         ghosts.values().any(|p| p.position == target),
                         board_size,
+                        &ghosts,
                     )
-                    && (piece.piece_type == PieceType::Knight
-                        || !is_move_blocked(piece.position, target, &ghosts))
                 {
                     is_interactive = true;
                 }
@@ -372,22 +381,24 @@ pub fn game_view(props: &GameViewProps) -> Html {
                             current_ghosts.values().find(|gp| gp.position == target);
                         let is_capture = target_occupied.is_some()
                             && target_occupied.unwrap().owner_id != Some(player_id);
-                        if is_valid_chess_move(
-                            p.piece_type,
-                            p.position,
-                            target,
-                            is_capture,
-                            reducer.state.board_size,
-                        ) && (p.piece_type == PieceType::Knight
-                            || !is_move_blocked(p.position, target, &current_ghosts))
-                        {
-                            reducer.dispatch(GameAction::AddPmove(Pmove {
-                                piece_id: sid,
+                        
+                        if let Some(config) = reducer.piece_configs.get(&p.piece_type) {
+                            if is_valid_move(
+                                config,
+                                p.position,
                                 target,
-                                pending: false,
-                                old_last_move_time: 0,
-                                old_cooldown_ms: 0,
-                            }));
+                                is_capture,
+                                reducer.state.board_size,
+                                &current_ghosts,
+                            ) {
+                                reducer.dispatch(GameAction::AddPmove(Pmove {
+                                    piece_id: sid,
+                                    target,
+                                    pending: false,
+                                    old_last_move_time: 0,
+                                    old_cooldown_ms: 0,
+                                }));
+                            }
                         }
                     }
                 } else {
@@ -523,24 +534,26 @@ pub fn game_view(props: &GameViewProps) -> Html {
         .find(|s| player_pieces.iter().any(|p| p.position == s.position));
 
     let piece_on_shop =
-        shop_nearby.and_then(|shop| player_pieces.iter().find(|p| p.position == shop.position));
+        shop_nearby.and_then(|shop| player_pieces.iter().find(|p| p.position == shop.position)).copied();
 
     let is_alive = props.reducer.state.players.contains_key(&player_id) && player_id != Uuid::nil();
 
     let shop_ui = if let Some(shop) = shop_nearby {
         let piece_count = player_pieces.len();
-        let current_piece_type = piece_on_shop
-            .map(|p| p.piece_type)
-            .unwrap_or(PieceType::Pawn);
-
-        html! {
-            <crate::components::ShopUI
-                player_score={player_score}
-                player_pieces_count={piece_count}
-                piece_on_shop_type={Some(current_piece_type)}
-                shop_pos={shop.position}
-                tx={props.tx.clone()}
-            />
+        if let Some(shop_config) = props.reducer.shop_configs.get(&shop.shop_id) {
+            html! {
+                <crate::components::ShopUI
+                    player_score={player_score}
+                    player_pieces_count={piece_count}
+                    piece_on_shop={piece_on_shop.cloned()}
+                    shop_config={shop_config.clone()}
+                    piece_configs={props.reducer.piece_configs.clone()}
+                    shop_pos={shop.position}
+                    tx={props.tx.clone()}
+                />
+            }
+        } else {
+            html! {}
         }
     } else {
         html! {}

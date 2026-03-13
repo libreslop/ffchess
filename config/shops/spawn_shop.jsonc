@@ -1,0 +1,22 @@
+{
+    "id": "spawn_shop",
+    "display_name": "Mercenary Outpost",
+    "default_uses": 3,
+    "groups": [],
+    "default_group": {
+        "items": [
+            {
+                "display_name": "Hire Pawn",
+                "price_expr": "10 + player_piece_count * 2",
+                "replace_with": null,
+                "add_pieces": ["pawn"]
+            },
+            {
+                "display_name": "Hire Knight",
+                "price_expr": "50 + player_piece_count * 5",
+                "replace_with": null,
+                "add_pieces": ["knight"]
+            }
+        ]
+    }
+}

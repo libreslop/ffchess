@@ -1,0 +1,46 @@
+{
+    "id": "ffa",
+    "display_name": "Free-For-All",
+    "max_players": 100,
+    "board_size_expr": "max(40, 25 + sqrt(player_count) * 17.5)",
+    "npc_limits": [
+        { "piece_id": "pawn", "max_expr": "max(20, player_count * 5)" },
+        { "piece_id": "knight", "max_expr": "max(10, player_count * 2)" },
+        { "piece_id": "bishop", "max_expr": "max(10, player_count * 2)" },
+        { "piece_id": "rook", "max_expr": "max(5, player_count * 1)" },
+        { "piece_id": "queen", "max_expr": "max(2, player_count * 0.5)" }
+    ],
+    "shop_counts": [
+        { "shop_id": "spawn_shop", "count": 10 },
+        { "shop_id": "upgrade_shop", "count": 10 }
+    ],
+    "kits": [
+        {
+            "name": "Standard",
+            "description": "Balanced: 1 King, 2 Pawns, 2 Knights",
+            "pieces": ["king", "pawn", "pawn", "knight", "knight"]
+        },
+        {
+            "name": "Shield",
+            "description": "Defensive: 1 King, 6 Pawns",
+            "pieces": ["king", "pawn", "pawn", "pawn", "pawn", "pawn", "pawn"]
+        },
+        {
+            "name": "Scout",
+            "description": "Agile: 1 King, 1 Pawn, 2 Bishops",
+            "pieces": ["king", "pawn", "bishop", "bishop"]
+        },
+        {
+            "name": "Tank",
+            "description": "Slow but Strong: 1 King, 1 Rook",
+            "pieces": ["king", "rook"]
+        }
+    ],
+    "hooks": [
+        {
+            "trigger": "OnCapture",
+            "target_piece_id": "king",
+            "action": "EliminateOwner"
+        }
+    ]
+}
