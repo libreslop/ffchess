@@ -592,7 +592,10 @@ impl GameInstance {
 
         for id in npc_ids {
             let (p_type, p_pos, last_move, cooldown) = {
-                let p = game.pieces.get(&id).unwrap();
+                let p = match game.pieces.get(&id) {
+                    Some(p) => p,
+                    None => continue,
+                };
                 (p.piece_type.clone(), p.position, p.last_move_time, p.cooldown_ms)
             };
 
