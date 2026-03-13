@@ -548,9 +548,9 @@ pub fn game_view(props: &GameViewProps) -> Html {
 
     let mobile = is_mobile();
     let hud_style = if mobile {
-        "position: absolute; bottom: 5px; right: 5px; background: rgba(0, 0, 0, 0.4); color: #fff; font-family: monospace; font-size: 8px; padding: 3px 6px; pointer-events: none; z-index: 100; border-radius: 4px; display: flex; flex-direction: column; align-items: flex-end; gap: 1px;"
+        "position: absolute; bottom: 2px; right: 2px; background: transparent; color: #000; font-family: monospace; font-size: 8px; padding: 0; pointer-events: none; z-index: 100; display: flex; flex-direction: column; align-items: flex-end; gap: 0;"
     } else {
-        "position: absolute; bottom: 10px; right: 10px; background: rgba(0, 0, 0, 0.4); color: #fff; font-family: monospace; font-size: 10px; padding: 5px 10px; pointer-events: none; z-index: 100; border-radius: 4px; display: flex; flex-direction: column; align-items: flex-end; gap: 2px;"
+        "position: absolute; bottom: 5px; right: 5px; background: transparent; color: #000; font-family: monospace; font-size: 10px; padding: 0; pointer-events: none; z-index: 100; display: flex; flex-direction: column; align-items: flex-end; gap: 0;"
     };
 
     html! {

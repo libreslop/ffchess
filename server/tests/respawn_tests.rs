@@ -26,9 +26,9 @@ async fn test_respawn_cooldown_enforcement() {
 
     assert!(result.is_err());
     if let Err(GameError::Custom { title, .. }) = result {
-        assert_eq!(title, "RESPAWN COOLDOWN");
+        assert_eq!(title, "Respawn cooldown");
     } else {
-        panic!("Should have failed with RESPAWN COOLDOWN");
+        panic!("Should have failed with Respawn cooldown");
     }
 
     // 4. Manipulate death timestamp to "bypass" time (for testing)
@@ -43,6 +43,12 @@ async fn test_respawn_cooldown_enforcement() {
         .await;
 
     assert!(result.is_ok());
+
+    // 6. Verify death timestamp is cleared
+    {
+        let deaths = state.death_timestamps.read().await;
+        assert!(!deaths.contains_key(&player_id));
+    }
 }
 
 #[tokio::test]

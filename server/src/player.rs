@@ -1,8 +1,10 @@
 use crate::spawning::find_spawn_pos;
 use crate::state::ServerState;
+use chrono;
 use common::*;
 use glam::IVec2;
 use rand::Rng;
+use tokio::sync::mpsc;
 use uuid::Uuid;
 
 impl ServerState {
@@ -10,12 +12,11 @@ impl ServerState {
         &self,
         name: String,
         kit: KitType,
-        tx: tokio::sync::mpsc::UnboundedSender<ServerMessage>,
-        existing_id: Option<Uuid>,
+        tx: mpsc::UnboundedSender<ServerMessage>,
+        pid: Option<Uuid>,
         provided_secret: Option<Uuid>,
     ) -> Result<(Uuid, Uuid), GameError> {
-        let name = name.chars().take(32).collect::<String>();
-        let player_id = existing_id.unwrap_or_else(Uuid::new_v4);
+        let player_id = pid.unwrap_or_else(Uuid::new_v4);
 
         // Session secret check
         let mut secrets = self.session_secrets.write().await;
@@ -43,8 +44,8 @@ impl ServerState {
                 if elapsed < game.respawn_cooldown_ms as i64 {
                     let remaining = (game.respawn_cooldown_ms as i64 - elapsed) / 1000;
                     return Err(GameError::Custom {
-                        title: "RESPAWN COOLDOWN".to_string(),
-                        message: format!("You must wait {} more seconds to respawn.", remaining.max(1)),
+                        title: "Respawn cooldown".to_string(),
+                        message: format!("Wait {} seconds", remaining.max(1)),
                     });
                 }
             }
@@ -93,56 +94,58 @@ impl ServerState {
             },
         );
 
-        let mut rng = rand::thread_rng();
-        for p_type in kit.get_pieces() {
-            let p_id = Uuid::new_v4();
-            let mut p_pos = spawn_pos;
-            for _ in 0..10 {
-                let offset = IVec2::new(rng.gen_range(-2..=2), rng.gen_range(-2..=2));
-                let candidate = spawn_pos + offset;
-                if candidate != spawn_pos
-                    && is_within_board(candidate, game.board_size)
-                    && !game.pieces.values().any(|p| p.position == candidate)
-                    && !game.shops.iter().any(|s| s.position == candidate)
-                {
-                    p_pos = candidate;
-                    break;
-                }
-            }
-
-            if p_pos == spawn_pos {
-                let neighbors = [
-                    IVec2::new(1, 0),
-                    IVec2::new(-1, 0),
-                    IVec2::new(0, 1),
-                    IVec2::new(0, -1),
-                    IVec2::new(1, 1),
-                    IVec2::new(-1, 1),
-                    IVec2::new(1, -1),
-                    IVec2::new(-1, -1),
-                ];
-                for offset in neighbors {
+        {
+            let mut rng = rand::thread_rng();
+            for p_type in kit.get_pieces() {
+                let p_id = Uuid::new_v4();
+                let mut p_pos = spawn_pos;
+                for _ in 0..10 {
+                    let offset = IVec2::new(rng.gen_range(-2..=2), rng.gen_range(-2..=2));
                     let candidate = spawn_pos + offset;
-                    if is_within_board(candidate, game.board_size)
+                    if candidate != spawn_pos
+                        && is_within_board(candidate, game.board_size)
+                        && !game.pieces.values().any(|p| p.position == candidate)
                         && !game.shops.iter().any(|s| s.position == candidate)
                     {
                         p_pos = candidate;
                         break;
                     }
                 }
-            }
 
-            game.pieces.insert(
-                p_id,
-                Piece {
-                    id: p_id,
-                    owner_id: Some(player_id),
-                    piece_type: p_type,
-                    position: p_pos,
-                    last_move_time: 0,
-                    cooldown_ms: 0,
-                },
-            );
+                if p_pos == spawn_pos {
+                    let neighbors = [
+                        IVec2::new(1, 0),
+                        IVec2::new(-1, 0),
+                        IVec2::new(0, 1),
+                        IVec2::new(0, -1),
+                        IVec2::new(1, 1),
+                        IVec2::new(-1, 1),
+                        IVec2::new(1, -1),
+                        IVec2::new(-1, -1),
+                    ];
+                    for offset in neighbors {
+                        let candidate = spawn_pos + offset;
+                        if is_within_board(candidate, game.board_size)
+                            && !game.shops.iter().any(|s| s.position == candidate)
+                        {
+                            p_pos = candidate;
+                            break;
+                        }
+                    }
+                }
+
+                game.pieces.insert(
+                    p_id,
+                    Piece {
+                        id: p_id,
+                        owner_id: Some(player_id),
+                        piece_type: p_type,
+                        position: p_pos,
+                        last_move_time: 0,
+                        cooldown_ms: 0,
+                    },
+                );
+            }
         }
 
         let player = Player {
@@ -151,26 +154,27 @@ impl ServerState {
             score: 0,
             kills: 0,
             pieces_captured: 0,
-            join_time: chrono::Utc::now().timestamp(),
+            join_time: chrono::Utc::now().timestamp_millis(),
             king_id,
             color,
         };
 
         game.players.insert(player_id, player);
+        drop(game);
+
+        self.death_timestamps.write().await.remove(&player_id);
+
         Ok((player_id, session_secret))
     }
 
     pub async fn remove_player(&self, player_id: Uuid) {
         let stats = {
             let game = self.game.read().await;
-            game.players
-                .get(&player_id)
-                .map(|p| (p.score, p.kills, p.pieces_captured, p.join_time))
+            game.players.get(&player_id).map(|p| (p.score, p.kills, p.pieces_captured, p.join_time))
         };
 
         if let Some((score, kills, pieces_captured, join_time)) = stats {
-            let now = chrono::Utc::now().timestamp();
-            let duration = (now - join_time).max(0) as u64;
+            let duration = (chrono::Utc::now().timestamp() - join_time).max(0) as u64;
             let channels = self.player_channels.read().await;
             if let Some(tx) = channels.get(&player_id) {
                 let _ = tx.send(ServerMessage::GameOver {
@@ -183,9 +187,10 @@ impl ServerState {
         }
 
         let mut game = self.game.write().await;
-        game.players.remove(&player_id);
-        self.player_channels.write().await.remove(&player_id);
-        self.record_player_removal(player_id, &mut game).await;
+        if game.players.remove(&player_id).is_some() {
+            self.player_channels.write().await.remove(&player_id);
+            self.record_player_removal(player_id, &mut game).await;
+        }
     }
 
     pub async fn record_player_removal(&self, player_id: Uuid, game: &mut GameState) {

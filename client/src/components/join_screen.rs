@@ -11,11 +11,13 @@ pub struct JoinScreenProps {
     pub join_step: i32,
     pub on_join: Callback<KitType>,
     pub error: Option<common::protocol::GameError>,
+    pub is_loading: bool,
 }
 
 #[function_component(JoinScreen)]
 pub fn join_screen(props: &JoinScreenProps) -> Html {
     let mobile = is_mobile();
+    let is_disabled = props.is_loading || props.error.is_some();
 
     html! {
         <>
@@ -27,11 +29,11 @@ pub fn join_screen(props: &JoinScreenProps) -> Html {
                         <div style="display: flex; flex-direction: column; gap: 15px; align-items: center;">
                             <input type="text" name="player_name" value={props.player_name.clone()} oninput={props.on_name_input.clone()} placeholder="This is a tale of..." autofocus=true
                                 style="padding: 12px 20px; border-radius: 0; border: 2px solid #cbd5e1; width: 100%; box-sizing: border-box; font-size: 1.2em; outline: none; background: #fff; text-align: center;"/>
-                            <button type="submit" disabled={props.landing_cooldown > 0}
+                            <button type="submit" disabled={props.landing_cooldown > 0 || props.is_loading}
                                 style={format!("padding: 10px 40px; background: {}; color: #fff; border: 3px solid {}; border-radius: 0; font-weight: 900; cursor: {}; font-size: 1.2em; width: auto; text-transform: uppercase; letter-spacing: 1px;",
-                                    if props.landing_cooldown > 0 { "#94a3b8" } else { "#3b82f6" },
-                                    if props.landing_cooldown > 0 { "#64748b" } else { "#1e3a8a" },
-                                    if props.landing_cooldown > 0 { "not-allowed" } else { "pointer" })}>
+                                    if props.landing_cooldown > 0 || props.is_loading { "#94a3b8" } else { "#3b82f6" },
+                                    if props.landing_cooldown > 0 || props.is_loading { "#64748b" } else { "#1e3a8a" },
+                                    if props.landing_cooldown > 0 || props.is_loading { "not-allowed" } else { "pointer" })}>
                                 if props.landing_cooldown > 0 {
                                     {format!("Wait ({}s)", props.landing_cooldown)}
                                 } else {
@@ -51,16 +53,16 @@ pub fn join_screen(props: &JoinScreenProps) -> Html {
                         }
 
                         <div style="display: grid; grid-template-columns: 1fr; gap: 12px; width: 100%;">
-                            <button onclick={props.on_join.reform(|_| KitType::Standard)} style="padding: 15px; cursor: pointer; border-radius: 0; border: 2px solid rgba(255,255,255,0.5); background: rgba(255,255,255,0.1); color: #fff; font-weight: bold; transition: all 0.2s;">
+                            <button disabled={is_disabled} onclick={props.on_join.reform(|_| KitType::Standard)} style={format!("padding: 15px; cursor: {}; border-radius: 0; border: 2px solid rgba(255,255,255,0.5); background: rgba(255,255,255,0.1); color: #fff; font-weight: bold; transition: all 0.2s; opacity: {};", if is_disabled { "not-allowed" } else { "pointer" }, if is_disabled { "0.5" } else { "1.0" })}>
                                 {"STANDARD"}<br/><span style="font-weight: normal; font-size: 0.8em; color: #cbd5e1;">{"2 Pawns, 2 Knights"}</span>
                             </button>
-                            <button onclick={props.on_join.reform(|_| KitType::Shield)} style="padding: 15px; cursor: pointer; border-radius: 0; border: 2px solid rgba(255,255,255,0.5); background: rgba(255,255,255,0.1); color: #fff; font-weight: bold; transition: all 0.2s;">
+                            <button disabled={is_disabled} onclick={props.on_join.reform(|_| KitType::Shield)} style={format!("padding: 15px; cursor: {}; border-radius: 0; border: 2px solid rgba(255,255,255,0.5); background: rgba(255,255,255,0.1); color: #fff; font-weight: bold; transition: all 0.2s; opacity: {};", if is_disabled { "not-allowed" } else { "pointer" }, if is_disabled { "0.5" } else { "1.0" })}>
                                 {"SHIELD"}<br/><span style="font-weight: normal; font-size: 0.8em; color: #cbd5e1;">{"6 Pawns"}</span>
                             </button>
-                            <button onclick={props.on_join.reform(|_| KitType::Scout)} style="padding: 15px; cursor: pointer; border-radius: 0; border: 2px solid rgba(255,255,255,0.5); background: rgba(255,255,255,0.1); color: #fff; font-weight: bold; transition: all 0.2s;">
+                            <button disabled={is_disabled} onclick={props.on_join.reform(|_| KitType::Scout)} style={format!("padding: 15px; cursor: {}; border-radius: 0; border: 2px solid rgba(255,255,255,0.5); background: rgba(255,255,255,0.1); color: #fff; font-weight: bold; transition: all 0.2s; opacity: {};", if is_disabled { "not-allowed" } else { "pointer" }, if is_disabled { "0.5" } else { "1.0" })}>
                                 {"SCOUT"}<br/><span style="font-weight: normal; font-size: 0.8em; color: #cbd5e1;">{"1 Pawn, 2 Bishops"}</span>
                             </button>
-                            <button onclick={props.on_join.reform(|_| KitType::Tank)} style="padding: 15px; cursor: pointer; border-radius: 0; border: 2px solid rgba(255,255,255,0.5); background: rgba(255,255,255,0.1); color: #fff; font-weight: bold; transition: all 0.2s;">
+                            <button disabled={is_disabled} onclick={props.on_join.reform(|_| KitType::Tank)} style={format!("padding: 15px; cursor: {}; border-radius: 0; border: 2px solid rgba(255,255,255,0.5); background: rgba(255,255,255,0.1); color: #fff; font-weight: bold; transition: all 0.2s; opacity: {};", if is_disabled { "not-allowed" } else { "pointer" }, if is_disabled { "0.5" } else { "1.0" })}>
                                 {"TANK"}<br/><span style="font-weight: normal; font-size: 0.8em; color: #cbd5e1;">{"1 Rook"}</span>
                             </button>
                         </div>

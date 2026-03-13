@@ -71,8 +71,8 @@ async fn handle_socket(socket: WebSocket, state: Arc<ServerState>) {
                                 if game.players.contains_key(&pid) && channels.contains_key(&pid) {
                                     tracing::warn!(?pid, "Player already in game, rejecting join");
                                     let _ = tx.send(ServerMessage::Error(GameError::Custom {
-                                        title: "DUPLICATE SESSION".to_string(),
-                                        message: "You are already in a game in another tab.".to_string(),
+                                        title: "Duplicate Session".to_string(),
+                                        message: "You are already playing in another tab".to_string(),
                                     }));
                                     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
                                     break; 

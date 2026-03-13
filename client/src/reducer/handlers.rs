@@ -17,16 +17,16 @@ pub fn handle_update_state(
     let player_id_val = next.player_id.unwrap_or_else(Uuid::nil);
 
     #[cfg(target_arch = "wasm32")]
-    let now_secs = (js_sys::Date::now() / 1000.0) as i64;
+    let now_ms = js_sys::Date::now() as i64;
     #[cfg(not(target_arch = "wasm32"))]
-    let now_secs = chrono::Utc::now().timestamp();
+    let now_ms = chrono::Utc::now().timestamp_millis();
 
     for p in players {
         if next.player_id == Some(p.id) {
             next.last_score = p.score;
             next.last_kills = p.kills;
             next.last_captured = p.pieces_captured;
-            next.last_survival_secs = (now_secs - p.join_time).max(0) as u64;
+            next.last_survival_secs = ((now_ms - p.join_time).max(0) / 1000) as u64;
         }
         next.state.players.insert(p.id, p);
     }

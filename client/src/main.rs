@@ -25,11 +25,27 @@ use yew::prelude::*;
 #[function_component(App)]
 pub fn app() -> Html {
     let reducer = use_reducer(GameStateReducer::default);
+    let is_joining = use_state(|| false);
     let tx = use_state(|| None::<MsgSender>);
     let player_name = use_state(get_stored_name);
     let join_step = use_state(|| 0);
     let has_interacted = use_state(|| false);
     let show_disconnected = use_state(|| false);
+
+    {
+        let is_joining = is_joining.clone();
+        let reducer_state = reducer.clone();
+        use_effect_with(
+            (
+                reducer_state.player_id,
+                reducer_state.error.clone(),
+                reducer_state.disconnected,
+            ),
+            move |_| {
+                is_joining.set(false);
+            },
+        );
+    }
 
     {
         let show_disconnected = show_disconnected.clone();
@@ -73,10 +89,10 @@ pub fn app() -> Html {
 
     let landing_cooldown = use_state(|| {
         let ts = get_death_timestamp();
-        let now = js_sys::Date::now() as i64 / 1000;
-        let cooldown_sec = (reducer.state.respawn_cooldown_ms / 1000) as i64;
-        let diff = cooldown_sec - (now - ts);
-        if diff > 0 { diff as i32 } else { 0 }
+        let now = js_sys::Date::now() as i64;
+        let cooldown_ms = reducer.state.respawn_cooldown_ms as i64;
+        let diff_ms = cooldown_ms - (now - ts);
+        if diff_ms > 0 { (diff_ms / 1000) as i32 } else { 0 }
     });
     let lc_ref = use_mut_ref(|| *landing_cooldown);
 
@@ -130,11 +146,12 @@ pub fn app() -> Html {
             spawn_local(async move {
                 while let Some(msg) = client_rx.recv().await {
                     let maybe_tx = sender_ws_tx.borrow().clone();
+                    let current_reducer = sender_reducer_ref.borrow().clone();
                     if let Some(tx) = maybe_tx {
                         if tx
                             .send(Message::Text(serde_json::to_string(&msg).unwrap()))
                             .is_err()
-                            && !sender_reducer_ref.borrow().disconnected
+                            && !current_reducer.disconnected && !current_reducer.fatal_error
                         {
                             sender_reducer_ref
                                 .borrow()
@@ -147,7 +164,7 @@ pub fn app() -> Html {
                                 });
                         }
                     } else if !matches!(msg, ClientMessage::Ping(_))
-                        && !sender_reducer_ref.borrow().disconnected
+                        && !current_reducer.disconnected && !current_reducer.fatal_error
                     {
                         sender_reducer_ref
                             .borrow()
@@ -188,10 +205,8 @@ pub fn app() -> Html {
                             if let Ok(Message::Text(text)) = msg
                                 && let Ok(server_msg) = serde_json::from_str::<ServerMessage>(&text)
                             {
-                                listener_reducer_ref
-                                    .borrow()
-                                    .clone()
-                                    .dispatch(match server_msg {
+                                let current_reducer = listener_reducer_ref.borrow().clone();
+                                current_reducer.dispatch(match server_msg {
                                         ServerMessage::Init { player_id, session_secret, state } => {
                                             if player_id != Uuid::nil() {
                                                 set_stored_id(player_id);
@@ -244,11 +259,9 @@ pub fn app() -> Html {
                         *current_ws_tx.borrow_mut() = None;
                     }
 
-                    if !listener_reducer_ref.borrow().disconnected {
-                        listener_reducer_ref
-                            .borrow()
-                            .clone()
-                            .dispatch(GameAction::SetDisconnected {
+                    let current_reducer = listener_reducer_ref.borrow().clone();
+                    if !current_reducer.disconnected && !current_reducer.fatal_error {
+                        current_reducer.dispatch(GameAction::SetDisconnected {
                                 disconnected: true,
                                 is_fatal: false,
                                 title: None,
@@ -265,17 +278,20 @@ pub fn app() -> Html {
     let on_join = {
         let tx = tx.clone();
         let player_name = player_name.clone();
-        let reducer = reducer.clone();
+        let reducer_ref = reducer_ref.clone();
+        let is_joining = is_joining.clone();
         let has_interacted = has_interacted.clone();
         Callback::from(move |kit: KitType| {
+            let current_reducer = reducer_ref.borrow().clone();
+            if *is_joining || current_reducer.disconnected || current_reducer.fatal_error {
+                return;
+            }
             has_interacted.set(true);
             if is_mobile() {
                 request_fullscreen();
             }
-            if reducer.disconnected {
-                return;
-            }
             if let Some(sender) = (*tx).as_ref() {
+                is_joining.set(true);
                 let stored_id = get_stored_id();
                 let stored_secret = get_stored_secret();
                 let _ = sender.0.send(ClientMessage::Join {
@@ -334,7 +350,7 @@ pub fn app() -> Html {
         use_effect_with(is_dead, move |is_dead| {
             let mut interval = None;
             if *is_dead {
-                set_death_timestamp(js_sys::Date::now() as i64 / 1000);
+                set_death_timestamp(js_sys::Date::now() as i64);
                 let cooldown_sec = (cooldown_ms / 1000) as i32;
                 rejoin_cooldown.set(cooldown_sec);
                 *rc_ref.borrow_mut() = cooldown_sec;
@@ -462,6 +478,7 @@ pub fn app() -> Html {
                     join_step={*join_step}
                     on_join={on_join}
                     error={reducer.error.clone()}
+                    is_loading={*is_joining}
                 />
             }
 
