@@ -174,7 +174,8 @@ impl ServerState {
         };
 
         if let Some((score, kills, pieces_captured, join_time)) = stats {
-            let duration = (chrono::Utc::now().timestamp() - join_time).max(0) as u64;
+            let now_ms = chrono::Utc::now().timestamp_millis();
+            let duration = ((now_ms - join_time).max(0) / 1000) as u64;
             let channels = self.player_channels.read().await;
             if let Some(tx) = channels.get(&player_id) {
                 let _ = tx.send(ServerMessage::GameOver {

@@ -93,8 +93,27 @@ impl ServerState {
                         }
 
                         if let Some(cp_id) = captured_player_id {
+                            let victim_stats = game
+                                .players
+                                .get(&cp_id)
+                                .map(|p| (p.score, p.kills, p.pieces_captured, p.join_time));
+                            
                             game.players.remove(&cp_id);
                             self.record_player_removal(cp_id, &mut game).await;
+
+                            if let Some((score, kills, pieces_captured, join_time)) = victim_stats {
+                                let now_ms = chrono::Utc::now().timestamp_millis();
+                                let duration = ((now_ms - join_time).max(0) / 1000) as u64;
+                                let channels = self.player_channels.read().await;
+                                if let Some(tx) = channels.get(&cp_id) {
+                                    let _ = tx.send(ServerMessage::GameOver {
+                                        final_score: score,
+                                        kills,
+                                        pieces_captured,
+                                        time_survived_secs: duration,
+                                    });
+                                }
+                            }
                         }
                     }
                 }
