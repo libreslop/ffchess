@@ -69,6 +69,12 @@ The system is built using a modern Rust stack for both performance and type safe
 - **Auto-Reconnection:** Client attempts to reconnect every 2 seconds if the WebSocket is lost.
 - **Disconnected Overlay:** A full-screen red overlay appears when connection is lost, blocking input until recovery is complete. Does not show on the home screen.
 
+### 4.4 Mode Switching & Config Delivery (2026 refresh)
+- **Static Boot, Live Update:** The HTML embeds the initial mode list and global client settings inside `<script>` tags. The WASM app hydrates from these values, then refreshes mode metadata on a timer without a page reload.
+- **Dropdown Navigation:** The home screen exposes a dropdown built from `config/modes/*.jsonc`; switching modes keeps the page alive while swapping to the selected game instance and updating the hash (`/#mode_id`).
+- **Serialized Config, Not Files:** The server serializes the active mode/global slices it needs to share; raw JSON files are never sent to the client. This keeps sensitive or unused config keys private.
+- **Per-Mode Respawn Cooldowns:** Each mode advertises `respawn_cooldown_ms`, allowing distinct pacing between modes like `ffa` and `skirmish`.
+
 ## 5. Deployment & Tooling
 - **Build System:** `trunk` for WebAssembly bundling.
 - **Server:** Axum serving both the API/WebSocket and the static WASM assets.

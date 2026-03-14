@@ -56,6 +56,12 @@ trunk serve
 ```
 Then run the server in a separate terminal. Note that the client will be on `localhost:8081` and proxy API requests to `localhost:8080`.
 
+## ⚙️ Configuration Overview
+- **Global (server):** `config/global/server.jsonc` holds server-side defaults such as the adjective/noun name pool that is used when a player does not provide a name.
+- **Global (client):** `config/global/client.jsonc` tunes render/heartbeat intervals, reconnect timing, camera limits, and scroll/drag smoothing. Values are injected into the HTML `<script>` tag so the client boots without an extra request.
+- **Modes:** `config/modes/*.jsonc` define each game mode (board sizing formulas, fog-of-war radius, respawn cooldown, shops, kits, hooks). The home screen dropdown is built from these definitions and switching modes does **not** refresh the page.
+- **Pieces & Shops:** `config/pieces/*.jsonc` describe movement, capture, cooldowns, and glyphs. `config/shops/*.jsonc` drive spawn/upgrade prices and options using expressions.
+
 ## 🧪 Testing
 Run the test suite for shared logic, server state, and piece removal:
 ```bash

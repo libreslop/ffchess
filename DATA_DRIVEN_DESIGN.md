@@ -82,3 +82,46 @@ The Yew client has been updated to be fully configuration-aware:
   ]
 }
 ```
+
+## Configuration Reference
+
+### Global (Server) – `config/global/server.jsonc`
+- `default_name.adjectives` / `default_name.nouns`: Word lists the server combines to generate a name when the player leaves the name field empty. Lives server-side only (client no longer ships a name pool).
+
+### Global (Client) – `config/global/client.jsonc`
+- `game_order`: Ordered list of mode ids; first entry is the default selection on first load.
+- `modes_refresh_ms`: How often the client refreshes the mode list metadata.
+- `ping_interval_ms`: Heartbeat interval for latency/presence pings.
+- `tick_interval_ms`: Client-side simulation tick spacing (ms).
+- `render_interval_ms`: Target frame interval (ms) for the canvas render loop.
+- `disconnected_hide_ms`: Delay before hiding the disconnected overlay after recovery.
+- `fatal_auto_hide_ms`: How long fatal error banners stay visible.
+- Camera tuning: `camera_zoom_min`, `camera_zoom_max`, `zoom_lerp`, `inertia_decay`, `velocity_cutoff`, `pan_lerp_alive`, `pan_lerp_dead`, `tile_size_px`, `death_zoom`, `scroll_zoom_base`.
+
+### Modes – `config/modes/*.jsonc`
+- `id`, `display_name`, `max_players`: Identity and lobby limits.
+- `board_size`: Expression controlling the side length (supports `player_count`, `player_piece_count`, etc.).
+- `camera_pan_limit`: Expression that caps how far the camera can drift from the player’s pieces.
+- `fog_of_war_radius`: Expression for visible radius around owned pieces.
+- `respawn_cooldown_ms`: Per-mode respawn delay.
+- `npc_limits`: Array of `{ piece_id, max_expr }` giving per-piece NPC caps via expressions.
+- `shop_counts`: Array of `{ shop_id, count }` controlling how many of each shop type spawn.
+- `kits`: Starting armies; each kit has `name`, `description`, and `pieces`.
+- `hooks`: Trigger/action pairs (e.g., `OnCapture` + `target_piece_id: king` → `EliminateOwner`).
+
+### Pieces – `config/pieces/*.jsonc`
+- `id`, `display_name`, `char`: Piece identity and rendered glyph.
+- `score_value`: Points granted on capture.
+- `cooldown_ms`: Base cooldown per move.
+- `move_paths` / `capture_paths`: Lists of finite step paths. Blocking ends the path; Knights are encoded as one-step paths to allow jumps.
+
+### Shops – `config/shops/*.jsonc`
+- `id`, `display_name`, `default_uses`: Identity and how many times a shop can be used before despawning.
+- `groups`: Per-piece applicability. Each `group` has `applies_to` (piece ids) and `items`.
+- Shop `items`: `{ display_name, price_expr, replace_with?, add_pieces[] }`. `replace_with` upgrades the acting piece; `add_pieces` spawns new ones.
+- `default_group`: Fallback `items` applied when no `group` matches the acting piece.
+
+### Expression Variables
+Expressions in mode/shop configs can reference:
+- `player_count`, `player_piece_count` (for the acting player), and `[piece_id]_count` (e.g., `pawn_count`).
+- Standard math functions supported by `meval` (e.g., `sqrt`, `max`, `min`, `floor`).
