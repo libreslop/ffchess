@@ -27,6 +27,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
     let frame_id = use_state(|| 0u64);
     let drag_start = use_state(|| None::<(f64, f64, bool)>);
     let renderer_state = use_state(|| None::<Renderer>);
+    let fps_counter = use_mut_ref(|| 0u32);
 
     let window_size = use_state(|| {
         (
@@ -72,6 +73,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
         let frame_id = frame_id.clone();
         let manager_ref = manager_ref.clone();
         let latest_state = latest_state.clone();
+        let fps_counter = fps_counter.clone();
 
         use_effect(move || {
             let interval = Interval::new(16, move || {
@@ -79,6 +81,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
                     let s = latest_state.borrow();
                     (s.0.clone(), s.1)
                 };
+                *fps_counter.borrow_mut() += 1;
                 
                 let mut manager = manager_ref.borrow_mut();
                 
@@ -100,6 +103,19 @@ pub fn game_view(props: &GameViewProps) -> Html {
                     cam_state.set(manager.camera);
                 }
                 frame_id.set(*frame_id + 1);
+            });
+            move || drop(interval)
+        });
+    }
+
+    {
+        let fps_counter = fps_counter.clone();
+        let reducer = props.reducer.clone();
+        use_effect(move || {
+            let interval = Interval::new(1000, move || {
+                let fps = *fps_counter.borrow();
+                *fps_counter.borrow_mut() = 0;
+                reducer.dispatch(GameAction::SetFPS(fps));
             });
             move || drop(interval)
         });
@@ -401,6 +417,9 @@ pub fn game_view(props: &GameViewProps) -> Html {
         player_pieces.iter().find(|p| p.position == s.position).cloned().cloned()
     });
 
+    let player_id_val = props.reducer.player_id.unwrap_or_else(Uuid::nil);
+    let is_alive = player_id_val != Uuid::nil() && props.reducer.state.players.contains_key(&player_id_val);
+
     html! {
         <div class="fixed inset-0 bg-slate-100 overflow-hidden touch-none"
              onmousedown={
@@ -497,6 +516,30 @@ pub fn game_view(props: &GameViewProps) -> Html {
                     title={props.reducer.disconnected_title.clone()}
                     msg={props.reducer.disconnected_msg.clone()}
                 />
+            }
+
+            if is_alive {
+                <div
+                    data-testid="stats-overlay"
+                    class="pointer-events-none"
+                    style="
+                        position: fixed;
+                        right: 4px;
+                        bottom: 4px;
+                        padding: 0;
+                        background: transparent;
+                        color: #000;
+                        font-family: monospace;
+                        font-size: 11px;
+                        line-height: 1.2;
+                        text-align: right;
+                        z-index: 50;
+                    "
+                >
+                    <div>{format!("FPS: {}", props.reducer.fps)}</div>
+                    <div>{format!("Ping: {}ms", props.reducer.ping_ms)}</div>
+                    <div>{format!("Board: {}x{}", props.reducer.state.board_size, props.reducer.state.board_size)}</div>
+                </div>
             }
         </div>
     }

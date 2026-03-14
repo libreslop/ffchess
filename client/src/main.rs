@@ -137,6 +137,12 @@ pub fn app() -> Html {
                 handle.dispatch(GameAction::Tick(tick_sender.clone()));
             });
 
+            let ping_sender = sender.clone();
+            let ping_interval = Interval::new(2000, move || {
+                let now = js_sys::Date::now() as u64;
+                let _ = ping_sender.0.send(ClientMessage::Ping(now));
+            });
+
             let listener_reducer_ref = reducer_ref.clone();
             let current_ws_tx = Rc::new(std::cell::RefCell::new(
                 None::<mpsc::UnboundedSender<Message>>,
@@ -202,7 +208,10 @@ pub fn app() -> Html {
                     connect_ws(ws_url, listener_reducer_ref.clone(), current_ws_tx.clone()).await;
                 }
             });
-            || drop(interval)
+            || {
+                drop(interval);
+                drop(ping_interval);
+            }
         });
     }
 
