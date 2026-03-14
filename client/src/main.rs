@@ -37,34 +37,24 @@ pub fn app() -> Html {
     let join_step = use_state(|| 0);
     let has_interacted = use_state(|| false);
     let show_disconnected = use_state(|| false);
-    let mode_options = use_state(|| Vec::<ModeSummary>::new());
-
-    // Read current mode info injected in index.html
-    let injected_mode_info: Option<ModeSummary> = {
+    // Read initial mode list injected into index.html for immediate render
+    let injected_modes: Vec<ModeSummary> = {
         let doc = document();
-        if let Some(el) = doc.get_element_by_id("initial-mode") {
+        if let Some(el) = doc.get_element_by_id("initial-modes") {
             if let Some(text) = el.text_content() {
-                serde_json::from_str::<serde_json::Value>(&text)
-                    .ok()
-                    .map(|v| ModeSummary {
-                        id: v
-                            .get("id")
-                            .and_then(|s| s.as_str())
-                            .unwrap_or("ffa")
-                            .to_string(),
-                        display_name: v
-                            .get("display_name")
-                            .and_then(|s| s.as_str())
-                            .unwrap_or("FFA")
-                            .to_string(),
-                    })
+                serde_json::from_str::<Vec<ModeSummary>>(&text).unwrap_or_default()
             } else {
-                None
+                Vec::new()
             }
         } else {
-            None
+            Vec::new()
         }
     };
+
+    let mode_options = use_state(|| injected_modes.clone());
+
+    // Read current mode info injected in index.html
+    let injected_mode_info: Option<ModeSummary> = injected_modes.first().cloned();
 
     // Determine current mode id from hash or injected info
     let initial_mode_id = {
@@ -77,11 +67,10 @@ pub fn app() -> Html {
             .to_string();
         if !hash.is_empty() {
             hash
+        } else if let Some(m) = injected_mode_info.as_ref() {
+            m.id.clone()
         } else {
-            injected_mode_info
-                .as_ref()
-                .map(|m| m.id.clone())
-                .unwrap_or_else(|| "ffa".to_string())
+            "ffa".to_string()
         }
     };
     let current_mode_id = use_state(|| initial_mode_id.clone());
@@ -90,18 +79,29 @@ pub fn app() -> Html {
         let mode_options = mode_options.clone();
         let injected_mode_info = injected_mode_info.clone();
         use_effect_with((), move |_| {
-            spawn_local(async move {
-                if let Ok(resp) = gloo_net::http::Request::get("/api/modes").send().await {
-                    if let Ok(list) = resp.json::<Vec<ModeSummary>>().await {
-                        mode_options.set(list);
-                        return;
+            let modes_state = mode_options.clone();
+            let injected = injected_mode_info.clone();
+            let fetch_modes = Rc::new(move || {
+                let modes_state = modes_state.clone();
+                let injected = injected.clone();
+                spawn_local(async move {
+                    if let Ok(resp) = gloo_net::http::Request::get("/api/modes").send().await {
+                        if let Ok(list) = resp.json::<Vec<ModeSummary>>().await {
+                            modes_state.set(list);
+                            return;
+                        }
                     }
-                }
-                if let Some(info) = injected_mode_info {
-                    mode_options.set(vec![info]);
-                }
+                    if let Some(info) = injected.clone() {
+                        modes_state.set(vec![info]);
+                    }
+                });
             });
-            || ()
+
+            fetch_modes.clone()();
+            let interval = Interval::new(5000, move || {
+                fetch_modes.clone()();
+            });
+            || drop(interval)
         });
     }
 
@@ -543,12 +543,6 @@ pub fn app() -> Html {
                         let _ = window.location().set_hash(&format!("#{id}"));
                         current_mode_id.set(id);
                     })}
-                    current_mode_info={
-                        reducer.mode.as_ref().map(|m| ModeSummary{
-                            id: m.id.clone(),
-                            display_name: m.display_name.clone(),
-                        }).or(injected_mode_info.clone())
-                    }
                 />
             }
 

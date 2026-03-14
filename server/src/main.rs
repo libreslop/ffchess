@@ -38,6 +38,7 @@ async fn main() {
                 .route("/ws/:mode_id", get(server::handlers::ws_handler))
                 .route("/modes", get(server::handlers::list_modes)),
         )
+        .route("/", get(server::handlers::index_html))
         .fallback_service(ServeDir::new("client/dist"))
         .with_state(state)
         .layer(TraceLayer::new_for_http())

@@ -41,7 +41,7 @@ impl Renderer {
         width: f64,
         height: f64,
         zoom: f64,
-        mode: Option<&common::models::GameModeConfig>,
+        mode: Option<&common::models::GameModeClientConfig>,
     ) {
         let tile_size = 40.0 * zoom;
         let player_king = state

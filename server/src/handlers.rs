@@ -13,10 +13,58 @@ use std::{fs, sync::Arc};
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
+fn to_client_mode(cfg: &common::models::GameModeConfig) -> common::models::GameModeClientConfig {
+    common::models::GameModeClientConfig {
+        id: cfg.id.clone(),
+        display_name: cfg.display_name.clone(),
+        camera_pan_limit: cfg.camera_pan_limit.clone(),
+        fog_of_war_radius: cfg.fog_of_war_radius.clone(),
+        kits: cfg
+            .kits
+            .iter()
+            .map(|k| common::models::KitSummary {
+                name: k.name.clone(),
+                description: k.description.clone(),
+                pieces: k.pieces.clone(),
+            })
+            .collect(),
+    }
+}
+
 #[derive(Serialize)]
 pub struct ModeSummary {
     pub id: String,
     pub display_name: String,
+    pub players: u32,
+    pub max_players: u32,
+}
+
+async fn mode_list_snapshot(state: &Arc<ServerState>) -> Vec<ModeSummary> {
+    let mut list = Vec::new();
+    let games = state.games.read().await;
+    for (mode_id, instance) in games.iter() {
+        let players = instance.game.read().await.players.len() as u32;
+        list.push(ModeSummary {
+            id: mode_id.clone(),
+            display_name: instance.mode_config.display_name.clone(),
+            players,
+            max_players: instance.mode_config.max_players,
+        });
+    }
+    list
+}
+
+pub async fn index_html(State(state): State<Arc<ServerState>>) -> impl IntoResponse {
+    let html = fs::read_to_string("client/dist/index.html")
+        .unwrap_or_else(|_| "<!doctype html><body>missing index</body>".to_string());
+    let modes_json = serde_json::to_string(&mode_list_snapshot(&state).await)
+        .unwrap_or_else(|_| "[]".to_string());
+    let replaced = html.replace("__MODES_JSON__", &modes_json);
+    (
+        axum::http::StatusCode::OK,
+        [(axum::http::header::CONTENT_TYPE, "text/html")],
+        replaced,
+    )
 }
 
 pub async fn ws_handler(
@@ -27,33 +75,8 @@ pub async fn ws_handler(
     ws.on_upgrade(|socket| handle_socket(socket, mode_id, state))
 }
 
-pub async fn list_modes() -> impl IntoResponse {
-    let mut list = Vec::new();
-    match fs::read_dir("config/modes") {
-        Ok(entries) => {
-            for entry in entries.flatten() {
-                if let Some(ext) = entry.path().extension() {
-                    if ext != "jsonc" && ext != "json" {
-                        continue;
-                    }
-                }
-                if let Ok(text) = fs::read_to_string(entry.path()) {
-                    if let Ok(mode) = serde_json::from_str::<common::models::GameModeConfig>(&text)
-                    {
-                        list.push(ModeSummary {
-                            id: mode.id.clone(),
-                            display_name: mode.display_name.clone(),
-                        });
-                    }
-                }
-            }
-            axum::Json(list).into_response()
-        }
-        Err(e) => {
-            tracing::error!(error = %e, "Failed to read modes directory");
-            axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response()
-        }
-    }
+pub async fn list_modes(State(state): State<Arc<ServerState>>) -> impl IntoResponse {
+    axum::Json(mode_list_snapshot(&state).await)
 }
 
 async fn handle_socket(socket: WebSocket, mode_id: String, state: Arc<ServerState>) {
@@ -90,7 +113,7 @@ async fn handle_socket(socket: WebSocket, mode_id: String, state: Arc<ServerStat
             player_id: Uuid::nil(),
             session_secret: Uuid::nil(),
             state: game.clone(),
-            mode: instance.mode_config.clone(),
+            mode: to_client_mode(&instance.mode_config),
             pieces: (*instance.piece_configs).clone(),
             shops: (*instance.shop_configs).clone(),
         });
@@ -139,7 +162,7 @@ async fn handle_socket(socket: WebSocket, mode_id: String, state: Arc<ServerStat
                                     player_id: id,
                                     session_secret: secret,
                                     state: game.clone(),
-                                    mode: instance.mode_config.clone(),
+                                    mode: to_client_mode(&instance.mode_config),
                                     pieces: (*instance.piece_configs).clone(),
                                     shops: (*instance.shop_configs).clone(),
                                 });

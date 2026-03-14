@@ -65,6 +65,22 @@ pub struct HookConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct KitSummary {
+    pub name: String,
+    pub description: String,
+    pub pieces: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct GameModeClientConfig {
+    pub id: String,
+    pub display_name: String,
+    pub camera_pan_limit: String,
+    pub fog_of_war_radius: String,
+    pub kits: Vec<KitSummary>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct GameModeConfig {
     pub id: String,
     pub display_name: String,

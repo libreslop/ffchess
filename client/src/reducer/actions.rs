@@ -1,5 +1,7 @@
 use crate::reducer::types::{MsgSender, Pmove};
-use common::models::{GameModeConfig, GameState, Piece, PieceConfig, Player, Shop, ShopConfig};
+use common::models::{
+    GameModeClientConfig, GameState, Piece, PieceConfig, Player, Shop, ShopConfig,
+};
 use common::protocol::{GameError, ServerMessage};
 use std::collections::HashMap;
 use uuid::Uuid;
@@ -9,7 +11,7 @@ pub enum GameAction {
         player_id: Uuid,
         session_secret: Uuid,
         state: GameState,
-        mode: GameModeConfig,
+        mode: GameModeClientConfig,
         pieces: HashMap<String, PieceConfig>,
         shops: HashMap<String, ShopConfig>,
     },

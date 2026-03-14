@@ -1,4 +1,6 @@
-use crate::models::{GameModeConfig, GameState, Piece, PieceConfig, Player, Shop, ShopConfig};
+use crate::models::{
+    GameModeClientConfig, GameState, Piece, PieceConfig, Player, Shop, ShopConfig,
+};
 use glam::IVec2;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -73,7 +75,7 @@ pub enum ServerMessage {
         player_id: Uuid,
         session_secret: Uuid,
         state: GameState,
-        mode: GameModeConfig,
+        mode: GameModeClientConfig,
         pieces: HashMap<String, PieceConfig>,
         shops: HashMap<String, ShopConfig>,
     },

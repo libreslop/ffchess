@@ -1,5 +1,5 @@
 use crate::utils::is_mobile;
-use common::models::GameModeConfig;
+use common::models::GameModeClientConfig;
 use serde::{Deserialize, Serialize};
 use yew::prelude::*;
 
@@ -7,6 +7,8 @@ use yew::prelude::*;
 pub struct ModeSummary {
     pub id: String,
     pub display_name: String,
+    pub players: u32,
+    pub max_players: u32,
 }
 
 #[derive(Properties, PartialEq)]
@@ -19,11 +21,10 @@ pub struct JoinScreenProps {
     pub on_join: Callback<String>,
     pub error: Option<common::protocol::GameError>,
     pub is_loading: bool,
-    pub mode: Option<GameModeConfig>,
+    pub mode: Option<GameModeClientConfig>,
     pub mode_options: Vec<ModeSummary>,
     pub selected_mode_id: String,
     pub on_select_mode: Callback<String>,
-    pub current_mode_info: Option<ModeSummary>,
 }
 
 #[function_component(JoinScreen)]
@@ -37,27 +38,25 @@ pub fn join_screen(props: &JoinScreenProps) -> Html {
             <div style={format!("position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 100; text-align: center; width: 90%; max-width: 400px; padding: {};", if mobile { "20px 10px" } else { "30px" })}>
                 if props.join_step == 0 {
                     <h1 style={format!("margin-top: 0; color: #fff; font-size: {}; letter-spacing: 4px; text-shadow: 0 4px 8px rgba(0,0,0,0.5);", if mobile { "3em" } else { "4em" })}>{"FFCHESS"}</h1>
-                    <div style="margin-bottom: 16px;">
-                        <select
-                            value={props.selected_mode_id.clone()}
-                            onchange={
-                                let on_select = props.on_select_mode.clone();
-                                Callback::from(move |e: Event| {
-                                    let sel: web_sys::HtmlSelectElement = e.target_unchecked_into();
-                                    on_select.emit(sel.value());
-                                })
+                    <div style="margin-bottom: 16px; max-height: 220px; overflow-y: auto; border: 2px solid #cbd5e1; background: transparent;">
+                        { for props.mode_options.iter().map(|m| {
+                            let on_select = props.on_select_mode.clone();
+                            let id = m.id.clone();
+                            let selected = m.id == props.selected_mode_id;
+                            html!{
+                                <button
+                                    onclick={Callback::from(move |_| on_select.emit(id.clone()))}
+                                    style={format!(
+                                        "display: flex; width: 100%; justify-content: space-between; align-items: center; text-align: left; padding: 10px 12px; border: none; border-bottom: 1px solid rgba(255,255,255,0.08); background: {}; color: #fff; font-weight: {}; cursor: pointer;",
+                                        if selected { "rgba(255,255,255,0.08)" } else { "transparent" },
+                                        if selected { "700" } else { "500" },
+                                    )}
+                                >
+                                    <span>{ m.display_name.clone() }</span>
+                                    <span style="opacity: 0.8; font-variant-numeric: tabular-nums;">{ format!("{}/{}", m.players, m.max_players) }</span>
+                                </button>
                             }
-                            style="padding: 10px 12px; font-size: 1em; border: 2px solid #cbd5e1; background: #fff; width: 100%; box-sizing: border-box; text-align: center;"
-                        >
-                            { for props.mode_options.iter().map(|m| html!{
-                                <option value={m.id.clone()} selected={m.id == props.selected_mode_id}>{ m.display_name.clone() }</option>
-                            })}
-                        </select>
-                        if let Some(info) = &props.current_mode_info {
-                            <div style="margin-top: 8px; color: #e2e8f0; font-size: 0.9em;">
-                                <strong>{ &info.display_name }</strong>
-                            </div>
-                        }
+                        })}
                     </div>
                     <form onsubmit={props.on_name_submit.clone()}>
                         <div style="display: flex; flex-direction: column; gap: 15px; align-items: center;">

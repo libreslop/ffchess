@@ -39,7 +39,7 @@ pub fn update_camera(
     player_id: Option<Uuid>,
     canvas_ref: &NodeRef,
     is_dragging: bool,
-    mode: Option<&common::models::GameModeConfig>,
+    mode: Option<&common::models::GameModeClientConfig>,
     piece_count: usize,
     is_dead: bool,
 ) -> bool {
