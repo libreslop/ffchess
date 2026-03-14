@@ -1,5 +1,5 @@
-use yew::prelude::*;
 use crate::utils::is_mobile;
+use yew::prelude::*;
 
 #[derive(Properties, PartialEq)]
 pub struct DefeatScreenProps {

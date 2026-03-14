@@ -3,13 +3,13 @@ pub mod handlers;
 pub mod types;
 
 pub use actions::*;
+use common::logic::calculate_cooldown;
+use common::protocol::{ClientMessage, GameError};
 use handlers::*;
 use std::rc::Rc;
 pub use types::*;
 use uuid::Uuid;
 use yew::prelude::*;
-use common::protocol::{ClientMessage, GameError};
-use common::logic::calculate_cooldown;
 
 impl Reducible for GameStateReducer {
     type Action = GameAction;
@@ -17,7 +17,14 @@ impl Reducible for GameStateReducer {
     fn reduce(self: Rc<Self>, action: Self::Action) -> Rc<Self> {
         let mut next = (*self).clone();
         match action {
-            GameAction::SetInit { player_id, session_secret, state, mode, pieces, shops } => {
+            GameAction::SetInit {
+                player_id,
+                session_secret,
+                state,
+                mode,
+                pieces,
+                shops,
+            } => {
                 next.player_id = Some(player_id);
                 next.session_secret = Some(session_secret);
                 next.state = state;
@@ -124,13 +131,9 @@ impl Reducible for GameStateReducer {
                         if let Some(p) = next.state.pieces.get_mut(&pm.piece_id) {
                             pm.old_last_move_time = p.last_move_time;
                             pm.old_cooldown_ms = p.cooldown_ms;
-                            
+
                             if let Some(config) = next.piece_configs.get(&p.piece_type) {
-                                p.cooldown_ms = calculate_cooldown(
-                                    config,
-                                    p.position,
-                                    pm.target,
-                                );
+                                p.cooldown_ms = calculate_cooldown(config, p.position, pm.target);
                             }
                             p.last_move_time = now;
                         }

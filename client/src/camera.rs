@@ -1,7 +1,7 @@
-use yew::prelude::*;
-use uuid::Uuid;
-use common::*;
 use common::logic::evaluate_expression;
+use common::*;
+use uuid::Uuid;
+use yew::prelude::*;
 
 pub struct CameraManager {
     pub camera: (f64, f64),
@@ -52,14 +52,21 @@ pub fn update_camera(
         let old_z = manager.zoom;
         manager.zoom += (manager.target_zoom - manager.zoom) * factor;
         let ratio = manager.zoom / old_z;
-        
+
         if let Some(canvas) = canvas_ref.cast::<web_sys::HtmlCanvasElement>() {
             let rect = canvas.get_bounding_client_rect();
-            
+
             // Mouse position relative to canvas center
-            let mx = manager.mouse_pos.0 - rect.left() - (canvas.width() as f64 / 2.0);
-            let my = manager.mouse_pos.1 - rect.top() - (canvas.height() as f64 / 2.0);
-            
+            // When dead, anchor zoom to canvas center so the death focus stays accurate.
+            let (mx, my) = if is_dead {
+                (0.0, 0.0)
+            } else {
+                (
+                    manager.mouse_pos.0 - rect.left() - (canvas.width() as f64 / 2.0),
+                    manager.mouse_pos.1 - rect.top() - (canvas.height() as f64 / 2.0),
+                )
+            };
+
             // To keep the point under the mouse fixed in world space:
             // The world position under the mouse is: W = (M - Offset) / Zoom
             // Where Offset = (CanvasWidth/2 - CameraPos)
@@ -70,11 +77,13 @@ pub fn update_camera(
             // CameraPos' = Zoom' * W - (M - CanvasWidth/2)
             // CameraPos' = (Zoom' / Zoom) * (Zoom * W) - (M - CanvasWidth/2)
             // CameraPos' = Ratio * (CameraPos + M - CanvasWidth/2) - (M - CanvasWidth/2)
-            
-            manager.camera.0 = ratio * (manager.camera.0 + mx) - mx;
-            manager.camera.1 = ratio * (manager.camera.1 + my) - my;
-            manager.target_camera.0 = ratio * (manager.target_camera.0 + mx) - mx;
-            manager.target_camera.1 = ratio * (manager.target_camera.1 + my) - my;
+
+            if !is_dead {
+                manager.camera.0 = ratio * (manager.camera.0 + mx) - mx;
+                manager.camera.1 = ratio * (manager.camera.1 + my) - my;
+                manager.target_camera.0 = ratio * (manager.target_camera.0 + mx) - mx;
+                manager.target_camera.1 = ratio * (manager.target_camera.1 + my) - my;
+            }
             changed = true;
         }
     }
@@ -98,8 +107,8 @@ pub fn update_camera(
     // 3. King Following / Death Focusing / Menu Focusing
     if is_alive {
         if let Some(p) = player
-            && let Some(king) = state.pieces.get(&p.king_id) {
-            
+            && let Some(king) = state.pieces.get(&p.king_id)
+        {
             let tile_size = 40.0 * manager.zoom;
             let kpx = king.position.x as f64 * tile_size + tile_size / 2.0;
             let kpy = king.position.y as f64 * tile_size + tile_size / 2.0;
@@ -138,7 +147,7 @@ pub fn update_camera(
                         let ratio = target_dist / dist;
                         let target_x = kpx + dx * ratio;
                         let target_y = kpy + dy * ratio;
-                        
+
                         manager.target_camera.0 = target_x;
                         manager.target_camera.1 = target_y;
                     }
@@ -151,12 +160,12 @@ pub fn update_camera(
             let grid_pos = manager.last_king_grid_pos;
             let target_zoom = 1.3;
             let tile_size = 40.0 * target_zoom;
-            manager.target_camera = (
-                grid_pos.x as f64 * tile_size + tile_size / 2.0,
-                grid_pos.y as f64 * tile_size + tile_size / 2.0
-            );
+            let desired_focus_x = grid_pos.x as f64 * tile_size + tile_size / 2.0;
+            let desired_focus_y = grid_pos.y as f64 * tile_size + tile_size / 2.0;
+            manager.target_camera = (desired_focus_x, desired_focus_y);
             manager.target_zoom = target_zoom;
             manager.was_alive = false;
+            manager.velocity = (0.0, 0.0);
             changed = true;
         }
     } else {
@@ -169,7 +178,10 @@ pub fn update_camera(
     }
 
     // 5. Final interpolation for target_camera
-    if !is_dragging && ((manager.target_camera.0 - manager.camera.0).abs() > 0.1 || (manager.target_camera.1 - manager.camera.1).abs() > 0.1) {
+    if !is_dragging
+        && ((manager.target_camera.0 - manager.camera.0).abs() > 0.1
+            || (manager.target_camera.1 - manager.camera.1).abs() > 0.1)
+    {
         let factor = if is_alive { 0.15 } else { 0.08 }; // Slightly slower pan in menus
         manager.camera.0 += (manager.target_camera.0 - manager.camera.0) * factor;
         manager.camera.1 += (manager.target_camera.1 - manager.camera.1) * factor;

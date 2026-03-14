@@ -1,4 +1,4 @@
-use crate::camera::{update_camera, CameraManager};
+use crate::camera::{CameraManager, update_camera};
 use crate::canvas::Renderer;
 use crate::reducer::{GameAction, GameStateReducer, MsgSender, Pmove};
 use common::logic::is_within_board;
@@ -50,12 +50,15 @@ pub fn game_view(props: &GameViewProps) -> Html {
     {
         let renderer_state = renderer_state.clone();
         let piece_configs = props.reducer.piece_configs.clone();
-        use_effect_with((canvas_ref.clone(), piece_configs), move |(canvas_ref, piece_configs)| {
-            if let Some(canvas) = canvas_ref.cast::<HtmlCanvasElement>() {
-                renderer_state.set(Some(Renderer::new(canvas, piece_configs.clone())));
-            }
-            || ()
-        });
+        use_effect_with(
+            (canvas_ref.clone(), piece_configs),
+            move |(canvas_ref, piece_configs)| {
+                if let Some(canvas) = canvas_ref.cast::<HtmlCanvasElement>() {
+                    renderer_state.set(Some(Renderer::new(canvas, piece_configs.clone())));
+                }
+                || ()
+            },
+        );
     }
 
     // We use a ref to track the latest state for the interval to avoid stale captures
@@ -82,12 +85,17 @@ pub fn game_view(props: &GameViewProps) -> Html {
                     (s.0.clone(), s.1)
                 };
                 *fps_counter.borrow_mut() += 1;
-                
+
                 let mut manager = manager_ref.borrow_mut();
-                
+
                 let player_id_val = reducer.player_id.unwrap_or_else(Uuid::nil);
-                let piece_count = reducer.state.pieces.values().filter(|p| p.owner_id == Some(player_id_val)).count();
-                
+                let piece_count = reducer
+                    .state
+                    .pieces
+                    .values()
+                    .filter(|p| p.owner_id == Some(player_id_val))
+                    .count();
+
                 let changed = update_camera(
                     &mut manager,
                     &reducer.state,
@@ -125,22 +133,30 @@ pub fn game_view(props: &GameViewProps) -> Html {
     {
         let manager_ref = manager_ref.clone();
         let canvas_ref = canvas_ref.clone();
-        use_effect_with(canvas_ref.clone(), move |canvas_ref| {
-            if let Some(canvas) = canvas_ref.cast::<web_sys::HtmlElement>() {
-                let manager_ref = manager_ref.clone();
-                let listener = EventListener::new(&canvas, "wheel", move |e| {
-                    let e = e.dyn_ref::<web_sys::WheelEvent>().unwrap();
-                    e.prevent_default();
-                    let delta = e.delta_y();
-                    let factor = 1.2f64.powf(-delta / 100.0);
-                    let mut manager = manager_ref.borrow_mut();
-                    manager.mouse_pos = (e.client_x() as f64, e.client_y() as f64);
-                    manager.target_zoom = (manager.target_zoom * factor).clamp(0.2, 2.0);
-                });
-                return Box::new(move || drop(listener)) as Box<dyn FnOnce()>;
-            }
-            Box::new(|| ()) as Box<dyn FnOnce()>
-        });
+        let is_dead = props.reducer.is_dead;
+        use_effect_with(
+            (canvas_ref.clone(), is_dead),
+            move |(canvas_ref, is_dead)| {
+                if let Some(canvas) = canvas_ref.cast::<web_sys::HtmlElement>() {
+                    let manager_ref = manager_ref.clone();
+                    let is_dead = *is_dead;
+                    let listener = EventListener::new(&canvas, "wheel", move |e| {
+                        if is_dead {
+                            return;
+                        }
+                        let e = e.dyn_ref::<web_sys::WheelEvent>().unwrap();
+                        e.prevent_default();
+                        let delta = e.delta_y();
+                        let factor = 1.2f64.powf(-delta / 100.0);
+                        let mut manager = manager_ref.borrow_mut();
+                        manager.mouse_pos = (e.client_x() as f64, e.client_y() as f64);
+                        manager.target_zoom = (manager.target_zoom * factor).clamp(0.2, 2.0);
+                    });
+                    return Box::new(move || drop(listener)) as Box<dyn FnOnce()>;
+                }
+                Box::new(|| ()) as Box<dyn FnOnce()>
+            },
+        );
     }
 
     {
@@ -182,6 +198,9 @@ pub fn game_view(props: &GameViewProps) -> Html {
         let canvas_ref = canvas_ref.clone();
         let reducer = props.reducer.clone();
         Callback::from(move |(cx, cy, is_right_click): (f64, f64, bool)| {
+            if reducer.is_dead {
+                return;
+            }
             let canvas = canvas_ref.cast::<HtmlCanvasElement>().unwrap();
             let rect = canvas.get_bounding_client_rect();
             let mut manager = manager_ref.borrow_mut();
@@ -237,6 +256,9 @@ pub fn game_view(props: &GameViewProps) -> Html {
         let manager_ref = manager_ref.clone();
         let reducer = props.reducer.clone();
         Callback::from(move |(cx, cy): (f64, f64)| {
+            if reducer.is_dead {
+                return;
+            }
             let mut manager = manager_ref.borrow_mut();
             manager.mouse_pos = (cx, cy);
             if let Some((start_x, start_y, allow_panning)) = *drag_start {
@@ -272,9 +294,14 @@ pub fn game_view(props: &GameViewProps) -> Html {
         let drag_start = drag_start.clone();
 
         Callback::from(move |(cx, cy, is_right_click): (f64, f64, bool)| {
+            if reducer.is_dead {
+                drag_start.set(None);
+                manager_ref.borrow_mut().velocity = (0.0, 0.0);
+                return;
+            }
             let start = *drag_start;
             drag_start.set(None);
-            
+
             let mut is_tap = true;
             if let Some((sx, sy, allow_panning)) = start {
                 let dx = cx - sx;
@@ -339,7 +366,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
                             current_ghosts.values().find(|gp| gp.position == target);
                         let is_capture = target_occupied.is_some()
                             && target_occupied.unwrap().owner_id != Some(player_id);
-                        
+
                         if let Some(config) = reducer.piece_configs.get(&p.piece_type) {
                             if common::logic::is_valid_move(
                                 config,
@@ -371,6 +398,31 @@ pub fn game_view(props: &GameViewProps) -> Html {
             }
         })
     };
+
+    // Cancel panning when cursor leaves the screen
+    let handle_mouse_leave = {
+        let drag_start = drag_start.clone();
+        let manager_ref = manager_ref.clone();
+        Callback::from(move |_| {
+            drag_start.set(None);
+            let mut mgr = manager_ref.borrow_mut();
+            // Treat like a mouse release: keep current velocity for inertia but lock target to current position
+            mgr.target_camera = mgr.camera;
+        })
+    };
+
+    // Stop ongoing pan/zoom inputs immediately after death so death focus can take over
+    {
+        let drag_start = drag_start.clone();
+        let manager_ref = manager_ref.clone();
+        use_effect_with(props.reducer.is_dead, move |is_dead| {
+            if *is_dead {
+                drag_start.set(None);
+                manager_ref.borrow_mut().velocity = (0.0, 0.0);
+            }
+            || ()
+        });
+    }
 
     let player_id_val = props.reducer.player_id.unwrap_or_else(Uuid::nil);
     {
@@ -416,16 +468,41 @@ pub fn game_view(props: &GameViewProps) -> Html {
     let (width, height) = *window_size;
 
     let player_id = props.reducer.player_id.unwrap_or_else(Uuid::nil);
-    let player_score = props.reducer.state.players.get(&player_id).map(|p| p.score).unwrap_or(0);
-    let player_pieces_count = props.reducer.state.pieces.values().filter(|p| p.owner_id == Some(player_id)).count();
-    let player_pieces: Vec<_> = props.reducer.state.pieces.values().filter(|p| p.owner_id == Some(player_id)).collect();
-    
-    let shop_on_which_player_is = props.reducer.state.shops.iter().find(|s| {
-        player_pieces.iter().any(|p| p.position == s.position)
-    });
+    let player_score = props
+        .reducer
+        .state
+        .players
+        .get(&player_id)
+        .map(|p| p.score)
+        .unwrap_or(0);
+    let player_pieces_count = props
+        .reducer
+        .state
+        .pieces
+        .values()
+        .filter(|p| p.owner_id == Some(player_id))
+        .count();
+    let player_pieces: Vec<_> = props
+        .reducer
+        .state
+        .pieces
+        .values()
+        .filter(|p| p.owner_id == Some(player_id))
+        .collect();
+
+    let shop_on_which_player_is = props
+        .reducer
+        .state
+        .shops
+        .iter()
+        .find(|s| player_pieces.iter().any(|p| p.position == s.position));
 
     let piece_on_shop = shop_on_which_player_is.and_then(|s| {
-        player_pieces.iter().find(|p| p.position == s.position).cloned().cloned()
+        player_pieces
+            .iter()
+            .find(|p| p.position == s.position)
+            .cloned()
+            .cloned()
     });
 
     html! {
@@ -448,6 +525,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
                      handle_input_end.emit((e.client_x() as f64, e.client_y() as f64, e.button() == 2));
                  })
              }
+             onmouseleave={handle_mouse_leave}
              oncontextmenu={Callback::from(|e: MouseEvent| e.prevent_default())}
              ontouchstart={
                  let handle_input_start = handle_input_start.clone();
@@ -490,7 +568,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
 
             if let Some(shop) = shop_on_which_player_is {
                 if let Some(shop_config) = props.reducer.shop_configs.get(&shop.shop_id) {
-                    <crate::components::shop_ui::ShopUI 
+                    <crate::components::shop_ui::ShopUI
                         player_score={player_score}
                         player_pieces_count={player_pieces_count}
                         piece_on_shop={piece_on_shop}
@@ -506,8 +584,8 @@ pub fn game_view(props: &GameViewProps) -> Html {
                 <crate::components::error_toast::ErrorToast error={error} />
             }
 
-            <crate::components::fatal_notification::FatalNotification 
-                show={props.reducer.fatal_error} 
+            <crate::components::fatal_notification::FatalNotification
+                show={props.reducer.fatal_error}
                 title={props.reducer.disconnected_title.clone()}
                 msg={props.reducer.disconnected_msg.clone()}
             />

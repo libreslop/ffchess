@@ -1,5 +1,5 @@
-use common::models::GameModeConfig;
 use crate::utils::is_mobile;
+use common::models::GameModeConfig;
 use yew::prelude::*;
 
 #[derive(Properties, PartialEq)]

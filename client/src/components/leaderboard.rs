@@ -12,7 +12,8 @@ pub struct LeaderboardProps {
 pub fn leaderboard(props: &LeaderboardProps) -> Html {
     let mut players = props.players.clone();
     players.sort_by(|a, b| {
-        b.score.cmp(&a.score)
+        b.score
+            .cmp(&a.score)
             .then_with(|| a.join_time.cmp(&b.join_time))
     });
 

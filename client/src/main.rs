@@ -4,12 +4,12 @@ mod components;
 mod reducer;
 mod utils;
 
+use common::protocol::{ClientMessage, GameError, ServerMessage};
 pub use common::*;
 use components::{
     DefeatScreen, DisconnectedScreen, ErrorToast, FatalNotification, GameView, JoinScreen,
     Leaderboard,
 };
-use common::protocol::{ClientMessage, GameError, ServerMessage};
 use futures_util::{SinkExt, StreamExt};
 use gloo_events::EventListener;
 use gloo_net::websocket::{Message, futures::WebSocket};
@@ -75,7 +75,11 @@ pub fn app() -> Html {
         let now = js_sys::Date::now() as i64;
         let cooldown_ms = 5000; // Hardcoded 5s respawn cooldown for now
         let diff_ms = cooldown_ms - (now - ts);
-        if diff_ms > 0 { (diff_ms / 1000) as i32 } else { 0 }
+        if diff_ms > 0 {
+            (diff_ms / 1000) as i32
+        } else {
+            0
+        }
     });
     let lc_ref = use_mut_ref(|| *landing_cooldown);
 
@@ -140,20 +144,21 @@ pub fn app() -> Html {
                         if tx
                             .send(Message::Text(serde_json::to_string(&msg).unwrap()))
                             .is_err()
-                            && !current_reducer.disconnected && !current_reducer.fatal_error
+                            && !current_reducer.disconnected
+                            && !current_reducer.fatal_error
                         {
-                            sender_reducer_ref
-                                .borrow()
-                                .clone()
-                                .dispatch(GameAction::SetDisconnected {
+                            sender_reducer_ref.borrow().clone().dispatch(
+                                GameAction::SetDisconnected {
                                     disconnected: true,
                                     is_fatal: false,
                                     title: None,
                                     msg: None,
-                                });
+                                },
+                            );
                         }
                     } else if !matches!(msg, ClientMessage::Ping(_))
-                        && !current_reducer.disconnected && !current_reducer.fatal_error
+                        && !current_reducer.disconnected
+                        && !current_reducer.fatal_error
                     {
                         sender_reducer_ref
                             .borrow()
@@ -176,10 +181,14 @@ pub fn app() -> Html {
                 } else {
                     "ws:"
                 };
-                
+
                 // Get mode from URL path or default to ffa
                 let pathname = window.location().pathname().unwrap();
-                let mode_id = pathname.trim_start_matches('/').split('/').next().unwrap_or("ffa");
+                let mode_id = pathname
+                    .trim_start_matches('/')
+                    .split('/')
+                    .next()
+                    .unwrap_or("ffa");
                 if mode_id.is_empty() {
                     // if it was just "/"
                     let mode_id = "ffa";
@@ -260,7 +269,8 @@ pub fn app() -> Html {
 
     let player_id = reducer.player_id.unwrap_or_else(Uuid::nil);
     let is_dead = reducer.is_dead;
-    let is_joined = (reducer.player_id.is_some() && reducer.player_id != Some(Uuid::nil())) || is_dead;
+    let is_joined =
+        (reducer.player_id.is_some() && reducer.player_id != Some(Uuid::nil())) || is_dead;
 
     {
         let show_disconnected = show_disconnected.clone();
@@ -337,33 +347,40 @@ pub fn app() -> Html {
         let disconnected = reducer.disconnected;
 
         use_effect_with(
-            (is_joined, is_dead, *join_step, *landing_cooldown, disconnected),
+            (
+                is_joined,
+                is_dead,
+                *join_step,
+                *landing_cooldown,
+                disconnected,
+            ),
             move |&(joined, dead, step, lc, disc)| {
-                let listener = EventListener::new(&web_sys::window().unwrap(), "keydown", move |e| {
-                    let e = e.dyn_ref::<web_sys::KeyboardEvent>().unwrap();
-                    if e.key() == "Enter" {
-                        if !joined && !dead {
-                            if step == 0 && lc == 0 && !disc {
-                                let mut name = (*player_name).trim().to_string();
-                                if name.is_empty() {
-                                    name = generate_random_name();
-                                    player_name.set(name.clone());
+                let listener =
+                    EventListener::new(&web_sys::window().unwrap(), "keydown", move |e| {
+                        let e = e.dyn_ref::<web_sys::KeyboardEvent>().unwrap();
+                        if e.key() == "Enter" {
+                            if !joined && !dead {
+                                if step == 0 && lc == 0 && !disc {
+                                    let mut name = (*player_name).trim().to_string();
+                                    if name.is_empty() {
+                                        name = generate_random_name();
+                                        player_name.set(name.clone());
+                                    }
+                                    set_stored_name(&name);
+                                    join_step.set(1);
+                                    has_interacted.set(true);
+                                } else if step == 1 && !disc {
+                                    on_join.emit("Standard".to_string());
+                                    has_interacted.set(true);
                                 }
-                                set_stored_name(&name);
-                                join_step.set(1);
-                                has_interacted.set(true);
-                            } else if step == 1 && !disc {
-                                on_join.emit("Standard".to_string());
+                            } else if dead && *rc_ref.borrow() == 0 && !disc {
+                                on_rejoin.emit(MouseEvent::new("click").unwrap());
                                 has_interacted.set(true);
                             }
-                        } else if dead && *rc_ref.borrow() == 0 && !disc {
-                            on_rejoin.emit(MouseEvent::new("click").unwrap());
-                            has_interacted.set(true);
                         }
-                    }
-                });
+                    });
                 move || drop(listener)
-            }
+            },
         );
     }
 
@@ -454,7 +471,11 @@ pub fn app() -> Html {
     }
 }
 
-async fn connect_ws(ws_url: String, listener_reducer_ref: Rc<std::cell::RefCell<yew::UseReducerHandle<GameStateReducer>>>, current_ws_tx: Rc<std::cell::RefCell<Option<mpsc::UnboundedSender<Message>>>>) {
+async fn connect_ws(
+    ws_url: String,
+    listener_reducer_ref: Rc<std::cell::RefCell<yew::UseReducerHandle<GameStateReducer>>>,
+    current_ws_tx: Rc<std::cell::RefCell<Option<mpsc::UnboundedSender<Message>>>>,
+) {
     loop {
         if let Ok(ws) = WebSocket::open(&ws_url) {
             let (mut write, mut read) = ws.split();
@@ -473,53 +494,67 @@ async fn connect_ws(ws_url: String, listener_reducer_ref: Rc<std::cell::RefCell<
                 {
                     let current_reducer = listener_reducer_ref.borrow().clone();
                     current_reducer.dispatch(match server_msg {
-                            ServerMessage::Init { player_id, session_secret, state, mode, pieces, shops } => {
-                                if player_id != Uuid::nil() {
-                                    set_stored_id(player_id);
-                                    set_stored_secret(session_secret);
-                                }
-                                GameAction::SetInit { player_id, session_secret, state, mode, pieces, shops }
+                        ServerMessage::Init {
+                            player_id,
+                            session_secret,
+                            state,
+                            mode,
+                            pieces,
+                            shops,
+                        } => {
+                            if player_id != Uuid::nil() {
+                                set_stored_id(player_id);
+                                set_stored_secret(session_secret);
                             }
-                            ServerMessage::UpdateState {
-                                players,
+                            GameAction::SetInit {
+                                player_id,
+                                session_secret,
+                                state,
+                                mode,
                                 pieces,
                                 shops,
-                                removed_pieces,
-                                removed_players,
-                                board_size,
-                            } => GameAction::UpdateState {
-                                players,
-                                pieces,
-                                shops,
-                                removed_pieces,
-                                removed_players,
-                                board_size,
-                            },
-                            ServerMessage::Error(e) => {
-                                if let GameError::Custom { title, message } = &e {
-                                    GameAction::SetDisconnected {
-                                        disconnected: true,
-                                        is_fatal: true,
-                                        title: Some(title.clone()),
-                                        msg: Some(message.clone()),
-                                    }
-                                } else {
-                                    GameAction::SetError(e)
-                                }
                             }
-                            ServerMessage::GameOver {
-                                final_score,
-                                kills,
-                                pieces_captured,
-                                time_survived_secs,
-                            } => GameAction::GameOver {
-                                final_score,
-                                kills,
-                                pieces_captured,
-                                time_survived_secs,
-                            },
-                            ServerMessage::Pong(t) => GameAction::Pong(t),
-                        });
+                        }
+                        ServerMessage::UpdateState {
+                            players,
+                            pieces,
+                            shops,
+                            removed_pieces,
+                            removed_players,
+                            board_size,
+                        } => GameAction::UpdateState {
+                            players,
+                            pieces,
+                            shops,
+                            removed_pieces,
+                            removed_players,
+                            board_size,
+                        },
+                        ServerMessage::Error(e) => {
+                            if let GameError::Custom { title, message } = &e {
+                                GameAction::SetDisconnected {
+                                    disconnected: true,
+                                    is_fatal: true,
+                                    title: Some(title.clone()),
+                                    msg: Some(message.clone()),
+                                }
+                            } else {
+                                GameAction::SetError(e)
+                            }
+                        }
+                        ServerMessage::GameOver {
+                            final_score,
+                            kills,
+                            pieces_captured,
+                            time_survived_secs,
+                        } => GameAction::GameOver {
+                            final_score,
+                            kills,
+                            pieces_captured,
+                            time_survived_secs,
+                        },
+                        ServerMessage::Pong(t) => GameAction::Pong(t),
+                    });
                 }
             }
             *current_ws_tx.borrow_mut() = None;
@@ -528,11 +563,11 @@ async fn connect_ws(ws_url: String, listener_reducer_ref: Rc<std::cell::RefCell<
         let current_reducer = listener_reducer_ref.borrow().clone();
         if !current_reducer.disconnected && !current_reducer.fatal_error {
             current_reducer.dispatch(GameAction::SetDisconnected {
-                    disconnected: true,
-                    is_fatal: false,
-                    title: None,
-                    msg: None,
-                });
+                disconnected: true,
+                is_fatal: false,
+                title: None,
+                msg: None,
+            });
         }
         gloo_timers::future::TimeoutFuture::new(2000).await;
     }

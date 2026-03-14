@@ -53,7 +53,9 @@ pub fn fatal_notification(props: &FatalNotificationProps) -> Html {
     }
 
     let title = latched_title.as_deref().unwrap_or("ALERT");
-    let msg = latched_msg.as_deref().unwrap_or("A critical error occurred.");
+    let msg = latched_msg
+        .as_deref()
+        .unwrap_or("A critical error occurred.");
     let animation_name = if *is_animating_out {
         "fadeOutUp"
     } else {

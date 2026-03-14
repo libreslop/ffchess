@@ -19,16 +19,24 @@ pub struct ShopUIProps {
 #[function_component(ShopUI)]
 pub fn shop_ui(props: &ShopUIProps) -> Html {
     let group = if let Some(ref p) = props.piece_on_shop {
-        props.shop_config.groups.iter().find(|g| g.applies_to.contains(&p.piece_type)).unwrap_or(&props.shop_config.default_group)
+        props
+            .shop_config
+            .groups
+            .iter()
+            .find(|g| g.applies_to.contains(&p.piece_type))
+            .unwrap_or(&props.shop_config.default_group)
     } else {
         &props.shop_config.default_group
     };
 
     let mut vars = HashMap::new();
-    vars.insert("player_piece_count".to_string(), props.player_pieces_count as f64);
+    vars.insert(
+        "player_piece_count".to_string(),
+        props.player_pieces_count as f64,
+    );
     for p_id in props.piece_configs.keys() {
         // We don't have individual counts here easily, but we can assume 0 or just not use them in simple expressions
-        vars.insert(format!("{}_count", p_id), 0.0); 
+        vars.insert(format!("{}_count", p_id), 0.0);
     }
 
     html! {
