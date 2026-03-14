@@ -5,6 +5,9 @@ use common::logic::is_within_board;
 use glam::IVec2;
 use gloo_events::EventListener;
 use uuid::Uuid;
+use gloo_render::{request_animation_frame, AnimationFrame};
+use std::rc::Rc;
+use std::cell::RefCell;
 use wasm_bindgen::JsCast;
 use web_sys::HtmlCanvasElement;
 use yew::prelude::*;
@@ -52,6 +55,37 @@ pub fn game_view(props: &GameViewProps) -> Html {
         )
     });
 
+    // Drive a steady render heartbeat with requestAnimationFrame so visual elements (e.g., cooldown bars) update every frame
+    {
+        let frame_id = frame_id.clone();
+        use_effect_with((), move |_| {
+            let handle_cell: Rc<RefCell<Option<AnimationFrame>>> = Rc::new(RefCell::new(None));
+            let start_cell = handle_cell.clone();
+            let start_frame = frame_id.clone();
+
+            fn schedule(
+                cell: Rc<RefCell<Option<AnimationFrame>>>,
+                frame: UseStateHandle<u64>,
+            ) {
+                let inner_cell = cell.clone();
+                let inner_frame = frame.clone();
+                let handle = request_animation_frame(move |_| {
+                    inner_frame.set(*inner_frame + 1);
+                    schedule(inner_cell, inner_frame);
+                });
+                *cell.borrow_mut() = Some(handle);
+            }
+
+            schedule(start_cell, start_frame);
+
+            move || {
+                if let Some(h) = handle_cell.borrow_mut().take() {
+                    drop(h);
+                }
+            }
+        });
+    }
+
     // Initialize renderer when canvas is bound
     {
         let renderer_state = renderer_state.clone();
@@ -83,7 +117,6 @@ pub fn game_view(props: &GameViewProps) -> Html {
         let latest_state = latest_state.clone();
         let fps_counter = fps_counter.clone();
         let reducer = props.reducer.clone();
-        let frame_id = frame_id.clone();
         let globals = props.globals.clone();
 
         use_effect_with(props.render_interval_ms, move |&render_ms| {
@@ -141,9 +174,6 @@ pub fn game_view(props: &GameViewProps) -> Html {
                         zoom_state.set(manager.zoom);
                         cam_state.set(manager.camera);
                     }
-
-                    // Always tick frame to drive rendering effect
-                    frame_id.set(*frame_id + 1);
                 }
             });
             move || drop(interval)
@@ -593,7 +623,6 @@ pub fn game_view(props: &GameViewProps) -> Html {
             ontouchmove={
                 let handle_input_move = handle_input_move.clone();
                let manager_ref = manager_ref.clone();
-                let canvas_ref = canvas_ref.clone();
                 let is_dead = props.reducer.is_dead;
                 let cam_state = cam_state.clone();
                 let zoom_state = zoom_state.clone();

@@ -68,20 +68,49 @@ impl Reducible for GameStateReducer {
             }
             GameAction::SetError(e) => {
                 next.error = Some(e.clone());
-                if matches!(e, GameError::OnCooldown) {
-                    for pm in next.pm_queue.iter_mut() {
-                        pm.pending = false;
-                    }
-                } else {
-                    for pm in next.pm_queue.iter().rev() {
-                        if pm.pending
-                            && let Some(p) = next.state.pieces.get_mut(&pm.piece_id)
-                        {
-                            p.last_move_time = pm.old_last_move_time;
-                            p.cooldown_ms = pm.old_cooldown_ms;
+                // Identify the first pending move; errors from the server always correspond to a pending move
+                let failing_piece_id = next.pm_queue.iter().find(|pm| pm.pending).map(|pm| pm.piece_id);
+
+                match e {
+                    GameError::OnCooldown => {
+                        if let Some(pid) = failing_piece_id {
+                            for pm in next.pm_queue.iter_mut() {
+                                if pm.piece_id == pid {
+                                    pm.pending = false;
+                                }
+                            }
+                        } else {
+                            // Fallback: reset all
+                            for pm in next.pm_queue.iter_mut() {
+                                pm.pending = false;
+                            }
                         }
                     }
-                    next.pm_queue.clear();
+                    _ => {
+                        if let Some(pid) = failing_piece_id {
+                            // Revert state for the failing piece only
+                            if let Some(pm) =
+                                next.pm_queue.iter().find(|pm| pm.piece_id == pid && pm.pending)
+                            {
+                                if let Some(p) = next.state.pieces.get_mut(&pid) {
+                                    p.last_move_time = pm.old_last_move_time;
+                                    p.cooldown_ms = pm.old_cooldown_ms;
+                                }
+                            }
+                            next.pm_queue.retain(|pm| pm.piece_id != pid);
+                        } else {
+                            // Unknown source; fall back to previous behaviour
+                            for pm in next.pm_queue.iter().rev() {
+                                if pm.pending
+                                    && let Some(p) = next.state.pieces.get_mut(&pm.piece_id)
+                                {
+                                    p.last_move_time = pm.old_last_move_time;
+                                    p.cooldown_ms = pm.old_cooldown_ms;
+                                }
+                            }
+                            next.pm_queue.clear();
+                        }
+                    }
                 }
             }
             GameAction::GameOver {
