@@ -48,21 +48,18 @@ mod tests {
             game.pieces.insert(p_id, Piece { ... piece_type: p_type_id.clone(), ... });
         }
         */
-        // So if "king" is in kit.pieces, it will add TWO kings.
-        // I should probably remove the hardcoded king addition if it's in the kit, or change the kit config.
-        // Let's check ffa.jsonc again.
-        // "Standard": ["king", "pawn", "pawn", "knight", "knight"]
-        // Yes, it has "king".
-        
-        assert_eq!(p1_pieces.len(), 6); 
+        // Standard kit: "pieces": ["king", "pawn", "pawn", "knight", "knight"]
+        // Should be 5 pieces total.
+        assert_eq!(p1_pieces.len(), 5);
 
         let p2_pieces: Vec<_> = game
             .pieces
             .values()
             .filter(|p| p.owner_id == Some(p2))
             .collect();
-        // Tank kit: "pieces": ["king", "rook"] -> 1 + 2 = 3 pieces total
-        assert_eq!(p2_pieces.len(), 3);
+        // Tank kit: "pieces": ["king", "rook"]
+        // Should be 2 pieces total.
+        assert_eq!(p2_pieces.len(), 2);
     }
 
     #[tokio::test]

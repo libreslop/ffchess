@@ -139,34 +139,50 @@ impl GameInstance {
             });
         }
 
-        let king_id = Uuid::new_v4();
-        game.pieces.insert(
-            king_id,
-            Piece {
-                id: king_id,
-                owner_id: Some(player_id),
-                piece_type: "king".to_string(),
-                position: spawn_pos,
-                last_move_time: 0,
-                cooldown_ms: 0,
-            },
-        );
+        let mut king_id = Uuid::nil(); // Placeholder
 
         {
             let mut rng = rand::thread_rng();
             for p_type_id in &kit.pieces {
                 let p_id = Uuid::new_v4();
                 let mut p_pos = spawn_pos;
-                for _ in 0..10 {
-                    let offset = IVec2::new(rng.gen_range(-2..=2), rng.gen_range(-2..=2));
-                    let candidate = spawn_pos + offset;
-                    if candidate != spawn_pos
-                        && common::logic::is_within_board(candidate, game.board_size)
-                        && !game.pieces.values().any(|p| p.position == candidate)
-                        && !game.shops.iter().any(|s| s.position == candidate)
-                    {
-                        p_pos = candidate;
-                        break;
+                
+                // If it's a king, we try to place it exactly at spawn_pos if possible, 
+                // but the loop below handles collision. 
+                // Actually, let's prioritize king at spawn_pos.
+                
+                if p_type_id == "king" {
+                    king_id = p_id;
+                    // Try to put king at center
+                    if !game.pieces.values().any(|p| p.position == spawn_pos) {
+                        p_pos = spawn_pos;
+                    } else {
+                        // find nearby
+                        for _ in 0..10 {
+                            let offset = IVec2::new(rng.gen_range(-2..=2), rng.gen_range(-2..=2));
+                            let candidate = spawn_pos + offset;
+                            if candidate != spawn_pos
+                                && common::logic::is_within_board(candidate, game.board_size)
+                                && !game.pieces.values().any(|p| p.position == candidate)
+                                && !game.shops.iter().any(|s| s.position == candidate)
+                            {
+                                p_pos = candidate;
+                                break;
+                            }
+                        }
+                    }
+                } else {
+                    for _ in 0..10 {
+                        let offset = IVec2::new(rng.gen_range(-2..=2), rng.gen_range(-2..=2));
+                        let candidate = spawn_pos + offset;
+                        if candidate != spawn_pos // Reserve exact center for king if possible (though loop order matters)
+                            && common::logic::is_within_board(candidate, game.board_size)
+                            && !game.pieces.values().any(|p| p.position == candidate)
+                            && !game.shops.iter().any(|s| s.position == candidate)
+                        {
+                            p_pos = candidate;
+                            break;
+                        }
                     }
                 }
 
@@ -182,6 +198,22 @@ impl GameInstance {
                     },
                 );
             }
+        }
+
+        // Fallback if kit didn't have a king (shouldn't happen with valid config)
+        if king_id == Uuid::nil() {
+            king_id = Uuid::new_v4();
+            game.pieces.insert(
+                king_id,
+                Piece {
+                    id: king_id,
+                    owner_id: Some(player_id),
+                    piece_type: "king".to_string(),
+                    position: spawn_pos,
+                    last_move_time: 0,
+                    cooldown_ms: 0,
+                },
+            );
         }
 
         let player = Player {
@@ -336,19 +368,8 @@ impl GameInstance {
                 if hook.trigger == "OnCapture" && hook.target_piece_id == tp.piece_type {
                     if let Some(target_owner_id) = tp.owner_id {
                         if hook.action == "EliminateOwner" {
-                            // Can't call remove_player here because we have a write lock on game
-                            // We'll record it and remove later or handle it carefully
-                            self.removed_players.write().await.push(target_owner_id);
-                            // We also need to remove their pieces
-                            let mut rp = self.removed_pieces.write().await;
-                            game.pieces.retain(|id, p| {
-                                if p.owner_id == Some(target_owner_id) {
-                                    rp.push(*id);
-                                    false
-                                } else {
-                                    true
-                                }
-                            });
+                            // Record player removal (updates death timestamps)
+                            self.record_player_removal(target_owner_id, &mut *game).await;
                             game.players.remove(&target_owner_id);
                         }
                     }
@@ -650,16 +671,7 @@ impl GameInstance {
                                 if tp.piece_type == "king" {
                                     if let Some(owner_id) = tp.owner_id {
                                         // Eliminate player
-                                        self.removed_players.write().await.push(owner_id);
-                                        let mut rp_pieces = self.removed_pieces.write().await;
-                                        game.pieces.retain(|pid, p| {
-                                            if p.owner_id == Some(owner_id) {
-                                                rp_pieces.push(*pid);
-                                                false
-                                            } else {
-                                                true
-                                            }
-                                        });
+                                        self.record_player_removal(owner_id, &mut *game).await;
                                         game.players.remove(&owner_id);
                                     }
                                 }

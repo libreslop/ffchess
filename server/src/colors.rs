@@ -39,6 +39,7 @@ impl ColorManager {
         // Identify currently active colors.
         let active_colors: Vec<String> = active_player_ids
             .iter()
+            .filter(|&id| *id != player_id)
             .filter_map(|id| self.player_colors.get(id).cloned())
             .collect();
 
