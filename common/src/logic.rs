@@ -14,7 +14,7 @@ pub fn evaluate_expression(expr: &str, vars: &HashMap<String, f64>) -> f64 {
 pub fn calculate_board_size(mode: &GameModeConfig, player_count: usize) -> i32 {
     let mut vars = HashMap::new();
     vars.insert("player_count".to_string(), player_count as f64);
-    evaluate_expression(&mode.board_size_expr, &vars) as i32
+    evaluate_expression(&mode.board_size, &vars) as i32
 }
 
 pub fn is_within_board(pos: IVec2, board_size: i32) -> bool {

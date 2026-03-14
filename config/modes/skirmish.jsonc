@@ -2,7 +2,9 @@
     "id": "skirmish",
     "display_name": "Skirmish",
     "max_players": 10,
-    "board_size_expr": "20",
+    "board_size": "20",
+    "camera_pan_limit": "fog_of_war_radius + 0.5",
+    "fog_of_war_radius": "15 * max(1, sqrt(player_piece_count))",
     "npc_limits": [],
     "shop_counts": [
         { "shop_id": "spawn_shop", "count": 2 },

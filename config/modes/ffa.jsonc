@@ -1,14 +1,17 @@
 {
     "id": "ffa",
     "display_name": "Free-For-All",
-    "max_players": 100,
-    "board_size_expr": "max(40, 25 + sqrt(floor(player_count/3)) * 15)",
+    "max_players": 20,
+    "board_size": "max(40, 25 + sqrt(floor(player_count/3)) * 15)",
+    "camera_pan_limit": "fog_of_war_radius + 2",
+    "fog_of_war_radius": "20",
     "npc_limits": [
-        { "piece_id": "pawn", "max_expr": "max(10, player_count * 2)" },
-        { "piece_id": "knight", "max_expr": "max(5, player_count * 1)" },
-        { "piece_id": "bishop", "max_expr": "max(2, player_count * 1)" },
+
+        { "piece_id": "pawn", "max_expr": "max(5, player_count * 2)" },
+        { "piece_id": "knight", "max_expr": "max(3, player_count * 1)" },
+        { "piece_id": "bishop", "max_expr": "max(1, player_count * 1)" },
         { "piece_id": "rook", "max_expr": "max(1, player_count * 1)" },
-        { "piece_id": "queen", "max_expr": "max(1, player_count * 0.25)" }
+        { "piece_id": "queen", "max_expr": "max(0.5, player_count * 0.25)" }
     ],
     "shop_counts": [
         { "shop_id": "spawn_shop", "count": 10 },

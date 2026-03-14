@@ -1,6 +1,7 @@
 use yew::prelude::*;
 use uuid::Uuid;
 use common::*;
+use common::logic::evaluate_expression;
 
 pub struct CameraManager {
     pub camera: (f64, f64),
@@ -36,6 +37,8 @@ pub fn update_camera(
     player_id: Option<Uuid>,
     canvas_ref: &NodeRef,
     is_dragging: bool,
+    mode: Option<&common::models::GameModeConfig>,
+    piece_count: usize,
 ) -> bool {
     let mut changed = false;
     let player_id_val = player_id.unwrap_or_else(Uuid::nil);
@@ -78,32 +81,49 @@ pub fn update_camera(
     if is_alive {
         if let Some(p) = player
             && let Some(king) = state.pieces.get(&p.king_id) {
-            manager.last_king_grid_pos = king.position;
-            manager.was_alive = true;
+            
+            let tile_size = 40.0 * manager.zoom;
+            let kpx = king.position.x as f64 * tile_size + tile_size / 2.0;
+            let kpy = king.position.y as f64 * tile_size + tile_size / 2.0;
 
-            if !is_dragging
-                && let Some(canvas) = canvas_ref.cast::<web_sys::HtmlElement>() {
-                let rect = canvas.get_bounding_client_rect();
-                let tile_size = 40.0 * manager.zoom;
-                let kpx = king.position.x as f64 * tile_size + tile_size / 2.0;
-                let kpy = king.position.y as f64 * tile_size + tile_size / 2.0;
-                let ksx = kpx - manager.camera.0 + rect.width() / 2.0;
-                let ksy = kpy - manager.camera.1 + rect.height() / 2.0;
-                
-                let pad = 150.0 * manager.zoom.sqrt().min(1.0);
-                let mut target_cam = manager.camera;
-                let mut force_speed = false;
+            if !manager.was_alive {
+                // First time or respawn: snap camera to king
+                manager.camera = (kpx, kpy);
+                manager.last_king_grid_pos = king.position;
+                manager.was_alive = true;
+                changed = true;
+            } else {
+                // Just update the last position, don't move camera
+                manager.last_king_grid_pos = king.position;
+            }
 
-                if ksx < pad { target_cam.0 -= pad - ksx; if ksx < 0.0 { force_speed = true; } }
-                if ksx > rect.width() - pad { target_cam.0 += ksx - (rect.width() - pad); if ksx > rect.width() { force_speed = true; } }
-                if ksy < pad { target_cam.1 -= pad - ksy; if ksy < 0.0 { force_speed = true; } }
-                if ksy > rect.height() - pad { target_cam.1 += ksy - (rect.height() - pad); if ksy > rect.height() { force_speed = true; } }
+            // 4. Global Clamping (Respect camera_pan_limit)
+            if let Some(m) = mode {
+                let mut vars = std::collections::HashMap::new();
+                vars.insert("player_piece_count".to_string(), piece_count as f64);
 
-                if (target_cam.0 - manager.camera.0).abs() > 0.1 || (target_cam.1 - manager.camera.1).abs() > 0.1 {
-                    let move_factor = if force_speed { 0.3 } else { 0.1 };
-                    manager.camera.0 += (target_cam.0 - manager.camera.0) * move_factor;
-                    manager.camera.1 += (target_cam.1 - manager.camera.1) * move_factor;
-                    changed = true;
+                let fog_of_war_radius = evaluate_expression(&m.fog_of_war_radius, &vars);
+                vars.insert("fog_of_war_radius".to_string(), fog_of_war_radius);
+
+                let limit_radius_tiles = evaluate_expression(&m.camera_pan_limit, &vars);
+                let limit_radius_px = limit_radius_tiles * tile_size;
+
+                let dx = manager.camera.0 - kpx;
+                let dy = manager.camera.1 - kpy;
+                let dist = (dx * dx + dy * dy).sqrt();
+
+                if dist > limit_radius_px && dist > 0.1 {
+                    if !is_dragging {
+                        // Not dragging: Smoothly interpolate back to the allowed region
+                        let target_dist = limit_radius_px;
+                        let ratio = target_dist / dist;
+                        let target_x = kpx + dx * ratio;
+                        let target_y = kpy + dy * ratio;
+                        
+                        manager.camera.0 += (target_x - manager.camera.0) * 0.1;
+                        manager.camera.1 += (target_y - manager.camera.1) * 0.1;
+                        changed = true;
+                    }
                 }
             }
         }

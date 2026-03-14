@@ -73,7 +73,7 @@ The Yew client has been updated to be fully configuration-aware:
 {
   "id": "standard",
   "display_name": "Standard FFA",
-  "board_size_expr": "max(40, 25 + sqrt(player_count) * 17.5)",
+  "board_size": "max(40, 25 + sqrt(player_count) * 17.5)",
   "kits": [
     { "name": "standard", "pieces": ["king", "pawn", "pawn", "knight", "knight"] }
   ],

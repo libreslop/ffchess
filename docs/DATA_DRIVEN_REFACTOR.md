@@ -66,8 +66,9 @@ config/
   "id": "string",
   "display_name": "string",
   "max_players": "u32",
-  "board_size_expr": "string", // e.g. "max(40, 25 + sqrt(player_count) * 17.5)"
+  "board_size": "string", // e.g. "max(40, 25 + sqrt(player_count) * 17.5)"
   "npc_limits": [
+
     { "piece_id": "string", "max_expr": "string" }
   ],
   "shop_counts": [
