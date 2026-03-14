@@ -1,4 +1,6 @@
 use common::models::{GameModeConfig, PieceConfig, ShopConfig};
+use jsonc_parser::parse_to_serde_value;
+use serde::de::DeserializeOwned;
 use std::collections::HashMap;
 use std::path::Path;
 use walkdir::WalkDir;
@@ -35,10 +37,7 @@ impl ConfigManager {
             .filter(|e| e.path().extension().map_or(false, |ext| ext == "json" || ext == "jsonc"))
         {
             let content = std::fs::read_to_string(entry.path()).expect("Failed to read piece config");
-            let stripped = strip_comments(&content);
-            let config: PieceConfig = serde_json::from_str(&stripped)
-                .map_err(|e| format!("Failed to parse piece config {:?}: {}", entry.path(), e))
-                .unwrap();
+            let config: PieceConfig = parse_jsonc(&content, entry.path());
             pieces.insert(config.id.clone(), config);
         }
 
@@ -49,10 +48,7 @@ impl ConfigManager {
             .filter(|e| e.path().extension().map_or(false, |ext| ext == "json" || ext == "jsonc"))
         {
             let content = std::fs::read_to_string(entry.path()).expect("Failed to read shop config");
-            let stripped = strip_comments(&content);
-            let config: ShopConfig = serde_json::from_str(&stripped)
-                .map_err(|e| format!("Failed to parse shop config {:?}: {}", entry.path(), e))
-                .unwrap();
+            let config: ShopConfig = parse_jsonc(&content, entry.path());
             shops.insert(config.id.clone(), config);
         }
 
@@ -63,10 +59,7 @@ impl ConfigManager {
             .filter(|e| e.path().extension().map_or(false, |ext| ext == "json" || ext == "jsonc"))
         {
             let content = std::fs::read_to_string(entry.path()).expect("Failed to read mode config");
-            let stripped = strip_comments(&content);
-            let config: GameModeConfig = serde_json::from_str(&stripped)
-                .map_err(|e| format!("Failed to parse mode config {:?}: {}", entry.path(), e))
-                .unwrap();
+            let config: GameModeConfig = parse_jsonc(&content, entry.path());
             modes.insert(config.id.clone(), config);
         }
 
@@ -74,15 +67,12 @@ impl ConfigManager {
     }
 }
 
-fn strip_comments(json: &str) -> String {
-    json.lines()
-        .map(|line| {
-            if let Some(pos) = line.find("//") {
-                &line[..pos]
-            } else {
-                line
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
+fn parse_jsonc<T: DeserializeOwned>(content: &str, path: &Path) -> T {
+    let value = parse_to_serde_value(content, &Default::default())
+        .map_err(|e| format!("Failed to parse config {:?}: {}", path, e))
+        .unwrap()
+        .unwrap_or_else(|| panic!("Failed to parse config {:?}: empty document", path));
+    serde_json::from_value(value)
+        .map_err(|e| format!("Failed to deserialize config {:?}: {}", path, e))
+        .unwrap()
 }

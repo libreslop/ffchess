@@ -6,7 +6,6 @@
     "camera_pan_limit": "fog_of_war_radius + 2",
     "fog_of_war_radius": "20",
     "npc_limits": [
-
         { "piece_id": "pawn", "max_expr": "max(5, player_count * 2)" },
         { "piece_id": "knight", "max_expr": "max(3, player_count * 1)" },
         { "piece_id": "bishop", "max_expr": "max(1, player_count * 1)" },
