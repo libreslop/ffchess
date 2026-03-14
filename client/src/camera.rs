@@ -42,15 +42,27 @@ pub fn update_camera(
     mode: Option<&common::models::GameModeClientConfig>,
     piece_count: usize,
     is_dead: bool,
+    zoom_min: f64,
+    zoom_max: f64,
+    zoom_lerp: f64,
+    inertia_decay: f64,
+    velocity_cutoff: f64,
+    pan_lerp_alive: f64,
+    pan_lerp_dead: f64,
+    tile_size_px: f64,
+    death_zoom: f64,
 ) -> bool {
     let mut changed = false;
     let player_id_val = player_id.unwrap_or_else(Uuid::nil);
     let player = state.players.get(&player_id_val);
     let is_alive = player.is_some() && player_id_val != Uuid::nil() && !is_dead;
 
+    manager.target_zoom = manager.target_zoom.clamp(zoom_min, zoom_max);
+    manager.zoom = manager.zoom.clamp(zoom_min, zoom_max);
+
     // 1. Zoom interpolation
     if (manager.target_zoom - manager.zoom).abs() > 0.000001 {
-        let factor = 0.15;
+        let factor = zoom_lerp;
         let old_z = manager.zoom;
         manager.zoom += (manager.target_zoom - manager.zoom) * factor;
         let ratio = manager.zoom / old_z;
@@ -92,11 +104,12 @@ pub fn update_camera(
 
     // 2. Velocity (inertia)
     if !is_dragging {
-        if manager.velocity.0.abs() > 0.1 || manager.velocity.1.abs() > 0.1 {
+        if manager.velocity.0.abs() > velocity_cutoff || manager.velocity.1.abs() > velocity_cutoff
+        {
             manager.camera.0 += manager.velocity.0;
             manager.camera.1 += manager.velocity.1;
-            manager.velocity.0 *= 0.94;
-            manager.velocity.1 *= 0.94;
+            manager.velocity.0 *= inertia_decay;
+            manager.velocity.1 *= inertia_decay;
             manager.target_camera = manager.camera;
             changed = true;
         } else {
@@ -111,7 +124,7 @@ pub fn update_camera(
         if let Some(p) = player
             && let Some(king) = state.pieces.get(&p.king_id)
         {
-            let tile_size = 40.0 * manager.zoom;
+            let tile_size = tile_size_px * manager.zoom;
             let kpx = king.position.x as f64 * tile_size + tile_size / 2.0;
             let kpy = king.position.y as f64 * tile_size + tile_size / 2.0;
 
@@ -160,12 +173,12 @@ pub fn update_camera(
         if manager.was_alive {
             // Just died, focus on last position
             let grid_pos = manager.last_king_grid_pos;
-            let target_zoom = 1.3;
-            let tile_size = 40.0 * target_zoom;
+            let target_zoom = death_zoom;
+            let tile_size = tile_size_px * target_zoom;
             let desired_focus_x = grid_pos.x as f64 * tile_size + tile_size / 2.0;
             let desired_focus_y = grid_pos.y as f64 * tile_size + tile_size / 2.0;
             manager.target_camera = (desired_focus_x, desired_focus_y);
-            manager.target_zoom = target_zoom;
+            manager.target_zoom = target_zoom.clamp(zoom_min, zoom_max);
             manager.was_alive = false;
             manager.velocity = (0.0, 0.0);
             changed = true;
@@ -184,7 +197,11 @@ pub fn update_camera(
         && ((manager.target_camera.0 - manager.camera.0).abs() > 0.1
             || (manager.target_camera.1 - manager.camera.1).abs() > 0.1)
     {
-        let factor = if is_alive { 0.15 } else { 0.08 }; // Slightly slower pan in menus
+        let factor = if is_alive {
+            pan_lerp_alive
+        } else {
+            pan_lerp_dead
+        }; // Slightly slower pan in menus
         manager.camera.0 += (manager.target_camera.0 - manager.camera.0) * factor;
         manager.camera.1 += (manager.target_camera.1 - manager.camera.1) * factor;
         changed = true;

@@ -5,6 +5,7 @@
     "board_size": "max(40, 25 + sqrt(floor(player_count/3)) * 15)",
     "camera_pan_limit": "fog_of_war_radius + 2",
     "fog_of_war_radius": "20",
+    "respawn_cooldown_ms": 3000,
     "npc_limits": [
         { "piece_id": "pawn", "max_expr": "max(5, player_count * 2)" },
         { "piece_id": "knight", "max_expr": "max(3, player_count * 1)" },

@@ -93,14 +93,14 @@ impl GameInstance {
         };
         drop(secrets);
 
-        {
+        let respawn_ms = self.mode_config.respawn_cooldown_ms as i64;
+        if respawn_ms > 0 {
             let deaths = self.death_timestamps.read().await;
             if let Some(death_time) = deaths.get(&player_id) {
                 let now = chrono::Utc::now().timestamp_millis();
                 let elapsed = now - death_time;
-                if elapsed < 5000 {
-                    // Hardcoded 5s respawn cooldown for now
-                    let remaining = (5000 - elapsed) / 1000;
+                if elapsed < respawn_ms {
+                    let remaining = (respawn_ms - elapsed) / 1000;
                     return Err(GameError::Custom {
                         title: "Respawn cooldown".to_string(),
                         message: format!("Wait {} seconds", remaining.max(1)),

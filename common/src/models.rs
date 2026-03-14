@@ -77,6 +77,7 @@ pub struct GameModeClientConfig {
     pub display_name: String,
     pub camera_pan_limit: String,
     pub fog_of_war_radius: String,
+    pub respawn_cooldown_ms: u32,
     pub kits: Vec<KitSummary>,
 }
 
@@ -88,6 +89,7 @@ pub struct GameModeConfig {
     pub board_size: String,
     pub camera_pan_limit: String,
     pub fog_of_war_radius: String,
+    pub respawn_cooldown_ms: u32,
     pub npc_limits: Vec<NpcLimitConfig>,
     pub shop_counts: Vec<ShopCountConfig>,
     pub kits: Vec<KitConfig>,

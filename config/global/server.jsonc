@@ -1,0 +1,16 @@
+{
+  "default_name": {
+    "adjectives": [
+      "Swift", "Brave", "Silent", "Iron", "Gold", "Shadow", "Grand", "Quick", "Old", "New",
+      "Wild", "Calm", "Crimson", "Azure", "Sly", "Mighty", "Ancient", "Fierce", "Noble",
+      "Ethereal", "Frosty", "Fiery", "Stormy", "Golden", "Silver", "Hidden", "Lone", "Vibrant",
+      "Dark", "Bright", "Steady", "Fallen"
+    ],
+    "nouns": [
+      "Knight", "King", "Rook", "Bishop", "Pawn", "Queen", "Warrior", "Shadow", "Storm", "Frost",
+      "Flame", "Blade", "Guard", "Seeker", "Warden", "Herald", "Slayer", "Spirit", "Ghost",
+      "Titan", "Wolf", "Raven", "Dragon", "Phoenix", "Sentinel", "Oracle", "Monarch", "Paladin",
+      "Ranger", "Saber", "Shield", "Fang"
+    ]
+  }
+}

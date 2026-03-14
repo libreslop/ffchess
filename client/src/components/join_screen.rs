@@ -9,6 +9,7 @@ pub struct ModeSummary {
     pub display_name: String,
     pub players: u32,
     pub max_players: u32,
+    pub respawn_cooldown_ms: u32,
 }
 
 #[derive(Properties, PartialEq)]

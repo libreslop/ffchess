@@ -13,6 +13,8 @@ use yew::prelude::*;
 pub struct GameViewProps {
     pub reducer: UseReducerHandle<GameStateReducer>,
     pub tx: MsgSender,
+    pub render_interval_ms: u32,
+    pub globals: crate::GlobalClientConfig,
 }
 
 #[function_component(GameView)]
@@ -82,10 +84,11 @@ pub fn game_view(props: &GameViewProps) -> Html {
         let fps_counter = fps_counter.clone();
         let reducer = props.reducer.clone();
         let frame_id = frame_id.clone();
+        let globals = props.globals.clone();
 
-        use_effect_with((), move |_| {
-            // Main render loop ~60 FPS (16ms)
-            let interval = gloo_timers::callback::Interval::new(16, move || {
+        use_effect_with(props.render_interval_ms, move |&render_ms| {
+            let render_ms = render_ms.max(8);
+            let interval = gloo_timers::callback::Interval::new(render_ms, move || {
                 let (reducer_state, is_dragging) = {
                     let s = latest_state.borrow();
                     (s.0.clone(), s.1)
@@ -123,6 +126,15 @@ pub fn game_view(props: &GameViewProps) -> Html {
                         reducer_state.mode.as_ref(),
                         piece_count,
                         reducer_state.is_dead,
+                        globals.camera_zoom_min,
+                        globals.camera_zoom_max,
+                        globals.zoom_lerp,
+                        globals.inertia_decay,
+                        globals.velocity_cutoff,
+                        globals.pan_lerp_alive,
+                        globals.pan_lerp_dead,
+                        globals.tile_size_px,
+                        globals.death_zoom,
                     );
 
                     if changed {
@@ -142,12 +154,16 @@ pub fn game_view(props: &GameViewProps) -> Html {
         let manager_ref = manager_ref.clone();
         let canvas_ref = canvas_ref.clone();
         let is_dead = props.reducer.is_dead;
+        let globals = props.globals.clone();
         use_effect_with(
             (canvas_ref.clone(), is_dead),
             move |(canvas_ref, is_dead)| {
                 if let Some(canvas) = canvas_ref.cast::<web_sys::HtmlElement>() {
                     let manager_ref = manager_ref.clone();
                     let is_dead = *is_dead;
+                    let zoom_min = globals.camera_zoom_min;
+                    let zoom_max = globals.camera_zoom_max;
+                    let scroll_base = globals.scroll_zoom_base;
                     let listener = EventListener::new(&canvas, "wheel", move |e| {
                         if is_dead {
                             return;
@@ -155,10 +171,11 @@ pub fn game_view(props: &GameViewProps) -> Html {
                         let e = e.dyn_ref::<web_sys::WheelEvent>().unwrap();
                         e.prevent_default();
                         let delta = e.delta_y();
-                        let factor = 1.2f64.powf(-delta / 100.0);
+                        let factor = scroll_base.max(1.01).powf(-delta / 100.0);
                         let mut manager = manager_ref.borrow_mut();
                         manager.mouse_pos = (e.client_x() as f64, e.client_y() as f64);
-                        manager.target_zoom = (manager.target_zoom * factor).clamp(0.2, 2.0);
+                        manager.target_zoom =
+                            (manager.target_zoom * factor).clamp(zoom_min, zoom_max);
                     });
                     return Box::new(move || drop(listener)) as Box<dyn FnOnce()>;
                 }
@@ -581,6 +598,8 @@ pub fn game_view(props: &GameViewProps) -> Html {
                 let cam_state = cam_state.clone();
                 let zoom_state = zoom_state.clone();
                 let latest_state = latest_state.clone();
+                let zoom_min = props.globals.camera_zoom_min;
+                let zoom_max = props.globals.camera_zoom_max;
                 Callback::from(move |e: TouchEvent| {
                     e.prevent_default();
                     if is_dead {
@@ -606,7 +625,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
                                 mgr.target_camera = mgr.camera;
                             }
                             mgr.last_touch_center = Some((cx, cy));
-                            mgr.target_zoom = (mgr.target_zoom * factor).clamp(0.2, 2.0);
+                            mgr.target_zoom = (mgr.target_zoom * factor).clamp(zoom_min, zoom_max);
                             mgr.zoom = mgr.target_zoom; // apply immediately for smooth pinch
                             mgr.velocity = (0.0, 0.0);
                             mgr.last_touch_dist = Some(dist);

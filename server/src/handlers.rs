@@ -8,6 +8,8 @@ use axum::{
 };
 use common::protocol::{ClientMessage, GameError, ServerMessage};
 use futures_util::{SinkExt, StreamExt};
+use jsonc_parser::parse_to_serde_value;
+use rand::seq::SliceRandom;
 use serde::Serialize;
 use std::{fs, sync::Arc};
 use tokio::sync::mpsc;
@@ -19,6 +21,7 @@ fn to_client_mode(cfg: &common::models::GameModeConfig) -> common::models::GameM
         display_name: cfg.display_name.clone(),
         camera_pan_limit: cfg.camera_pan_limit.clone(),
         fog_of_war_radius: cfg.fog_of_war_radius.clone(),
+        respawn_cooldown_ms: cfg.respawn_cooldown_ms,
         kits: cfg
             .kits
             .iter()
@@ -37,6 +40,7 @@ pub struct ModeSummary {
     pub display_name: String,
     pub players: u32,
     pub max_players: u32,
+    pub respawn_cooldown_ms: u32,
 }
 
 async fn mode_list_snapshot(state: &Arc<ServerState>) -> Vec<ModeSummary> {
@@ -49,6 +53,7 @@ async fn mode_list_snapshot(state: &Arc<ServerState>) -> Vec<ModeSummary> {
             display_name: instance.mode_config.display_name.clone(),
             players,
             max_players: instance.mode_config.max_players,
+            respawn_cooldown_ms: instance.mode_config.respawn_cooldown_ms,
         });
     }
     list
@@ -59,7 +64,18 @@ pub async fn index_html(State(state): State<Arc<ServerState>>) -> impl IntoRespo
         .unwrap_or_else(|_| "<!doctype html><body>missing index</body>".to_string());
     let modes_json = serde_json::to_string(&mode_list_snapshot(&state).await)
         .unwrap_or_else(|_| "[]".to_string());
-    let replaced = html.replace("__MODES_JSON__", &modes_json);
+    let global_json = fs::read_to_string("config/global/client.jsonc")
+        .ok()
+        .and_then(|raw| {
+            parse_to_serde_value(&raw, &Default::default())
+                .ok()
+                .flatten()
+                .and_then(|v| serde_json::to_string(&v).ok())
+        })
+        .unwrap_or_else(|| "{}".to_string());
+    let replaced = html
+        .replace("__MODES_JSON__", &modes_json)
+        .replace("__GLOBAL_JSON__", &global_json);
     (
         axum::http::StatusCode::OK,
         [(axum::http::header::CONTENT_TYPE, "text/html")],
@@ -77,6 +93,27 @@ pub async fn ws_handler(
 
 pub async fn list_modes(State(state): State<Arc<ServerState>>) -> impl IntoResponse {
     axum::Json(mode_list_snapshot(&state).await)
+}
+
+fn generate_name(state: &ServerState) -> String {
+    let pool = &state.config_manager.name_pool;
+    let mut rng = rand::thread_rng();
+    let adj = pool
+        .adjectives
+        .choose(&mut rng)
+        .cloned()
+        .unwrap_or_else(|| "Unnamed".to_string());
+    let mut noun = pool
+        .nouns
+        .choose(&mut rng)
+        .cloned()
+        .unwrap_or_else(|| "Player".to_string());
+    if noun == adj {
+        if let Some(n) = pool.nouns.choose(&mut rng) {
+            noun = n.clone();
+        }
+    }
+    format!("{adj} {noun}")
 }
 
 async fn handle_socket(socket: WebSocket, mode_id: String, state: Arc<ServerState>) {
@@ -126,11 +163,15 @@ async fn handle_socket(socket: WebSocket, mode_id: String, state: Arc<ServerStat
             match serde_json::from_str::<ClientMessage>(&text) {
                 Ok(client_msg) => match client_msg {
                     ClientMessage::Join {
-                        name,
+                        mut name,
                         kit_name,
                         player_id: pid,
                         session_secret: secret,
                     } => {
+                        name = name.trim().to_string();
+                        if name.is_empty() {
+                            name = generate_name(&state);
+                        }
                         if let Some(pid) = pid {
                             let channels = instance.player_channels.read().await;
                             let game = instance.game.read().await;

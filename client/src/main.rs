@@ -28,8 +28,76 @@ use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::spawn_local;
 use yew::prelude::*;
 
+#[derive(Clone, serde::Deserialize, Default, PartialEq)]
+struct NamePoolConfig {
+    adjectives: Vec<String>,
+    nouns: Vec<String>,
+}
+
+#[derive(Clone, serde::Deserialize, Default, PartialEq)]
+struct GlobalClientConfig {
+    game_order: Vec<String>,
+    modes_refresh_ms: u32,
+    ping_interval_ms: u32,
+    tick_interval_ms: u32,
+    render_interval_ms: u32,
+    disconnected_hide_ms: u32,
+    fatal_auto_hide_ms: u32,
+    camera_zoom_min: f64,
+    camera_zoom_max: f64,
+    zoom_lerp: f64,
+    inertia_decay: f64,
+    velocity_cutoff: f64,
+    pan_lerp_alive: f64,
+    pan_lerp_dead: f64,
+    tile_size_px: f64,
+    death_zoom: f64,
+    scroll_zoom_base: f64,
+}
+
+fn load_global_config() -> GlobalClientConfig {
+    let doc = document();
+    if let Some(el) = doc.get_element_by_id("initial-global") {
+        if let Some(text) = el.text_content() {
+            if let Ok(cfg) = serde_json::from_str::<GlobalClientConfig>(&text) {
+                return cfg;
+            }
+        }
+    }
+    GlobalClientConfig {
+        game_order: vec![],
+        modes_refresh_ms: 5000,
+        ping_interval_ms: 2000,
+        tick_interval_ms: 50,
+        render_interval_ms: 16,
+        disconnected_hide_ms: 300,
+        fatal_auto_hide_ms: 5000,
+        camera_zoom_min: 0.2,
+        camera_zoom_max: 2.0,
+        zoom_lerp: 0.15,
+        inertia_decay: 0.94,
+        velocity_cutoff: 0.1,
+        pan_lerp_alive: 0.15,
+        pan_lerp_dead: 0.08,
+        tile_size_px: 40.0,
+        death_zoom: 1.3,
+        scroll_zoom_base: 1.2,
+    }
+}
+
+fn order_modes(mut list: Vec<ModeSummary>, order: &[String]) -> Vec<ModeSummary> {
+    list.sort_by_key(|m| {
+        order
+            .iter()
+            .position(|id| id == &m.id)
+            .unwrap_or(order.len())
+    });
+    list
+}
+
 #[function_component(App)]
 pub fn app() -> Html {
+    let global_cfg = use_state(load_global_config);
     let reducer = use_reducer(GameStateReducer::default);
     let is_joining = use_state(|| false);
     let tx = use_state(|| None::<MsgSender>);
@@ -50,13 +118,17 @@ pub fn app() -> Html {
             Vec::new()
         }
     };
+    let injected_modes_copy = injected_modes.clone();
 
-    let mode_options = use_state(|| injected_modes.clone());
+    let mode_options = {
+        let order = (*global_cfg).game_order.clone();
+        use_state(move || order_modes(injected_modes.clone(), &order))
+    };
 
     // Read current mode info injected in index.html
-    let injected_mode_info: Option<ModeSummary> = injected_modes.first().cloned();
+    let injected_mode_info: Option<ModeSummary> = injected_modes_copy.first().cloned();
 
-    // Determine current mode id from hash or injected info
+    // Determine current mode id from hash or global order/injected info
     let initial_mode_id = {
         let hash = web_sys::window()
             .unwrap()
@@ -67,6 +139,8 @@ pub fn app() -> Html {
             .to_string();
         if !hash.is_empty() {
             hash
+        } else if let Some(first) = global_cfg.game_order.first() {
+            first.clone()
         } else if let Some(m) = injected_mode_info.as_ref() {
             m.id.clone()
         } else {
@@ -78,27 +152,31 @@ pub fn app() -> Html {
     {
         let mode_options = mode_options.clone();
         let injected_mode_info = injected_mode_info.clone();
+        let global_cfg = global_cfg.clone();
         use_effect_with((), move |_| {
             let modes_state = mode_options.clone();
             let injected = injected_mode_info.clone();
+            let order = (*global_cfg).game_order.clone();
             let fetch_modes = Rc::new(move || {
                 let modes_state = modes_state.clone();
                 let injected = injected.clone();
+                let order = order.clone();
                 spawn_local(async move {
                     if let Ok(resp) = gloo_net::http::Request::get("/api/modes").send().await {
                         if let Ok(list) = resp.json::<Vec<ModeSummary>>().await {
-                            modes_state.set(list);
+                            modes_state.set(order_modes(list, &order));
                             return;
                         }
                     }
                     if let Some(info) = injected.clone() {
-                        modes_state.set(vec![info]);
+                        modes_state.set(order_modes(vec![info], &order));
                     }
                 });
             });
 
             fetch_modes.clone()();
-            let interval = Interval::new(5000, move || {
+            let refresh_ms = (*global_cfg).modes_refresh_ms.max(500);
+            let interval = Interval::new(refresh_ms, move || {
                 fetch_modes.clone()();
             });
             || drop(interval)
@@ -142,17 +220,19 @@ pub fn app() -> Html {
         });
     }
 
-    let landing_cooldown = use_state(|| {
-        let ts = get_death_timestamp();
-        let now = js_sys::Date::now() as i64;
-        let cooldown_ms = 5000; // Hardcoded 5s respawn cooldown for now
-        let diff_ms = cooldown_ms - (now - ts);
-        if diff_ms > 0 {
-            (diff_ms / 1000) as i32
-        } else {
-            0
-        }
-    });
+    let landing_cooldown = {
+        let initial_mode_id = initial_mode_id.clone();
+        use_state(move || {
+            let (ts, cd_ms) = get_death_info(&initial_mode_id);
+            let now = js_sys::Date::now() as i64;
+            let diff_ms = cd_ms - (now - ts);
+            if diff_ms > 0 {
+                (diff_ms / 1000) as i32
+            } else {
+                0
+            }
+        })
+    };
     let lc_ref = use_mut_ref(|| *landing_cooldown);
 
     {
@@ -183,6 +263,7 @@ pub fn app() -> Html {
     {
         let reducer_ref = reducer_ref.clone();
         let tx_handle = tx.clone();
+        let global_cfg = global_cfg.clone();
         use_effect_with((*current_mode_id).clone(), move |mode_id| {
             reducer_ref.borrow().clone().dispatch(GameAction::Reset);
             let (client_tx, mut client_rx) = mpsc::unbounded_channel::<ClientMessage>();
@@ -191,13 +272,15 @@ pub fn app() -> Html {
 
             let tick_sender = sender.clone();
             let tick_reducer_ref = reducer_ref.clone();
-            let interval = Interval::new(50, move || {
+            let tick_ms = (*global_cfg).tick_interval_ms.max(10);
+            let interval = Interval::new(tick_ms, move || {
                 let handle = tick_reducer_ref.borrow().clone();
                 handle.dispatch(GameAction::Tick(tick_sender.clone()));
             });
 
             let ping_sender = sender.clone();
-            let ping_interval = Interval::new(2000, move || {
+            let ping_interval_ms = (*global_cfg).ping_interval_ms.max(500);
+            let ping_interval = Interval::new(ping_interval_ms, move || {
                 let now = js_sys::Date::now() as u64;
                 let _ = ping_sender.0.send(ClientMessage::Ping(now));
             });
@@ -334,11 +417,7 @@ pub fn app() -> Html {
             if reducer.disconnected || *landing_cooldown > 0 {
                 return;
             }
-            let mut name = (*player_name).trim().to_string();
-            if name.is_empty() {
-                name = generate_random_name();
-                player_name.set(name.clone());
-            }
+            let name = (*player_name).trim().to_string();
             set_stored_name(&name);
             join_step.set(1);
         })
@@ -366,16 +445,23 @@ pub fn app() -> Html {
         });
     }
 
-    let rejoin_cooldown = use_state(|| 5);
-    let rc_ref = use_mut_ref(|| 5);
+    let rejoin_cooldown = use_state(|| 0);
+    let rc_ref = use_mut_ref(|| 0);
     {
         let rejoin_cooldown = rejoin_cooldown.clone();
         let rc_ref = rc_ref.clone();
+        let current_mode_id = current_mode_id.clone();
+        let reducer = reducer.clone();
         use_effect_with(is_dead, move |is_dead| {
             let mut interval = None;
             if *is_dead {
-                set_death_timestamp(js_sys::Date::now() as i64);
-                let cooldown_sec = 5;
+                let cd_ms = reducer
+                    .mode
+                    .as_ref()
+                    .map(|m| m.respawn_cooldown_ms as i64)
+                    .unwrap_or(5000);
+                set_death_timestamp(&current_mode_id, js_sys::Date::now() as i64, cd_ms);
+                let cooldown_sec = (cd_ms / 1000).max(1) as i32;
                 rejoin_cooldown.set(cooldown_sec);
                 *rc_ref.borrow_mut() = cooldown_sec;
                 let rc = rejoin_cooldown.clone();
@@ -438,11 +524,7 @@ pub fn app() -> Html {
                         if e.key() == "Enter" {
                             if !joined && !dead {
                                 if step == 0 && lc == 0 && !disc {
-                                    let mut name = (*player_name).trim().to_string();
-                                    if name.is_empty() {
-                                        name = generate_random_name();
-                                        player_name.set(name.clone());
-                                    }
+                                    let name = (*player_name).trim().to_string();
                                     set_stored_name(&name);
                                     join_step.set(1);
                                     has_interacted.set(true);
@@ -471,7 +553,13 @@ pub fn app() -> Html {
             "}</style>
 
             if let Some(sender) = (*tx).clone() {
-                <GameView key="stable-game-view" reducer={reducer.clone()} tx={sender} />
+                <GameView
+                    key="stable-game-view"
+                    reducer={reducer.clone()}
+                    tx={sender}
+                    render_interval_ms={(*global_cfg).render_interval_ms}
+                    globals={(*global_cfg).clone()}
+                />
             } else if !*show_disconnected || !*has_interacted {
                 <div style="position: absolute; inset: 0; background: #f0f2f5; display: flex; align-items: center; justify-content: center; z-index: 200;">
                     <div style="text-align: center;">

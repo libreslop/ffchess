@@ -1,0 +1,19 @@
+{
+  "game_order": ["ffa", "skirmish"],
+  "modes_refresh_ms": 5000,
+  "ping_interval_ms": 2000,
+  "tick_interval_ms": 50,
+  "render_interval_ms": 16,
+  "disconnected_hide_ms": 300,
+  "fatal_auto_hide_ms": 5000,
+  "camera_zoom_min": 0.2,
+  "camera_zoom_max": 2.0,
+  "zoom_lerp": 0.15,
+  "inertia_decay": 0.94,
+  "velocity_cutoff": 0.1,
+  "pan_lerp_alive": 0.15,
+  "pan_lerp_dead": 0.08,
+  "tile_size_px": 40.0,
+  "death_zoom": 1.3,
+  "scroll_zoom_base": 1.2
+}
