@@ -69,8 +69,8 @@ pub fn game_view(props: &GameViewProps) -> Html {
             ) {
                 let inner_cell = cell.clone();
                 let inner_frame = frame.clone();
-                let handle = request_animation_frame(move |_| {
-                    inner_frame.set(*inner_frame + 1);
+                let handle = request_animation_frame(move |ms| {
+                    inner_frame.set(ms as u64);
                     schedule(inner_cell, inner_frame);
                 });
                 *cell.borrow_mut() = Some(handle);

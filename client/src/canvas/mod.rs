@@ -237,48 +237,62 @@ impl Renderer {
             }
         }
 
-        // Real pieces
-        for piece in state.pieces.values() {
-            if (piece.position - king_pos).abs().max_element() <= view_radius_squares + 2 {
-                self.draw_piece(
-                    PieceDrawParams {
-                        piece,
-                        player_id,
-                        offset_x,
-                        offset_y,
-                        alpha: 1.0,
-                        state,
-                        draw_name: false,
-                        is_ghost: false,
-                    },
-                    zoom,
-                );
-            }
-        }
-
-        // Ghosts
+        // Pieces
         for (id, ghost) in ghost_pieces {
-            if let Some(real) = state.pieces.get(id)
-                && real.position != ghost.position
-            {
-                self.draw_piece(
-                    PieceDrawParams {
-                        piece: ghost,
-                        player_id,
-                        offset_x,
-                        offset_y,
-                        alpha: 0.4,
-                        state,
-                        draw_name: false,
-                        is_ghost: true,
-                    },
-                    zoom,
-                );
+            if (ghost.position - king_pos).abs().max_element() <= view_radius_squares + 2 {
+                if let Some(real) = state.pieces.get(id) {
+                    if real.position != ghost.position {
+                        // Draw real (server) piece faded
+                        self.draw_piece(
+                            PieceDrawParams {
+                                piece: real,
+                                player_id,
+                                offset_x,
+                                offset_y,
+                                alpha: 0.4,
+                                state,
+                                draw_name: false,
+                                is_ghost: true,
+                            },
+                            zoom,
+                        );
+
+                        // Draw ghost (predicted) piece solid
+                        self.draw_piece(
+                            PieceDrawParams {
+                                piece: ghost,
+                                player_id,
+                                offset_x,
+                                offset_y,
+                                alpha: 1.0,
+                                state,
+                                draw_name: false,
+                                is_ghost: false,
+                            },
+                            zoom,
+                        );
+                    } else {
+                        // Piece is not moving or not ours
+                        self.draw_piece(
+                            PieceDrawParams {
+                                piece: ghost,
+                                player_id,
+                                offset_x,
+                                offset_y,
+                                alpha: 1.0,
+                                state,
+                                draw_name: false,
+                                is_ghost: false,
+                            },
+                            zoom,
+                        );
+                    }
+                }
             }
         }
 
         // Second pass: Draw player names on top of everything
-        for piece in state.pieces.values() {
+        for piece in ghost_pieces.values() {
             if piece.piece_type == "king"
                 && (piece.position - king_pos).abs().max_element() <= view_radius_squares + 2
             {
