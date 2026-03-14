@@ -1,5 +1,5 @@
-use crate::instance::GameInstance;
 use crate::config::ConfigManager;
+use crate::instance::GameInstance;
 use common::*;
 use std::collections::HashMap;
 use std::sync::Arc;

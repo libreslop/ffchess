@@ -77,11 +77,7 @@ pub fn is_valid_move(
     false
 }
 
-pub fn calculate_cooldown(
-    piece_config: &PieceConfig,
-    _start: IVec2,
-    _end: IVec2,
-) -> i64 {
+pub fn calculate_cooldown(piece_config: &PieceConfig, _start: IVec2, _end: IVec2) -> i64 {
     piece_config.cooldown_ms as i64
 }
 

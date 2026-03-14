@@ -1,4 +1,4 @@
-use crate::camera::{update_camera, CameraManager};
+use crate::camera::{CameraManager, update_camera};
 use crate::canvas::Renderer;
 use crate::reducer::{GameAction, GameStateReducer, MsgSender, Pmove};
 use common::logic::is_within_board;
@@ -26,8 +26,12 @@ pub fn game_view(props: &GameViewProps) -> Html {
     let frame_id = use_state(|| 0u64);
     let drag_start = use_state(|| None::<(f64, f64, bool)>);
     let renderer_state = use_state(|| None::<Renderer>);
-    let fps_counter =
-        use_mut_ref(|| (0u32, web_sys::window().unwrap().performance().unwrap().now()));
+    let fps_counter = use_mut_ref(|| {
+        (
+            0u32,
+            web_sys::window().unwrap().performance().unwrap().now(),
+        )
+    });
 
     let window_size = use_state(|| {
         (
@@ -73,11 +77,11 @@ pub fn game_view(props: &GameViewProps) -> Html {
         let zoom_state = zoom_state.clone();
         let cam_state = cam_state.clone();
         let canvas_ref = canvas_ref.clone();
-        let frame_id = frame_id.clone();
         let manager_ref = manager_ref.clone();
         let latest_state = latest_state.clone();
         let fps_counter = fps_counter.clone();
         let reducer = props.reducer.clone();
+        let frame_id = frame_id.clone();
 
         use_effect_with((), move |_| {
             // Main render loop ~60 FPS (16ms)
@@ -90,11 +94,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
                 {
                     let mut fc = fps_counter.borrow_mut();
                     fc.0 += 1;
-                    let now = web_sys::window()
-                        .unwrap()
-                        .performance()
-                        .unwrap()
-                        .now();
+                    let now = web_sys::window().unwrap().performance().unwrap().now();
                     if now - fc.1 >= 1000.0 {
                         let fps = ((fc.0 as f64) * 1000.0 / (now - fc.1)).round() as u32;
                         reducer.dispatch(GameAction::SetFPS(fps));
@@ -129,9 +129,10 @@ pub fn game_view(props: &GameViewProps) -> Html {
                         zoom_state.set(manager.zoom);
                         cam_state.set(manager.camera);
                     }
-                }
 
-                frame_id.set(*frame_id + 1);
+                    // Always tick frame to drive rendering effect
+                    frame_id.set(*frame_id + 1);
+                }
             });
             move || drop(interval)
         });
@@ -162,6 +163,48 @@ pub fn game_view(props: &GameViewProps) -> Html {
                     return Box::new(move || drop(listener)) as Box<dyn FnOnce()>;
                 }
                 Box::new(|| ()) as Box<dyn FnOnce()>
+            },
+        );
+    }
+
+    // Render canvas every frame_id tick
+    {
+        let renderer_state = renderer_state.clone();
+        let reducer = props.reducer.clone();
+        use_effect_with(
+            (
+                *frame_id,
+                cam_state.clone(),
+                zoom_state.clone(),
+                window_size.clone(),
+                reducer.state.clone(),
+                reducer.pm_queue.clone(),
+                reducer.mode.clone(),
+                reducer.player_id,
+                (*selected_piece_id).clone(),
+            ),
+            move |(_, cam, zoom, window_size, state, pm_queue, mode, player_id, sid)| {
+                if let Some(renderer) = renderer_state.as_ref() {
+                    let mut ghosts = state.pieces.clone();
+                    for pm in pm_queue {
+                        if let Some(p) = ghosts.get_mut(&pm.piece_id) {
+                            p.position = pm.target;
+                        }
+                    }
+                    renderer.draw_with_ghosts(
+                        state,
+                        player_id.unwrap_or_else(Uuid::nil),
+                        *sid,
+                        pm_queue,
+                        &ghosts,
+                        **cam,
+                        window_size.0,
+                        window_size.1,
+                        **zoom,
+                        mode.as_ref(),
+                    );
+                }
+                || ()
             },
         );
     }
@@ -429,47 +472,6 @@ pub fn game_view(props: &GameViewProps) -> Html {
             }
             || ()
         });
-    }
-
-    {
-        let renderer_state = renderer_state.clone();
-        let reducer = props.reducer.clone();
-        use_effect_with(
-            (
-                frame_id,
-                cam_state.clone(),
-                zoom_state.clone(),
-                window_size.clone(),
-                reducer.state.clone(),
-                reducer.pm_queue.clone(),
-                reducer.mode.clone(),
-                reducer.player_id,
-                (*selected_piece_id).clone(),
-            ),
-            move |(_, cam, zoom, window_size, state, pm_queue, mode, player_id, sid)| {
-                if let Some(renderer) = renderer_state.as_ref() {
-                    let mut ghosts = state.pieces.clone();
-                    for pm in pm_queue {
-                        if let Some(p) = ghosts.get_mut(&pm.piece_id) {
-                            p.position = pm.target;
-                        }
-                    }
-                    renderer.draw_with_ghosts(
-                        state,
-                        player_id.unwrap_or_else(Uuid::nil),
-                        *sid,
-                        pm_queue,
-                        &ghosts,
-                        **cam,
-                        window_size.0,
-                        window_size.1,
-                        **zoom,
-                        mode.as_ref(),
-                    );
-                }
-                || ()
-            },
-        );
     }
 
     let (width, height) = *window_size;

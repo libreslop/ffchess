@@ -249,6 +249,7 @@ impl Renderer {
                         alpha: 1.0,
                         state,
                         draw_name: false,
+                        is_ghost: false,
                     },
                     zoom,
                 );
@@ -269,6 +270,7 @@ impl Renderer {
                         alpha: 0.4,
                         state,
                         draw_name: false,
+                        is_ghost: true,
                     },
                     zoom,
                 );

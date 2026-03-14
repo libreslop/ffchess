@@ -169,7 +169,9 @@ impl Reducible for GameStateReducer {
                 next.disconnected = false;
                 next.fatal_error = false;
                 next.is_dead = false;
-                // keep next.mode, next.piece_configs, next.shop_configs
+                next.mode = None;
+                next.piece_configs.clear();
+                next.shop_configs.clear();
             }
         }
         next.into()

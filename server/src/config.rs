@@ -34,9 +34,14 @@ impl ConfigManager {
         for entry in WalkDir::new(actual_root.join("pieces"))
             .into_iter()
             .filter_map(|e| e.ok())
-            .filter(|e| e.path().extension().map_or(false, |ext| ext == "json" || ext == "jsonc"))
+            .filter(|e| {
+                e.path()
+                    .extension()
+                    .map_or(false, |ext| ext == "json" || ext == "jsonc")
+            })
         {
-            let content = std::fs::read_to_string(entry.path()).expect("Failed to read piece config");
+            let content =
+                std::fs::read_to_string(entry.path()).expect("Failed to read piece config");
             let config: PieceConfig = parse_jsonc(&content, entry.path());
             pieces.insert(config.id.clone(), config);
         }
@@ -45,9 +50,14 @@ impl ConfigManager {
         for entry in WalkDir::new(actual_root.join("shops"))
             .into_iter()
             .filter_map(|e| e.ok())
-            .filter(|e| e.path().extension().map_or(false, |ext| ext == "json" || ext == "jsonc"))
+            .filter(|e| {
+                e.path()
+                    .extension()
+                    .map_or(false, |ext| ext == "json" || ext == "jsonc")
+            })
         {
-            let content = std::fs::read_to_string(entry.path()).expect("Failed to read shop config");
+            let content =
+                std::fs::read_to_string(entry.path()).expect("Failed to read shop config");
             let config: ShopConfig = parse_jsonc(&content, entry.path());
             shops.insert(config.id.clone(), config);
         }
@@ -56,14 +66,23 @@ impl ConfigManager {
         for entry in WalkDir::new(actual_root.join("modes"))
             .into_iter()
             .filter_map(|e| e.ok())
-            .filter(|e| e.path().extension().map_or(false, |ext| ext == "json" || ext == "jsonc"))
+            .filter(|e| {
+                e.path()
+                    .extension()
+                    .map_or(false, |ext| ext == "json" || ext == "jsonc")
+            })
         {
-            let content = std::fs::read_to_string(entry.path()).expect("Failed to read mode config");
+            let content =
+                std::fs::read_to_string(entry.path()).expect("Failed to read mode config");
             let config: GameModeConfig = parse_jsonc(&content, entry.path());
             modes.insert(config.id.clone(), config);
         }
 
-        Self { pieces, shops, modes }
+        Self {
+            pieces,
+            shops,
+            modes,
+        }
     }
 }
 

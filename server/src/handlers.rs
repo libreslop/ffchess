@@ -9,7 +9,7 @@ use axum::{
 use common::protocol::{ClientMessage, GameError, ServerMessage};
 use futures_util::{SinkExt, StreamExt};
 use serde::Serialize;
-use std::{sync::Arc, fs};
+use std::{fs, sync::Arc};
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
@@ -38,7 +38,8 @@ pub async fn list_modes() -> impl IntoResponse {
                     }
                 }
                 if let Ok(text) = fs::read_to_string(entry.path()) {
-                    if let Ok(mode) = serde_json::from_str::<common::models::GameModeConfig>(&text) {
+                    if let Ok(mode) = serde_json::from_str::<common::models::GameModeConfig>(&text)
+                    {
                         list.push(ModeSummary {
                             id: mode.id.clone(),
                             display_name: mode.display_name.clone(),
@@ -127,7 +128,10 @@ async fn handle_socket(socket: WebSocket, mode_id: String, state: Arc<ServerStat
 
                         instance.player_channels.write().await.remove(&conn_id);
 
-                        match instance.add_player(name, kit_name, tx.clone(), pid, secret).await {
+                        match instance
+                            .add_player(name, kit_name, tx.clone(), pid, secret)
+                            .await
+                        {
                             Ok((id, secret)) => {
                                 player_id = Some(id);
                                 let game = instance.game.read().await;
@@ -142,7 +146,11 @@ async fn handle_socket(socket: WebSocket, mode_id: String, state: Arc<ServerStat
                             }
                             Err(e) => {
                                 let _ = tx.send(ServerMessage::Error(e));
-                                instance.player_channels.write().await.insert(conn_id, tx.clone());
+                                instance
+                                    .player_channels
+                                    .write()
+                                    .await
+                                    .insert(conn_id, tx.clone());
                             }
                         }
                     }
@@ -158,7 +166,9 @@ async fn handle_socket(socket: WebSocket, mode_id: String, state: Arc<ServerStat
                         item_index,
                     } => {
                         if let Some(pid) = player_id {
-                            if let Err(e) = instance.handle_shop_buy(pid, shop_pos, item_index).await {
+                            if let Err(e) =
+                                instance.handle_shop_buy(pid, shop_pos, item_index).await
+                            {
                                 let _ = tx.send(ServerMessage::Error(e));
                             }
                         }

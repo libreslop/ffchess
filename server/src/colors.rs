@@ -52,7 +52,11 @@ impl ColorManager {
                 self.player_last_active.insert(player_id, now);
                 return color;
             } else {
-                tracing::info!(?player_id, ?color, "Player's previous color is currently active, assigning new one");
+                tracing::info!(
+                    ?player_id,
+                    ?color,
+                    "Player's previous color is currently active, assigning new one"
+                );
             }
         }
 
@@ -89,22 +93,26 @@ impl ColorManager {
                 }
             }
         }
-        
+
         // Fallback to anything not active if we are really crowded
         for &c in PREFERRED_COLORS {
-             let color = c.to_string();
-             if !active_colors.contains(&color) {
+            let color = c.to_string();
+            if !active_colors.contains(&color) {
                 tracing::info!(?player_id, ?color, "Assigning fallback preferred color");
                 self.player_colors.insert(player_id, color.clone());
                 self.color_last_active.insert(color.clone(), now);
                 self.player_last_active.insert(player_id, now);
                 return color;
-             }
+            }
         }
 
         // Ultimate fallback
         let color = format!("#{:06x}", rng.gen_range(0..0x1000000));
-        tracing::info!(?player_id, ?color, "Assigning ultimate fallback random color");
+        tracing::info!(
+            ?player_id,
+            ?color,
+            "Assigning ultimate fallback random color"
+        );
         self.player_colors.insert(player_id, color.clone());
         self.color_last_active.insert(color.clone(), now);
         self.player_last_active.insert(player_id, now);
@@ -129,9 +137,8 @@ impl ColorManager {
             }
         });
 
-        self.color_last_active.retain(|_, last_active| {
-            now - *last_active <= max_age_secs
-        });
+        self.color_last_active
+            .retain(|_, last_active| now - *last_active <= max_age_secs);
     }
 }
 

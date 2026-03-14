@@ -1,12 +1,12 @@
 use crate::colors::ColorManager;
-use common::*;
 use common::models::{GameModeConfig, GameState, Piece, PieceConfig, Player, Shop, ShopConfig};
 use common::protocol::{GameError, ServerMessage};
+use common::*;
 use glam::IVec2;
 use rand::Rng;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::{RwLock, mpsc};
 use uuid::Uuid;
 
 pub struct GameInstance {
@@ -118,7 +118,8 @@ impl GameInstance {
         self.player_channels.write().await.insert(player_id, tx);
 
         let mut game = self.game.write().await;
-        let new_size = common::logic::calculate_board_size(&self.mode_config, game.players.len() + 1);
+        let new_size =
+            common::logic::calculate_board_size(&self.mode_config, game.players.len() + 1);
         if new_size > game.board_size {
             game.board_size = new_size;
             self.prune_out_of_bounds(&mut game).await;
@@ -146,11 +147,11 @@ impl GameInstance {
             for p_type_id in &kit.pieces {
                 let p_id = Uuid::new_v4();
                 let mut p_pos = spawn_pos;
-                
-                // If it's a king, we try to place it exactly at spawn_pos if possible, 
-                // but the loop below handles collision. 
+
+                // If it's a king, we try to place it exactly at spawn_pos if possible,
+                // but the loop below handles collision.
                 // Actually, let's prioritize king at spawn_pos.
-                
+
                 if p_type_id == "king" {
                     king_id = p_id;
                     // Try to put king at center
@@ -315,7 +316,12 @@ impl GameInstance {
             if elapsed < piece.cooldown_ms {
                 return Err(GameError::OnCooldown);
             }
-            (piece.piece_type.clone(), piece.position, piece.owner_id, piece.cooldown_ms)
+            (
+                piece.piece_type.clone(),
+                piece.position,
+                piece.owner_id,
+                piece.cooldown_ms,
+            )
         };
 
         let target_piece = game.pieces.values().find(|p| p.position == target).cloned();
@@ -342,7 +348,6 @@ impl GameInstance {
             &game.pieces,
             piece_owner,
         ) {
-
             return Err(GameError::InvalidMove);
         }
 
@@ -371,7 +376,8 @@ impl GameInstance {
                     if let Some(target_owner_id) = tp.owner_id {
                         if hook.action == "EliminateOwner" {
                             // Record player removal (updates death timestamps)
-                            self.record_player_removal(target_owner_id, &mut *game).await;
+                            self.record_player_removal(target_owner_id, &mut *game)
+                                .await;
                             game.players.remove(&target_owner_id);
                         }
                     }
@@ -382,7 +388,7 @@ impl GameInstance {
         if let Some(piece) = game.pieces.get_mut(&piece_id) {
             piece.position = target;
             piece.last_move_time = chrono::Utc::now().timestamp_millis();
-            
+
             // Calculate cooldown
             let dist = (target - start_pos).as_vec2().length() as f64;
             // For now, let's just use a simple cooldown logic: base + dist * factor
@@ -430,20 +436,36 @@ impl GameInstance {
             &shop_config.default_group
         };
 
-        let item = group.items.get(item_index).ok_or(GameError::Internal("Invalid shop item index".to_string()))?;
+        let item = group
+            .items
+            .get(item_index)
+            .ok_or(GameError::Internal("Invalid shop item index".to_string()))?;
 
         // Evaluate price
         let mut vars = HashMap::new();
-        vars.insert("player_piece_count".to_string(), game.pieces.values().filter(|p| p.owner_id == Some(player_id)).count() as f64);
+        vars.insert(
+            "player_piece_count".to_string(),
+            game.pieces
+                .values()
+                .filter(|p| p.owner_id == Some(player_id))
+                .count() as f64,
+        );
         // Add specific piece counts
         for p_id in self.piece_configs.keys() {
-            let count = game.pieces.values().filter(|p| p.owner_id == Some(player_id) && &p.piece_type == p_id).count();
+            let count = game
+                .pieces
+                .values()
+                .filter(|p| p.owner_id == Some(player_id) && &p.piece_type == p_id)
+                .count();
             vars.insert(format!("{}_count", p_id), count as f64);
         }
 
         let price = common::logic::evaluate_expression(&item.price_expr, &vars) as u64;
 
-        let player = game.players.get_mut(&player_id).ok_or(GameError::PlayerNotFound)?;
+        let player = game
+            .players
+            .get_mut(&player_id)
+            .ok_or(GameError::PlayerNotFound)?;
         if player.score < price {
             return Err(GameError::InsufficientScore {
                 needed: price,
@@ -459,7 +481,11 @@ impl GameInstance {
             if let Some(mut p) = player_piece_on_shop {
                 if let Some(piece) = game.pieces.get_mut(&p.id) {
                     piece.piece_type = replace_type.clone();
-                    piece.cooldown_ms = self.piece_configs.get(replace_type).map(|c| c.cooldown_ms as i64).unwrap_or(1000);
+                    piece.cooldown_ms = self
+                        .piece_configs
+                        .get(replace_type)
+                        .map(|c| c.cooldown_ms as i64)
+                        .unwrap_or(1000);
                 }
             }
         }
@@ -469,8 +495,14 @@ impl GameInstance {
             let mut p_pos = shop_pos;
             // Find nearby space
             let neighbors = [
-                IVec2::new(1, 0), IVec2::new(-1, 0), IVec2::new(0, 1), IVec2::new(0, -1),
-                IVec2::new(1, 1), IVec2::new(-1, 1), IVec2::new(1, -1), IVec2::new(-1, -1),
+                IVec2::new(1, 0),
+                IVec2::new(-1, 0),
+                IVec2::new(0, 1),
+                IVec2::new(0, -1),
+                IVec2::new(1, 1),
+                IVec2::new(-1, 1),
+                IVec2::new(1, -1),
+                IVec2::new(-1, -1),
             ];
             let mut found = false;
             for offset in neighbors {
@@ -488,14 +520,17 @@ impl GameInstance {
                 return Err(GameError::NoSpaceNearby);
             }
 
-            game.pieces.insert(p_id, Piece {
-                id: p_id,
-                owner_id: Some(player_id),
-                piece_type: add_type.clone(),
-                position: p_pos,
-                last_move_time: 0,
-                cooldown_ms: 0,
-            });
+            game.pieces.insert(
+                p_id,
+                Piece {
+                    id: p_id,
+                    owner_id: Some(player_id),
+                    piece_type: add_type.clone(),
+                    position: p_pos,
+                    last_move_time: 0,
+                    cooldown_ms: 0,
+                },
+            );
         }
 
         // Deplete shop
@@ -534,7 +569,7 @@ impl GameInstance {
             // Cleanup death timestamps
             let mut dt = self.death_timestamps.write().await;
             dt.retain(|_, timestamp_ms| now - *timestamp_ms <= 10 * 60 * 1000);
-            
+
             let mut cm = self.color_manager.write().await;
             cm.cleanup(now / 1000, 24 * 60 * 60);
         }
@@ -549,12 +584,12 @@ impl GameInstance {
 
         {
             let mut game = self.game.write().await;
-            let target_size = common::logic::calculate_board_size(&self.mode_config, game.players.len());
+            let target_size =
+                common::logic::calculate_board_size(&self.mode_config, game.players.len());
             if target_size < game.board_size {
-                let any_player_pieces_outside = game
-                    .pieces
-                    .values()
-                    .any(|p| p.owner_id.is_some() && !common::logic::is_within_board(p.position, target_size));
+                let any_player_pieces_outside = game.pieces.values().any(|p| {
+                    p.owner_id.is_some() && !common::logic::is_within_board(p.position, target_size)
+                });
 
                 if !any_player_pieces_outside {
                     game.board_size = target_size;
@@ -590,7 +625,11 @@ impl GameInstance {
 
         // NPC Spawning
         for limit in &self.mode_config.npc_limits {
-            let current_count = game.pieces.values().filter(|p| p.owner_id.is_none() && p.piece_type == limit.piece_id).count();
+            let current_count = game
+                .pieces
+                .values()
+                .filter(|p| p.owner_id.is_none() && p.piece_type == limit.piece_id)
+                .count();
             let mut vars = HashMap::new();
             vars.insert("player_count".to_string(), game.players.len() as f64);
             let max_npcs = common::logic::evaluate_expression(&limit.max_expr, &vars) as usize;
@@ -598,19 +637,31 @@ impl GameInstance {
             if current_count < max_npcs {
                 let spawn_pos = crate::spawning::find_spawn_pos(&game);
                 let id = Uuid::new_v4();
-                game.pieces.insert(id, Piece {
+                game.pieces.insert(
                     id,
-                    owner_id: None,
-                    piece_type: limit.piece_id.clone(),
-                    position: spawn_pos,
-                    last_move_time: chrono::Utc::now().timestamp_millis(),
-                    cooldown_ms: self.piece_configs.get(&limit.piece_id).map(|c| c.cooldown_ms as i64).unwrap_or(2000),
-                });
+                    Piece {
+                        id,
+                        owner_id: None,
+                        piece_type: limit.piece_id.clone(),
+                        position: spawn_pos,
+                        last_move_time: chrono::Utc::now().timestamp_millis(),
+                        cooldown_ms: self
+                            .piece_configs
+                            .get(&limit.piece_id)
+                            .map(|c| c.cooldown_ms as i64)
+                            .unwrap_or(2000),
+                    },
+                );
             }
         }
 
         // NPC Movement
-        let npc_ids: Vec<Uuid> = game.pieces.iter().filter(|(_, p)| p.owner_id.is_none()).map(|(id, _)| *id).collect();
+        let npc_ids: Vec<Uuid> = game
+            .pieces
+            .iter()
+            .filter(|(_, p)| p.owner_id.is_none())
+            .map(|(id, _)| *id)
+            .collect();
         let now = chrono::Utc::now().timestamp_millis();
 
         for id in npc_ids {
@@ -619,7 +670,12 @@ impl GameInstance {
                     Some(p) => p,
                     None => continue,
                 };
-                (p.piece_type.clone(), p.position, p.last_move_time, p.cooldown_ms)
+                (
+                    p.piece_type.clone(),
+                    p.position,
+                    p.last_move_time,
+                    p.cooldown_ms,
+                )
             };
 
             if now - last_move < cooldown {
@@ -633,9 +689,11 @@ impl GameInstance {
 
             // Basic AI: move randomly or towards nearest player if close
             let mut moved = false;
-            
+
             // Try to find a player to hunt
-            let nearest_player_piece = game.pieces.values()
+            let nearest_player_piece = game
+                .pieces
+                .values()
                 .filter(|p| p.owner_id.is_some())
                 .min_by_key(|p| (p.position - p_pos).as_vec2().length_squared() as i32);
 
@@ -647,14 +705,30 @@ impl GameInstance {
                     let mut possible_moves = Vec::new();
                     for path in &piece_config.capture_paths {
                         for step in path {
-                            if common::logic::is_valid_move(piece_config, p_pos, p_pos + *step, true, board_size, &game.pieces, None) {
+                            if common::logic::is_valid_move(
+                                piece_config,
+                                p_pos,
+                                p_pos + *step,
+                                true,
+                                board_size,
+                                &game.pieces,
+                                None,
+                            ) {
                                 possible_moves.push((p_pos + *step, true));
                             }
                         }
                     }
                     for path in &piece_config.move_paths {
                         for step in path {
-                            if common::logic::is_valid_move(piece_config, p_pos, p_pos + *step, false, board_size, &game.pieces, None) {
+                            if common::logic::is_valid_move(
+                                piece_config,
+                                p_pos,
+                                p_pos + *step,
+                                false,
+                                board_size,
+                                &game.pieces,
+                                None,
+                            ) {
                                 possible_moves.push((p_pos + *step, false));
                             }
                         }
@@ -662,12 +736,19 @@ impl GameInstance {
 
                     if !possible_moves.is_empty() {
                         // Pick move that minimizes distance to target
-                        possible_moves.sort_by_key(|(pos, _)| (target_p.position - *pos).as_vec2().length_squared() as i32);
+                        possible_moves.sort_by_key(|(pos, _)| {
+                            (target_p.position - *pos).as_vec2().length_squared() as i32
+                        });
                         let (best_move, is_capture) = possible_moves[0];
-                        
+
                         // Execute move (re-using logic or simplifying)
                         if is_capture {
-                            if let Some(tp) = game.pieces.values().find(|p| p.position == best_move).cloned() {
+                            if let Some(tp) = game
+                                .pieces
+                                .values()
+                                .find(|p| p.position == best_move)
+                                .cloned()
+                            {
                                 game.pieces.remove(&tp.id);
                                 self.record_piece_removal(tp.id).await;
                                 if tp.piece_type == "king" {
@@ -704,7 +785,15 @@ impl GameInstance {
                         all_steps[rng.gen_range(0..all_steps.len())]
                     };
                     let target = p_pos + step;
-                    if common::logic::is_valid_move(piece_config, p_pos, target, false, board_size, &game.pieces, None) {
+                    if common::logic::is_valid_move(
+                        piece_config,
+                        p_pos,
+                        target,
+                        false,
+                        board_size,
+                        &game.pieces,
+                        None,
+                    ) {
                         if let Some(p) = game.pieces.get_mut(&id) {
                             p.position = target;
                             p.last_move_time = now;

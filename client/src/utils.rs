@@ -19,39 +19,59 @@ pub fn set_stored_name(name: &str) {
     }
 }
 
-pub fn get_stored_id() -> Option<Uuid> {
+fn storage_key(base: &str, mode_id: &str) -> String {
+    format!("{base}_{mode_id}")
+}
+
+pub fn get_stored_id(mode_id: &str) -> Option<Uuid> {
     let window = web_sys::window().unwrap();
     if let Ok(Some(storage)) = window.local_storage() {
+        let key = storage_key("ffchess_player_id", mode_id);
         return storage
-            .get_item("ffchess_player_id")
-            .unwrap_or_default()
+            .get_item(&key)
+            .unwrap_or_else(|_| storage.get_item("ffchess_player_id").ok().flatten())
             .and_then(|s| Uuid::parse_str(&s).ok());
     }
     None
 }
 
-pub fn set_stored_id(id: Uuid) {
+pub fn set_stored_id(mode_id: &str, id: Uuid) {
     let window = web_sys::window().unwrap();
     if let Ok(Some(storage)) = window.local_storage() {
-        let _ = storage.set_item("ffchess_player_id", &id.to_string());
+        let key = storage_key("ffchess_player_id", mode_id);
+        let _ = storage.set_item(&key, &id.to_string());
+        let _ = storage.remove_item("ffchess_player_id");
     }
 }
 
-pub fn get_stored_secret() -> Option<Uuid> {
+pub fn get_stored_secret(mode_id: &str) -> Option<Uuid> {
     let window = web_sys::window().unwrap();
     if let Ok(Some(storage)) = window.local_storage() {
+        let key = storage_key("ffchess_session_secret", mode_id);
         return storage
-            .get_item("ffchess_session_secret")
-            .unwrap_or_default()
+            .get_item(&key)
+            .unwrap_or_else(|_| storage.get_item("ffchess_session_secret").ok().flatten())
             .and_then(|s| Uuid::parse_str(&s).ok());
     }
     None
 }
 
-pub fn set_stored_secret(secret: Uuid) {
+pub fn set_stored_secret(mode_id: &str, secret: Uuid) {
     let window = web_sys::window().unwrap();
     if let Ok(Some(storage)) = window.local_storage() {
-        let _ = storage.set_item("ffchess_session_secret", &secret.to_string());
+        let key = storage_key("ffchess_session_secret", mode_id);
+        let _ = storage.set_item(&key, &secret.to_string());
+        let _ = storage.remove_item("ffchess_session_secret");
+    }
+}
+
+pub fn clear_stored_session(mode_id: &str) {
+    if let Ok(Some(storage)) = web_sys::window()
+        .expect("no global `window` exists")
+        .local_storage()
+    {
+        let _ = storage.remove_item(&storage_key("ffchess_player_id", mode_id));
+        let _ = storage.remove_item(&storage_key("ffchess_session_secret", mode_id));
     }
 }
 

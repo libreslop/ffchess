@@ -53,7 +53,8 @@ impl Renderer {
                 + (6.0 * zoom),
         );
 
-        if params.alpha >= 1.0 && is_self {
+        // Only draw cooldown on the real (non-ghost) piece for the owner
+        if is_self && !params.is_ghost {
             #[cfg(target_arch = "wasm32")]
             let now = js_sys::Date::now() as i64;
             #[cfg(not(target_arch = "wasm32"))]

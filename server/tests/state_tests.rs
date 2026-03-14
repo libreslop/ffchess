@@ -4,9 +4,9 @@ mod tests {
     use common::protocol::{ClientMessage, ServerMessage};
     use glam::IVec2;
     use server::state::ServerState;
+    use std::sync::Arc;
     use tokio::sync::mpsc;
     use uuid::Uuid;
-    use std::sync::Arc;
 
     #[tokio::test]
     async fn test_player_spawn_and_kits() {
@@ -15,7 +15,13 @@ mod tests {
         let (tx, _) = mpsc::unbounded_channel();
 
         let (p1, _p1_secret) = instance
-            .add_player("P1".to_string(), "Standard".to_string(), tx.clone(), None, None)
+            .add_player(
+                "P1".to_string(),
+                "Standard".to_string(),
+                tx.clone(),
+                None,
+                None,
+            )
             .await
             .expect("Initial join should succeed");
         let (p2, _p2_secret) = instance
@@ -69,11 +75,23 @@ mod tests {
         let (tx, _) = mpsc::unbounded_channel();
 
         let (p1_id, _p1_secret) = instance
-            .add_player("P1".to_string(), "Standard".to_string(), tx.clone(), None, None)
+            .add_player(
+                "P1".to_string(),
+                "Standard".to_string(),
+                tx.clone(),
+                None,
+                None,
+            )
             .await
             .expect("Initial join should succeed");
         let (p2_id, _p2_secret) = instance
-            .add_player("P2".to_string(), "Standard".to_string(), tx.clone(), None, None)
+            .add_player(
+                "P2".to_string(),
+                "Standard".to_string(),
+                tx.clone(),
+                None,
+                None,
+            )
             .await
             .expect("Initial join should succeed");
 
