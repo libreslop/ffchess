@@ -509,10 +509,10 @@ pub fn game_view(props: &GameViewProps) -> Html {
                 msg={props.reducer.disconnected_msg.clone()}
             />
 
-            if props.reducer.disconnected {
+            if props.reducer.disconnected && !props.reducer.fatal_error {
                 <crate::components::disconnected_screen::DisconnectedScreen 
                     show={true}
-                    disconnected={props.reducer.disconnected}
+                    disconnected={true}
                     title={props.reducer.disconnected_title.clone()}
                     msg={props.reducer.disconnected_msg.clone()}
                 />

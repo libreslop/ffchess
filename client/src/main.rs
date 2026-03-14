@@ -392,12 +392,14 @@ pub fn app() -> Html {
                 </div>
             }
 
-            <DisconnectedScreen
-                show={*show_disconnected && (is_joined || *has_interacted)}
-                disconnected={reducer.disconnected && !reducer.fatal_error}
-                title={reducer.disconnected_title.clone()}
-                msg={reducer.disconnected_msg.clone()}
-            />
+            if *show_disconnected && reducer.disconnected && !reducer.fatal_error && (is_joined || *has_interacted) {
+                <DisconnectedScreen
+                    show={true}
+                    disconnected={true}
+                    title={reducer.disconnected_title.clone()}
+                    msg={reducer.disconnected_msg.clone()}
+                />
+            }
 
             <FatalNotification
                 show={reducer.fatal_error}
