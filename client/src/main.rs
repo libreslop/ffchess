@@ -10,10 +10,12 @@ use components::{
     DefeatScreen, DisconnectedScreen, ErrorToast, FatalNotification, GameView, JoinScreen,
     Leaderboard,
 };
+use components::join_screen::ModeSummary;
 use futures_util::{SinkExt, StreamExt};
 use gloo_events::EventListener;
 use gloo_net::websocket::{Message, futures::WebSocket};
 use gloo_timers::callback::{Interval, Timeout};
+use gloo_utils::document;
 use reducer::{GameAction, GameStateReducer, MsgSender};
 use std::rc::Rc;
 use tokio::sync::mpsc;
@@ -32,6 +34,66 @@ pub fn app() -> Html {
     let join_step = use_state(|| 0);
     let has_interacted = use_state(|| false);
     let show_disconnected = use_state(|| false);
+    let mode_options = use_state(|| Vec::<ModeSummary>::new());
+
+    // Read current mode info injected in index.html
+    let injected_mode_info: Option<ModeSummary> = {
+        let doc = document();
+        if let Some(el) = doc.get_element_by_id("initial-mode") {
+            if let Some(text) = el.text_content() {
+                serde_json::from_str::<serde_json::Value>(&text).ok().map(|v| ModeSummary {
+                    id: v.get("id").and_then(|s| s.as_str()).unwrap_or("ffa").to_string(),
+                    display_name: v
+                        .get("display_name")
+                        .and_then(|s| s.as_str())
+                        .unwrap_or("FFA")
+                        .to_string(),
+                })
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    };
+
+    // Determine current mode id from hash or injected info
+    let current_mode_id = {
+        let hash = web_sys::window()
+            .unwrap()
+            .location()
+            .hash()
+            .unwrap_or_default()
+            .trim_start_matches('#')
+            .to_string();
+        if !hash.is_empty() {
+            hash
+        } else {
+            injected_mode_info
+                .as_ref()
+                .map(|m| m.id.clone())
+                .unwrap_or_else(|| "ffa".to_string())
+        }
+    };
+
+    {
+        let mode_options = mode_options.clone();
+        let injected_mode_info = injected_mode_info.clone();
+        use_effect_with((), move |_| {
+            spawn_local(async move {
+                if let Ok(resp) = gloo_net::http::Request::get("/api/modes").send().await {
+                    if let Ok(list) = resp.json::<Vec<ModeSummary>>().await {
+                        mode_options.set(list);
+                        return;
+                    }
+                }
+                if let Some(info) = injected_mode_info {
+                    mode_options.set(vec![info]);
+                }
+            });
+            || ()
+        });
+    }
 
     {
         let is_joining = is_joining.clone();
@@ -182,22 +244,13 @@ pub fn app() -> Html {
                     "ws:"
                 };
 
-                // Get mode from URL path or default to ffa
-                let pathname = window.location().pathname().unwrap();
-                let mode_id = pathname
-                    .trim_start_matches('/')
-                    .split('/')
-                    .next()
-                    .unwrap_or("ffa");
+                let hash = window.location().hash().unwrap_or_default();
+                let mut mode_id = hash.trim_start_matches('#').to_string();
                 if mode_id.is_empty() {
-                    // if it was just "/"
-                    let mode_id = "ffa";
-                    let ws_url = format!("{}//{}/api/ws/{}", protocol, host, mode_id);
-                    connect_ws(ws_url, listener_reducer_ref.clone(), current_ws_tx.clone()).await;
-                } else {
-                    let ws_url = format!("{}//{}/api/ws/{}", protocol, host, mode_id);
-                    connect_ws(ws_url, listener_reducer_ref.clone(), current_ws_tx.clone()).await;
+                    mode_id = "ffa".into();
                 }
+                let ws_url = format!("{}//{}/api/ws/{}", protocol, host, mode_id);
+                connect_ws(ws_url, listener_reducer_ref.clone(), current_ws_tx.clone()).await;
             });
             || {
                 drop(interval);
@@ -459,6 +512,18 @@ pub fn app() -> Html {
                     error={reducer.error.clone()}
                     is_loading={*is_joining}
                     mode={reducer.mode.clone()}
+                    mode_options={(*mode_options).clone()}
+                    selected_mode_id={current_mode_id.clone()}
+                    on_select_mode={Callback::from(move |id: String| {
+                        let _ = web_sys::window().unwrap().location().set_hash(&format!("#{id}"));
+                        let _ = web_sys::window().unwrap().location().reload();
+                    })}
+                    current_mode_info={
+                        reducer.mode.as_ref().map(|m| ModeSummary{
+                            id: m.id.clone(),
+                            display_name: m.display_name.clone(),
+                        }).or(injected_mode_info.clone())
+                    }
                 />
             }
 
@@ -476,90 +541,87 @@ async fn connect_ws(
     listener_reducer_ref: Rc<std::cell::RefCell<yew::UseReducerHandle<GameStateReducer>>>,
     current_ws_tx: Rc<std::cell::RefCell<Option<mpsc::UnboundedSender<Message>>>>,
 ) {
-    loop {
-        if let Ok(ws) = WebSocket::open(&ws_url) {
-            let (mut write, mut read) = ws.split();
-            let (internal_tx, mut internal_rx) = mpsc::unbounded_channel::<Message>();
-            *current_ws_tx.borrow_mut() = Some(internal_tx);
+    if let Ok(ws) = WebSocket::open(&ws_url) {
+        let (mut write, mut read) = ws.split();
+        let (internal_tx, mut internal_rx) = mpsc::unbounded_channel::<Message>();
+        *current_ws_tx.borrow_mut() = Some(internal_tx);
 
-            spawn_local(async move {
-                while let Some(m) = internal_rx.recv().await {
-                    let _ = write.send(m).await;
-                }
-            });
+        spawn_local(async move {
+            while let Some(m) = internal_rx.recv().await {
+                let _ = write.send(m).await;
+            }
+        });
 
-            while let Some(msg) = read.next().await {
-                if let Ok(Message::Text(text)) = msg
-                    && let Ok(server_msg) = serde_json::from_str::<ServerMessage>(&text)
-                {
-                    let current_reducer = listener_reducer_ref.borrow().clone();
-                    current_reducer.dispatch(match server_msg {
-                        ServerMessage::Init {
+        while let Some(msg) = read.next().await {
+            if let Ok(Message::Text(text)) = msg
+                && let Ok(server_msg) = serde_json::from_str::<ServerMessage>(&text)
+            {
+                let current_reducer = listener_reducer_ref.borrow().clone();
+                current_reducer.dispatch(match server_msg {
+                    ServerMessage::Init {
+                        player_id,
+                        session_secret,
+                        state,
+                        mode,
+                        pieces,
+                        shops,
+                    } => {
+                        if player_id != Uuid::nil() {
+                            set_stored_id(player_id);
+                            set_stored_secret(session_secret);
+                        }
+                        GameAction::SetInit {
                             player_id,
                             session_secret,
                             state,
                             mode,
                             pieces,
                             shops,
-                        } => {
-                            if player_id != Uuid::nil() {
-                                set_stored_id(player_id);
-                                set_stored_secret(session_secret);
-                            }
-                            GameAction::SetInit {
-                                player_id,
-                                session_secret,
-                                state,
-                                mode,
-                                pieces,
-                                shops,
-                            }
                         }
-                        ServerMessage::UpdateState {
-                            players,
-                            pieces,
-                            shops,
-                            removed_pieces,
-                            removed_players,
-                            board_size,
-                        } => GameAction::UpdateState {
-                            players,
-                            pieces,
-                            shops,
-                            removed_pieces,
-                            removed_players,
-                            board_size,
-                        },
-                        ServerMessage::Error(e) => {
-                            if let GameError::Custom { title, message } = &e {
-                                GameAction::SetDisconnected {
-                                    disconnected: true,
-                                    is_fatal: true,
-                                    title: Some(title.clone()),
-                                    msg: Some(message.clone()),
-                                }
-                            } else {
-                                GameAction::SetError(e)
+                    }
+                    ServerMessage::UpdateState {
+                        players,
+                        pieces,
+                        shops,
+                        removed_pieces,
+                        removed_players,
+                        board_size,
+                    } => GameAction::UpdateState {
+                        players,
+                        pieces,
+                        shops,
+                        removed_pieces,
+                        removed_players,
+                        board_size,
+                    },
+                    ServerMessage::Error(e) => {
+                        if let GameError::Custom { title, message } = &e {
+                            GameAction::SetDisconnected {
+                                disconnected: true,
+                                is_fatal: true,
+                                title: Some(title.clone()),
+                                msg: Some(message.clone()),
                             }
+                        } else {
+                            GameAction::SetError(e)
                         }
-                        ServerMessage::GameOver {
-                            final_score,
-                            kills,
-                            pieces_captured,
-                            time_survived_secs,
-                        } => GameAction::GameOver {
-                            final_score,
-                            kills,
-                            pieces_captured,
-                            time_survived_secs,
-                        },
-                        ServerMessage::Pong(t) => GameAction::Pong(t),
-                    });
-                }
+                    }
+                    ServerMessage::GameOver {
+                        final_score,
+                        kills,
+                        pieces_captured,
+                        time_survived_secs,
+                    } => GameAction::GameOver {
+                        final_score,
+                        kills,
+                        pieces_captured,
+                        time_survived_secs,
+                    },
+                    ServerMessage::Pong(t) => GameAction::Pong(t),
+                });
             }
-            *current_ws_tx.borrow_mut() = None;
         }
-
+        *current_ws_tx.borrow_mut() = None;
         let current_reducer = listener_reducer_ref.borrow().clone();
         if !current_reducer.disconnected && !current_reducer.fatal_error {
             current_reducer.dispatch(GameAction::SetDisconnected {
@@ -569,7 +631,17 @@ async fn connect_ws(
                 msg: None,
             });
         }
-        gloo_timers::future::TimeoutFuture::new(2000).await;
+    } else {
+        // Avoid tight spin if socket creation fails
+        let current_reducer = listener_reducer_ref.borrow().clone();
+        if !current_reducer.disconnected && !current_reducer.fatal_error {
+            current_reducer.dispatch(GameAction::SetDisconnected {
+                disconnected: true,
+                is_fatal: false,
+                title: None,
+                msg: None,
+            });
+        }
     }
 }
 

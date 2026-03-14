@@ -1,6 +1,13 @@
 use crate::utils::is_mobile;
 use common::models::GameModeConfig;
+use serde::{Deserialize, Serialize};
 use yew::prelude::*;
+
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
+pub struct ModeSummary {
+    pub id: String,
+    pub display_name: String,
+}
 
 #[derive(Properties, PartialEq)]
 pub struct JoinScreenProps {
@@ -13,6 +20,10 @@ pub struct JoinScreenProps {
     pub error: Option<common::protocol::GameError>,
     pub is_loading: bool,
     pub mode: Option<GameModeConfig>,
+    pub mode_options: Vec<ModeSummary>,
+    pub selected_mode_id: String,
+    pub on_select_mode: Callback<String>,
+    pub current_mode_info: Option<ModeSummary>,
 }
 
 #[function_component(JoinScreen)]
@@ -26,6 +37,28 @@ pub fn join_screen(props: &JoinScreenProps) -> Html {
             <div style={format!("position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 100; text-align: center; width: 90%; max-width: 400px; padding: {};", if mobile { "20px 10px" } else { "30px" })}>
                 if props.join_step == 0 {
                     <h1 style={format!("margin-top: 0; color: #fff; font-size: {}; letter-spacing: 4px; text-shadow: 0 4px 8px rgba(0,0,0,0.5);", if mobile { "3em" } else { "4em" })}>{"FFCHESS"}</h1>
+                    <div style="margin-bottom: 16px;">
+                        <select
+                            value={props.selected_mode_id.clone()}
+                            onchange={
+                                let on_select = props.on_select_mode.clone();
+                                Callback::from(move |e: Event| {
+                                    let sel: web_sys::HtmlSelectElement = e.target_unchecked_into();
+                                    on_select.emit(sel.value());
+                                })
+                            }
+                            style="padding: 10px 12px; font-size: 1em; border: 2px solid #cbd5e1; background: #fff; width: 100%; box-sizing: border-box; text-align: center;"
+                        >
+                            { for props.mode_options.iter().map(|m| html!{
+                                <option value={m.id.clone()} selected={m.id == props.selected_mode_id}>{ m.display_name.clone() }</option>
+                            })}
+                        </select>
+                        if let Some(info) = &props.current_mode_info {
+                            <div style="margin-top: 8px; color: #e2e8f0; font-size: 0.9em;">
+                                <strong>{ &info.display_name }</strong>
+                            </div>
+                        }
+                    </div>
                     <form onsubmit={props.on_name_submit.clone()}>
                         <div style="display: flex; flex-direction: column; gap: 15px; align-items: center;">
                             <input type="text" name="player_name" value={props.player_name.clone()} oninput={props.on_name_input.clone()} placeholder="This is a tale of..." autofocus=true

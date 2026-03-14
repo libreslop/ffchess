@@ -34,7 +34,9 @@ async fn main() {
         .route("/ping", get(|| async { "pong" }))
         .nest(
             "/api",
-            Router::new().route("/ws/:mode_id", get(server::handlers::ws_handler)),
+            Router::new()
+                .route("/ws/:mode_id", get(server::handlers::ws_handler))
+                .route("/modes", get(server::handlers::list_modes)),
         )
         .fallback_service(ServeDir::new("client/dist"))
         .with_state(state)

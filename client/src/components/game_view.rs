@@ -79,7 +79,8 @@ pub fn game_view(props: &GameViewProps) -> Html {
         let fps_counter = fps_counter.clone();
         let reducer = props.reducer.clone();
 
-        use_effect(move || {
+        use_effect_with((), move |_| {
+            // Main render loop ~60 FPS (16ms)
             let interval = gloo_timers::callback::Interval::new(16, move || {
                 let (reducer_state, is_dragging) = {
                     let s = latest_state.borrow();

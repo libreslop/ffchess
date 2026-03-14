@@ -8,9 +8,16 @@ use axum::{
 };
 use common::protocol::{ClientMessage, GameError, ServerMessage};
 use futures_util::{SinkExt, StreamExt};
-use std::sync::Arc;
+use serde::Serialize;
+use std::{sync::Arc, fs};
 use tokio::sync::mpsc;
 use uuid::Uuid;
+
+#[derive(Serialize)]
+pub struct ModeSummary {
+    pub id: String,
+    pub display_name: String,
+}
 
 pub async fn ws_handler(
     ws: WebSocketUpgrade,
@@ -18,6 +25,34 @@ pub async fn ws_handler(
     State(state): State<Arc<ServerState>>,
 ) -> impl IntoResponse {
     ws.on_upgrade(|socket| handle_socket(socket, mode_id, state))
+}
+
+pub async fn list_modes() -> impl IntoResponse {
+    let mut list = Vec::new();
+    match fs::read_dir("config/modes") {
+        Ok(entries) => {
+            for entry in entries.flatten() {
+                if let Some(ext) = entry.path().extension() {
+                    if ext != "jsonc" && ext != "json" {
+                        continue;
+                    }
+                }
+                if let Ok(text) = fs::read_to_string(entry.path()) {
+                    if let Ok(mode) = serde_json::from_str::<common::models::GameModeConfig>(&text) {
+                        list.push(ModeSummary {
+                            id: mode.id.clone(),
+                            display_name: mode.display_name.clone(),
+                        });
+                    }
+                }
+            }
+            axum::Json(list).into_response()
+        }
+        Err(e) => {
+            tracing::error!(error = %e, "Failed to read modes directory");
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
 }
 
 async fn handle_socket(socket: WebSocket, mode_id: String, state: Arc<ServerState>) {
