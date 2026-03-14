@@ -529,23 +529,67 @@ pub fn game_view(props: &GameViewProps) -> Html {
              oncontextmenu={Callback::from(|e: MouseEvent| e.prevent_default())}
              ontouchstart={
                  let handle_input_start = handle_input_start.clone();
+                 let manager_ref = manager_ref.clone();
+                 let is_dead = props.reducer.is_dead;
                  Callback::from(move |e: TouchEvent| {
-                     if let Some(touch) = e.touches().get(0) {
+                     e.prevent_default();
+                     if is_dead {
+                         return;
+                     }
+                     if e.touches().length() == 2 {
+                         // Begin pinch zoom
+                         let t0 = e.touches().get(0).unwrap();
+                         let t1 = e.touches().get(1).unwrap();
+                         let dx = t1.client_x() as f64 - t0.client_x() as f64;
+                         let dy = t1.client_y() as f64 - t0.client_y() as f64;
+                         let dist = (dx * dx + dy * dy).sqrt();
+                         manager_ref.borrow_mut().last_touch_dist = Some(dist);
+                     } else if let Some(touch) = e.touches().get(0) {
                          handle_input_start.emit((touch.client_x() as f64, touch.client_y() as f64, false));
+                         manager_ref.borrow_mut().last_touch_dist = None;
                      }
                  })
              }
              ontouchmove={
                  let handle_input_move = handle_input_move.clone();
+                let manager_ref = manager_ref.clone();
+                 let canvas_ref = canvas_ref.clone();
+                 let is_dead = props.reducer.is_dead;
                  Callback::from(move |e: TouchEvent| {
-                     if let Some(touch) = e.touches().get(0) {
+                     e.prevent_default();
+                     if is_dead {
+                         return;
+                     }
+                     if e.touches().length() == 2 {
+                         let t0 = e.touches().get(0).unwrap();
+                         let t1 = e.touches().get(1).unwrap();
+                         let dx = t1.client_x() as f64 - t0.client_x() as f64;
+                         let dy = t1.client_y() as f64 - t0.client_y() as f64;
+                         let dist = (dx * dx + dy * dy).sqrt();
+                         let mut mgr = manager_ref.borrow_mut();
+                         if let Some(prev) = mgr.last_touch_dist {
+                             let factor = (dist / prev).powf(0.8); // dampen sensitivity
+                             if let Some(canvas) = canvas_ref.cast::<HtmlCanvasElement>() {
+                                 let rect = canvas.get_bounding_client_rect();
+                                 let cx = (t0.client_x() as f64 + t1.client_x() as f64) / 2.0;
+                                 let cy = (t0.client_y() as f64 + t1.client_y() as f64) / 2.0;
+                                 mgr.mouse_pos = (cx, cy);
+                             }
+                             mgr.target_zoom = (mgr.target_zoom * factor).clamp(0.2, 2.0);
+                         }
+                         mgr.last_touch_dist = Some(dist);
+                     } else if let Some(touch) = e.touches().get(0) {
+                         manager_ref.borrow_mut().last_touch_dist = None;
                          handle_input_move.emit((touch.client_x() as f64, touch.client_y() as f64));
                      }
                  })
              }
              ontouchend={
                  let handle_input_end = handle_input_end.clone();
+                 let manager_ref = manager_ref.clone();
                  Callback::from(move |e: TouchEvent| {
+                     e.prevent_default();
+                     manager_ref.borrow_mut().last_touch_dist = None;
                      if let Some(touch) = e.changed_touches().get(0) {
                          handle_input_end.emit((touch.client_x() as f64, touch.client_y() as f64, false));
                      }
