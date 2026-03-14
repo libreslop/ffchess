@@ -73,6 +73,8 @@ pub fn update_camera(
             
             manager.camera.0 = ratio * (manager.camera.0 + mx) - mx;
             manager.camera.1 = ratio * (manager.camera.1 + my) - my;
+            manager.target_camera.0 = ratio * (manager.target_camera.0 + mx) - mx;
+            manager.target_camera.1 = ratio * (manager.target_camera.1 + my) - my;
             changed = true;
         }
     }
