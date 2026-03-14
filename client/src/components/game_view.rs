@@ -4,7 +4,6 @@ use crate::reducer::{GameAction, GameStateReducer, MsgSender, Pmove};
 use common::logic::is_within_board;
 use glam::IVec2;
 use gloo_events::EventListener;
-use gloo_render::AnimationFrame;
 use uuid::Uuid;
 use wasm_bindgen::JsCast;
 use web_sys::HtmlCanvasElement;
@@ -81,55 +80,30 @@ pub fn game_view(props: &GameViewProps) -> Html {
         let reducer = props.reducer.clone();
 
         use_effect(move || {
-            use std::cell::RefCell;
-            use std::rc::Rc;
+            let interval = gloo_timers::callback::Interval::new(16, move || {
+                let (reducer_state, is_dragging) = {
+                    let s = latest_state.borrow();
+                    (s.0.clone(), s.1)
+                };
 
-            let raf_handle: Rc<RefCell<Option<AnimationFrame>>> = Rc::new(RefCell::new(None));
-
-            fn schedule(
-                raf_handle: Rc<RefCell<Option<AnimationFrame>>>,
-                latest_state: Rc<RefCell<(UseReducerHandle<GameStateReducer>, bool)>>,
-                manager_ref: Rc<RefCell<CameraManager>>,
-                canvas_ref: NodeRef,
-                zoom_state: UseStateHandle<f64>,
-                cam_state: UseStateHandle<(f64, f64)>,
-                frame_id: UseStateHandle<u64>,
-                fps_counter: Rc<RefCell<(u32, f64)>>,
-                reducer: UseReducerHandle<GameStateReducer>,
-            ) {
-                let raf_handle_clone = raf_handle.clone();
-                let latest_state_clone = latest_state.clone();
-                let manager_ref_clone = manager_ref.clone();
-                let canvas_ref_clone = canvas_ref.clone();
-                let zoom_state_clone = zoom_state.clone();
-                let cam_state_clone = cam_state.clone();
-                let frame_id_clone = frame_id.clone();
-                let fps_counter_clone = fps_counter.clone();
-                let reducer_clone = reducer.clone();
-
-                let handle = gloo_render::request_animation_frame(move |_| {
-                    let (reducer_state, is_dragging) = {
-                        let s = latest_state_clone.borrow();
-                        (s.0.clone(), s.1)
-                    };
-
-                    {
-                        let mut fc = fps_counter_clone.borrow_mut();
-                        fc.0 += 1;
-                        let now = web_sys::window()
-                            .unwrap()
-                            .performance()
-                            .unwrap()
-                            .now();
-                        if now - fc.1 >= 1000.0 {
-                            let fps = ((fc.0 as f64) * 1000.0 / (now - fc.1)).round() as u32;
-                            reducer_clone.dispatch(GameAction::SetFPS(fps));
-                            fc.0 = 0;
-                            fc.1 = now;
-                        }
+                {
+                    let mut fc = fps_counter.borrow_mut();
+                    fc.0 += 1;
+                    let now = web_sys::window()
+                        .unwrap()
+                        .performance()
+                        .unwrap()
+                        .now();
+                    if now - fc.1 >= 1000.0 {
+                        let fps = ((fc.0 as f64) * 1000.0 / (now - fc.1)).round() as u32;
+                        reducer.dispatch(GameAction::SetFPS(fps));
+                        fc.0 = 0;
+                        fc.1 = now;
                     }
+                }
 
-                    let mut manager = manager_ref_clone.borrow_mut();
+                {
+                    let mut manager = manager_ref.borrow_mut();
 
                     let player_id_val = reducer_state.player_id.unwrap_or_else(Uuid::nil);
                     let piece_count = reducer_state
@@ -143,7 +117,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
                         &mut manager,
                         &reducer_state.state,
                         reducer_state.player_id,
-                        &canvas_ref_clone,
+                        &canvas_ref,
                         is_dragging,
                         reducer_state.mode.as_ref(),
                         piece_count,
@@ -151,42 +125,14 @@ pub fn game_view(props: &GameViewProps) -> Html {
                     );
 
                     if changed {
-                        zoom_state_clone.set(manager.zoom);
-                        cam_state_clone.set(manager.camera);
+                        zoom_state.set(manager.zoom);
+                        cam_state.set(manager.camera);
                     }
-                    frame_id_clone.set(*frame_id_clone + 1);
+                }
 
-                    schedule(
-                        raf_handle_clone,
-                        latest_state.clone(),
-                        manager_ref.clone(),
-                        canvas_ref.clone(),
-                        zoom_state,
-                        cam_state,
-                        frame_id,
-                        fps_counter,
-                        reducer,
-                    );
-                });
-
-                *raf_handle.borrow_mut() = Some(handle);
-            }
-
-            schedule(
-                raf_handle.clone(),
-                latest_state,
-                manager_ref,
-                canvas_ref.clone(),
-                zoom_state,
-                cam_state,
-                frame_id,
-                fps_counter,
-                reducer,
-            );
-
-            move || {
-                let _ = raf_handle.borrow_mut().take();
-            }
+                frame_id.set(*frame_id + 1);
+            });
+            move || drop(interval)
         });
     }
 
@@ -484,22 +430,22 @@ pub fn game_view(props: &GameViewProps) -> Html {
         });
     }
 
-    let player_id_val = props.reducer.player_id.unwrap_or_else(Uuid::nil);
     {
         let renderer_state = renderer_state.clone();
-        let mode = props.reducer.mode.clone();
+        let reducer = props.reducer.clone();
         use_effect_with(
             (
                 frame_id,
-                props.reducer.state.clone(),
-                (*selected_piece_id).clone(),
-                props.reducer.pm_queue.clone(),
                 cam_state.clone(),
                 zoom_state.clone(),
                 window_size.clone(),
-                mode,
+                reducer.state.clone(),
+                reducer.pm_queue.clone(),
+                reducer.mode.clone(),
+                reducer.player_id,
+                (*selected_piece_id).clone(),
             ),
-            move |(_, state, sid, pm_queue, cam, zoom, window_size, mode)| {
+            move |(_, cam, zoom, window_size, state, pm_queue, mode, player_id, sid)| {
                 if let Some(renderer) = renderer_state.as_ref() {
                     let mut ghosts = state.pieces.clone();
                     for pm in pm_queue {
@@ -509,7 +455,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
                     }
                     renderer.draw_with_ghosts(
                         state,
-                        player_id_val,
+                        player_id.unwrap_or_else(Uuid::nil),
                         *sid,
                         pm_queue,
                         &ghosts,
@@ -666,9 +612,11 @@ pub fn game_view(props: &GameViewProps) -> Html {
                             s.1 = false;
                         }
                     } else if let Some(touch) = e.touches().get(0) {
-                        let mut mgr = manager_ref.borrow_mut();
-                        mgr.last_touch_dist = None;
-                        mgr.last_touch_center = None;
+                        {
+                            let mut mgr = manager_ref.borrow_mut();
+                            mgr.last_touch_dist = None;
+                            mgr.last_touch_center = None;
+                        }
                         handle_input_move.emit((touch.client_x() as f64, touch.client_y() as f64));
                     }
                 })
