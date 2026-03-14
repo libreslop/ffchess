@@ -285,7 +285,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
                         manager.target_camera = manager.camera;
                     }
                     cam_state.set(manager.camera);
-                    manager.velocity = (dx, dy);
+                    manager.velocity = (-dx, -dy);
                     drag_start.set(Some((cx, cy, true)));
                 }
             }
@@ -604,10 +604,18 @@ pub fn game_view(props: &GameViewProps) -> Html {
                             }
                             mgr.last_touch_center = Some((cx, cy));
                             mgr.target_zoom = (mgr.target_zoom * factor).clamp(0.2, 2.0);
-                            cam_state.set(mgr.camera);
-                            zoom_state.set(mgr.zoom);
+                            mgr.zoom = mgr.target_zoom; // apply immediately for smooth pinch
+                            mgr.velocity = (0.0, 0.0);
+                            mgr.last_touch_dist = Some(dist);
+                            let new_cam = mgr.camera;
+                            let new_zoom = mgr.zoom;
+                            drop(mgr);
+                            cam_state.set(new_cam);
+                            zoom_state.set(new_zoom);
+                        } else {
+                            mgr.last_touch_dist = Some(dist);
+                            drop(mgr);
                         }
-                        mgr.last_touch_dist = Some(dist);
                         if let Ok(mut s) = latest_state.try_borrow_mut() {
                             s.1 = false;
                         }
@@ -628,11 +636,11 @@ pub fn game_view(props: &GameViewProps) -> Html {
                 let latest_state = latest_state.clone();
                 Callback::from(move |e: TouchEvent| {
                     e.prevent_default();
-                    let mut mgr = manager_ref.borrow_mut();
-                    mgr.last_touch_dist = None;
-                    mgr.last_touch_center = None;
-                    mgr.velocity = (0.0, 0.0);
-                    drop(mgr);
+                    {
+                        let mut mgr = manager_ref.borrow_mut();
+                        mgr.last_touch_dist = None;
+                        mgr.last_touch_center = None;
+                    }
                     drag_start.set(None);
                     if let Ok(mut s) = latest_state.try_borrow_mut() {
                         s.1 = false;

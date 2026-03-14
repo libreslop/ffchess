@@ -93,8 +93,8 @@ pub fn update_camera(
     // 2. Velocity (inertia)
     if !is_dragging {
         if manager.velocity.0.abs() > 0.1 || manager.velocity.1.abs() > 0.1 {
-            manager.camera.0 -= manager.velocity.0;
-            manager.camera.1 -= manager.velocity.1;
+            manager.camera.0 += manager.velocity.0;
+            manager.camera.1 += manager.velocity.1;
             manager.velocity.0 *= 0.94;
             manager.velocity.1 *= 0.94;
             manager.target_camera = manager.camera;
