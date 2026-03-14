@@ -509,6 +509,8 @@ pub fn app() -> Html {
         let is_dead = is_dead;
         let disconnected = reducer.disconnected;
 
+        let kits = reducer.mode.as_ref().map(|m| m.kits.clone()).unwrap_or_default();
+
         use_effect_with(
             (
                 is_joined,
@@ -516,25 +518,38 @@ pub fn app() -> Html {
                 *join_step,
                 *landing_cooldown,
                 disconnected,
+                kits.clone(),
             ),
-            move |&(joined, dead, step, lc, disc)| {
+            move |&(joined, dead, step, lc, disc, ref kits)| {
+                let on_join = on_join.clone();
+                let on_rejoin = on_rejoin.clone();
+                let rc_ref = rc_ref.clone();
+                let kits = kits.clone();
+
                 let listener =
                     EventListener::new(&web_sys::window().unwrap(), "keydown", move |e| {
                         let e = e.dyn_ref::<web_sys::KeyboardEvent>().unwrap();
-                        if e.key() == "Enter" {
+                        let key = e.key();
+                        if key == "Enter" {
                             if !joined && !dead {
                                 if step == 0 && lc == 0 && !disc {
                                     let name = (*player_name).trim().to_string();
                                     set_stored_name(&name);
                                     join_step.set(1);
                                     has_interacted.set(true);
-                                } else if step == 1 && !disc {
-                                    on_join.emit("Standard".to_string());
-                                    has_interacted.set(true);
                                 }
                             } else if dead && *rc_ref.borrow() == 0 && !disc {
                                 on_rejoin.emit(MouseEvent::new("click").unwrap());
                                 has_interacted.set(true);
+                            }
+                        } else if !joined && !dead && step == 1 && !disc {
+                            if let Ok(num) = key.parse::<usize>() {
+                                if num > 0 && num <= kits.len() {
+                                    if let Some(kit) = kits.get(num - 1) {
+                                        on_join.emit(kit.name.clone());
+                                        has_interacted.set(true);
+                                    }
+                                }
                             }
                         }
                     });

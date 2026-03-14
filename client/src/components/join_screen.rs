@@ -86,14 +86,26 @@ pub fn join_screen(props: &JoinScreenProps) -> Html {
                             </div>
                         }
 
-                        <div style="display: grid; grid-template-columns: 1fr; gap: 12px; width: 100%;">
+                        <div style="display: flex; gap: 12px; width: 100%; justify-content: center; flex-wrap: wrap;">
                             if let Some(mode) = &props.mode {
-                                { for mode.kits.iter().map(|kit| {
+                                { for mode.kits.iter().enumerate().map(|(idx, kit)| {
                                     let kit_name = kit.name.clone();
                                     let on_click = props.on_join.reform(move |_| kit_name.clone());
                                     html! {
-                                        <button disabled={is_disabled} onclick={on_click} style={format!("padding: 15px; cursor: {}; border-radius: 0; border: 2px solid rgba(255,255,255,0.5); background: rgba(255,255,255,0.1); color: #fff; font-weight: bold; transition: all 0.2s; opacity: {};", if is_disabled { "not-allowed" } else { "pointer" }, if is_disabled { "0.5" } else { "1.0" })}>
-                                            { kit.name.to_uppercase() }<br/><span style="font-weight: normal; font-size: 0.8em; color: #cbd5e1;">{ &kit.description }</span>
+                                        <button
+                                            disabled={is_disabled}
+                                            onclick={on_click}
+                                            style={format!(
+                                                "width: 150px; height: 150px; position: relative; padding: 12px; cursor: {}; border-radius: 0; border: 2px solid rgba(255,255,255,0.5); background: rgba(255,255,255,0.1); color: #fff; transition: all 0.2s; opacity: {}; display: flex; flex-direction: column; align-items: center; justify-content: center;",
+                                                if is_disabled { "not-allowed" } else { "pointer" },
+                                                if is_disabled { "0.5" } else { "1.0" }
+                                            )}
+                                        >
+                                            <span style="font-weight: 900; font-size: 1.1em; line-height: 1.1; text-align: center; margin-bottom: 8px;">{ kit.name.to_uppercase() }</span>
+                                            <span style="font-weight: normal; font-size: 0.8em; color: #cbd5e1; line-height: 1.2; text-align: center; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden;">{ &kit.description }</span>
+                                            <span style="position: absolute; bottom: 6px; right: 10px; font-size: 1em; font-weight: 900; opacity: 0.5;">
+                                                { idx + 1 }
+                                            </span>
                                         </button>
                                     }
                                 })}
