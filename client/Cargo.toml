@@ -36,6 +36,7 @@ gloo-net = "0.5"
 gloo-timers = { version = "0.3", features = ["futures"] }
 gloo-utils = "0.2"
 gloo-events = "0.2"
+gloo-render = "0.2"
 js-sys = "0.3"
 futures-util = "0.3"
 chrono = { version = "0.4", features = ["serde"] }

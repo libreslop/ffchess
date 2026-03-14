@@ -1,10 +1,9 @@
-use crate::camera::{CameraManager, update_camera};
+use crate::camera::{update_camera, CameraManager};
 use crate::canvas::Renderer;
 use crate::reducer::{GameAction, GameStateReducer, MsgSender, Pmove};
 use common::logic::is_within_board;
 use glam::IVec2;
 use gloo_events::EventListener;
-use gloo_timers::callback::Interval;
 use uuid::Uuid;
 use wasm_bindgen::JsCast;
 use web_sys::HtmlCanvasElement;
@@ -27,7 +26,8 @@ pub fn game_view(props: &GameViewProps) -> Html {
     let frame_id = use_state(|| 0u64);
     let drag_start = use_state(|| None::<(f64, f64, bool)>);
     let renderer_state = use_state(|| None::<Renderer>);
-    let fps_counter = use_mut_ref(|| 0u32);
+    let fps_counter =
+        use_mut_ref(|| (0u32, web_sys::window().unwrap().performance().unwrap().now()));
 
     let window_size = use_state(|| {
         (
@@ -77,19 +77,35 @@ pub fn game_view(props: &GameViewProps) -> Html {
         let manager_ref = manager_ref.clone();
         let latest_state = latest_state.clone();
         let fps_counter = fps_counter.clone();
+        let reducer = props.reducer.clone();
 
         use_effect(move || {
-            let interval = Interval::new(16, move || {
-                let (reducer, is_dragging) = {
+            let interval = gloo_timers::callback::Interval::new(16, move || {
+                let (reducer_state, is_dragging) = {
                     let s = latest_state.borrow();
                     (s.0.clone(), s.1)
                 };
-                *fps_counter.borrow_mut() += 1;
+
+                {
+                    let mut fc = fps_counter.borrow_mut();
+                    fc.0 += 1;
+                    let now = web_sys::window()
+                        .unwrap()
+                        .performance()
+                        .unwrap()
+                        .now();
+                    if now - fc.1 >= 1000.0 {
+                        let fps = ((fc.0 as f64) * 1000.0 / (now - fc.1)).round() as u32;
+                        reducer.dispatch(GameAction::SetFPS(fps));
+                        fc.0 = 0;
+                        fc.1 = now;
+                    }
+                }
 
                 let mut manager = manager_ref.borrow_mut();
 
-                let player_id_val = reducer.player_id.unwrap_or_else(Uuid::nil);
-                let piece_count = reducer
+                let player_id_val = reducer_state.player_id.unwrap_or_else(Uuid::nil);
+                let piece_count = reducer_state
                     .state
                     .pieces
                     .values()
@@ -98,13 +114,13 @@ pub fn game_view(props: &GameViewProps) -> Html {
 
                 let changed = update_camera(
                     &mut manager,
-                    &reducer.state,
-                    reducer.player_id,
+                    &reducer_state.state,
+                    reducer_state.player_id,
                     &canvas_ref,
                     is_dragging,
-                    reducer.mode.as_ref(),
+                    reducer_state.mode.as_ref(),
                     piece_count,
-                    reducer.is_dead,
+                    reducer_state.is_dead,
                 );
 
                 if changed {
@@ -112,19 +128,6 @@ pub fn game_view(props: &GameViewProps) -> Html {
                     cam_state.set(manager.camera);
                 }
                 frame_id.set(*frame_id + 1);
-            });
-            move || drop(interval)
-        });
-    }
-
-    {
-        let fps_counter = fps_counter.clone();
-        let reducer = props.reducer.clone();
-        use_effect(move || {
-            let interval = Interval::new(1000, move || {
-                let fps = *fps_counter.borrow();
-                *fps_counter.borrow_mut() = 0;
-                reducer.dispatch(GameAction::SetFPS(fps));
             });
             move || drop(interval)
         });
@@ -530,6 +533,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
             ontouchstart={
                 let handle_input_start = handle_input_start.clone();
                 let manager_ref = manager_ref.clone();
+                let drag_start = drag_start.clone();
                 let is_dead = props.reducer.is_dead;
                 Callback::from(move |e: TouchEvent| {
                     e.prevent_default();
@@ -548,6 +552,9 @@ pub fn game_view(props: &GameViewProps) -> Html {
                         let mut mgr = manager_ref.borrow_mut();
                         mgr.last_touch_dist = Some(dist);
                         mgr.last_touch_center = Some((cx, cy));
+                        mgr.velocity = (0.0, 0.0);
+                        drop(mgr);
+                        drag_start.set(None);
                     } else if let Some(touch) = e.touches().get(0) {
                         handle_input_start.emit((touch.client_x() as f64, touch.client_y() as f64, false));
                         let mut mgr = manager_ref.borrow_mut();
@@ -561,6 +568,8 @@ pub fn game_view(props: &GameViewProps) -> Html {
                let manager_ref = manager_ref.clone();
                 let canvas_ref = canvas_ref.clone();
                 let is_dead = props.reducer.is_dead;
+                let cam_state = cam_state.clone();
+                let zoom_state = zoom_state.clone();
                 Callback::from(move |e: TouchEvent| {
                     e.prevent_default();
                     if is_dead {
@@ -575,20 +584,20 @@ pub fn game_view(props: &GameViewProps) -> Html {
                         let mut mgr = manager_ref.borrow_mut();
                         if let Some(prev) = mgr.last_touch_dist {
                             let factor = (dist / prev).powf(0.8); // dampen sensitivity
-                            if let Some(canvas) = canvas_ref.cast::<HtmlCanvasElement>() {
-                                let cx = (t0.client_x() as f64 + t1.client_x() as f64) / 2.0;
-                                let cy = (t0.client_y() as f64 + t1.client_y() as f64) / 2.0;
-                                mgr.mouse_pos = (cx, cy);
-                                if let Some((pcx, pcy)) = mgr.last_touch_center {
-                                    let pan_dx = cx - pcx;
-                                    let pan_dy = cy - pcy;
-                                    mgr.camera.0 -= pan_dx;
-                                    mgr.camera.1 -= pan_dy;
-                                    mgr.target_camera = mgr.camera;
-                                }
-                                mgr.last_touch_center = Some((cx, cy));
+                            let cx = (t0.client_x() as f64 + t1.client_x() as f64) / 2.0;
+                            let cy = (t0.client_y() as f64 + t1.client_y() as f64) / 2.0;
+                            mgr.mouse_pos = (cx, cy);
+                            if let Some((pcx, pcy)) = mgr.last_touch_center {
+                                let pan_dx = cx - pcx;
+                                let pan_dy = cy - pcy;
+                                mgr.camera.0 -= pan_dx;
+                                mgr.camera.1 -= pan_dy;
+                                mgr.target_camera = mgr.camera;
                             }
+                            mgr.last_touch_center = Some((cx, cy));
                             mgr.target_zoom = (mgr.target_zoom * factor).clamp(0.2, 2.0);
+                            cam_state.set(mgr.camera);
+                            zoom_state.set(mgr.zoom);
                         }
                         mgr.last_touch_dist = Some(dist);
                     } else if let Some(touch) = e.touches().get(0) {
@@ -602,11 +611,15 @@ pub fn game_view(props: &GameViewProps) -> Html {
             ontouchend={
                 let handle_input_end = handle_input_end.clone();
                 let manager_ref = manager_ref.clone();
+                let drag_start = drag_start.clone();
                 Callback::from(move |e: TouchEvent| {
                     e.prevent_default();
                     let mut mgr = manager_ref.borrow_mut();
                     mgr.last_touch_dist = None;
                     mgr.last_touch_center = None;
+                    mgr.velocity = (0.0, 0.0);
+                    drop(mgr);
+                    drag_start.set(None);
                     if let Some(touch) = e.changed_touches().get(0) {
                         handle_input_end.emit((touch.client_x() as f64, touch.client_y() as f64, false));
                     }
