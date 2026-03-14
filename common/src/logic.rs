@@ -30,6 +30,7 @@ pub fn is_valid_move(
     is_capture: bool,
     board_size: i32,
     pieces: &HashMap<Uuid, Piece>,
+    moving_owner: Option<Uuid>,
 ) -> bool {
     if start == end || !is_within_board(end, board_size) {
         return false;
@@ -42,10 +43,26 @@ pub fn is_valid_move(
         &piece_config.move_paths
     };
 
+    let target_piece = pieces.values().find(|p| p.position == end);
+    if is_capture {
+        match target_piece {
+            Some(p) => {
+                if p.owner_id == moving_owner {
+                    return false; // Cannot capture your own pieces
+                }
+            }
+            None => return false, // Cannot capture an empty square
+        }
+    } else {
+        if target_piece.is_some() {
+            return false; // Cannot move to an occupied square
+        }
+    }
+
     for path in paths {
         for (i, &step) in path.iter().enumerate() {
             if step == diff {
-                // Check if path is blocked
+                // Check if path is blocked (intermediate squares)
                 for j in 0..i {
                     let intermediate_pos = start + path[j];
                     if pieces.values().any(|p| p.position == intermediate_pos) {

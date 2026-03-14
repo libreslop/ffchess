@@ -305,7 +305,7 @@ impl GameInstance {
         let mut game = self.game.write().await;
         let board_size = game.board_size;
 
-        let (piece_type, start_pos, cooldown_ms) = {
+        let (piece_type, start_pos, piece_owner, _cooldown) = {
             let piece = game.pieces.get(&piece_id).ok_or(GameError::PieceNotFound)?;
             if piece.owner_id != Some(player_id) {
                 return Err(GameError::NotYourPiece);
@@ -315,7 +315,7 @@ impl GameInstance {
             if elapsed < piece.cooldown_ms {
                 return Err(GameError::OnCooldown);
             }
-            (piece.piece_type.clone(), piece.position, piece.cooldown_ms)
+            (piece.piece_type.clone(), piece.position, piece.owner_id, piece.cooldown_ms)
         };
 
         let target_piece = game.pieces.values().find(|p| p.position == target).cloned();
@@ -338,9 +338,11 @@ impl GameInstance {
             start_pos,
             target,
             is_capture,
-            board_size,
+            game.board_size,
             &game.pieces,
+            piece_owner,
         ) {
+
             return Err(GameError::InvalidMove);
         }
 
@@ -645,14 +647,14 @@ impl GameInstance {
                     let mut possible_moves = Vec::new();
                     for path in &piece_config.capture_paths {
                         for step in path {
-                            if common::logic::is_valid_move(piece_config, p_pos, p_pos + *step, true, board_size, &game.pieces) {
+                            if common::logic::is_valid_move(piece_config, p_pos, p_pos + *step, true, board_size, &game.pieces, None) {
                                 possible_moves.push((p_pos + *step, true));
                             }
                         }
                     }
                     for path in &piece_config.move_paths {
                         for step in path {
-                            if common::logic::is_valid_move(piece_config, p_pos, p_pos + *step, false, board_size, &game.pieces) {
+                            if common::logic::is_valid_move(piece_config, p_pos, p_pos + *step, false, board_size, &game.pieces, None) {
                                 possible_moves.push((p_pos + *step, false));
                             }
                         }
@@ -702,7 +704,7 @@ impl GameInstance {
                         all_steps[rng.gen_range(0..all_steps.len())]
                     };
                     let target = p_pos + step;
-                    if common::logic::is_valid_move(piece_config, p_pos, target, false, board_size, &game.pieces) {
+                    if common::logic::is_valid_move(piece_config, p_pos, target, false, board_size, &game.pieces, None) {
                         if let Some(p) = game.pieces.get_mut(&id) {
                             p.position = target;
                             p.last_move_time = now;

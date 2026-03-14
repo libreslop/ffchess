@@ -45,22 +45,35 @@ fn test_pawn_movement() {
     let pieces = HashMap::new();
 
     // Multi-directional movement (adjacent only)
-    assert!(is_valid_move(&config, start, IVec2::new(0, -1), false, size, &pieces));
-    assert!(is_valid_move(&config, start, IVec2::new(0, 1), false, size, &pieces));
-    assert!(is_valid_move(&config, start, IVec2::new(-1, 0), false, size, &pieces));
-    assert!(is_valid_move(&config, start, IVec2::new(1, 0), false, size, &pieces));
+    assert!(is_valid_move(&config, start, IVec2::new(0, -1), false, size, &pieces, None));
+    assert!(is_valid_move(&config, start, IVec2::new(0, 1), false, size, &pieces, None));
+    assert!(is_valid_move(&config, start, IVec2::new(-1, 0), false, size, &pieces, None));
+    assert!(is_valid_move(&config, start, IVec2::new(1, 0), false, size, &pieces, None));
 
     // Diagonal movement NOT allowed without capture
-    assert!(!is_valid_move(&config, start, IVec2::new(1, 1), false, size, &pieces));
+    assert!(!is_valid_move(&config, start, IVec2::new(1, 1), false, size, &pieces, None));
 
-    // Multi-directional captures (diagonal only)
-    assert!(is_valid_move(&config, start, IVec2::new(1, -1), true, size, &pieces));
-    assert!(is_valid_move(&config, start, IVec2::new(-1, -1), true, size, &pieces));
-    assert!(is_valid_move(&config, start, IVec2::new(1, 1), true, size, &pieces));
-    assert!(is_valid_move(&config, start, IVec2::new(-1, 1), true, size, &pieces));
+    // Multi-directional captures (diagonal only) - should fail because target is empty
+    assert!(!is_valid_move(&config, start, IVec2::new(1, -1), true, size, &pieces, None));
+    assert!(!is_valid_move(&config, start, IVec2::new(-1, -1), true, size, &pieces, None));
+    assert!(!is_valid_move(&config, start, IVec2::new(1, 1), true, size, &pieces, None));
+    assert!(!is_valid_move(&config, start, IVec2::new(-1, 1), true, size, &pieces, None));
+
+    // Add some targets to test captures
+    let mut pieces = HashMap::new();
+    let target_id = Uuid::new_v4();
+    pieces.insert(target_id, Piece {
+        id: target_id,
+        owner_id: Some(Uuid::new_v4()), // Different owner
+        piece_type: "pawn".to_string(),
+        position: IVec2::new(1, 1),
+        last_move_time: 0,
+        cooldown_ms: 0,
+    });
+    assert!(is_valid_move(&config, start, IVec2::new(1, 1), true, size, &pieces, None));
 
     // Adjacent captures NOT allowed
-    assert!(!is_valid_move(&config, start, IVec2::new(0, -1), true, size, &pieces));
+    assert!(!is_valid_move(&config, start, IVec2::new(0, -1), true, size, &pieces, None));
 }
 
 #[test]
@@ -71,7 +84,7 @@ fn test_path_blocking() {
     let blocker_id = Uuid::new_v4();
     pieces.insert(blocker_id, Piece {
         id: blocker_id,
-        owner_id: None,
+        owner_id: Some(Uuid::new_v4()),
         piece_type: "pawn".to_string(),
         position: IVec2::new(0, 1),
         last_move_time: 0,
@@ -93,7 +106,7 @@ fn test_path_blocking() {
     };
 
     // Blocked path
-    assert!(!is_valid_move(&rook_config, start, IVec2::new(0, 2), false, size, &pieces));
+    assert!(!is_valid_move(&rook_config, start, IVec2::new(0, 2), false, size, &pieces, None));
     // Not blocked
-    assert!(is_valid_move(&rook_config, start, IVec2::new(0, 1), true, size, &pieces));
+    assert!(is_valid_move(&rook_config, start, IVec2::new(0, 1), true, size, &pieces, None));
 }

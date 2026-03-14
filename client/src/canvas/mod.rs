@@ -115,7 +115,7 @@ impl Renderer {
                     if is_friendly { continue; }
                     
                     let is_capture = target_piece.is_some();
-                    if is_valid_move(config, piece.position, t, is_capture, state.board_size, &state.pieces) {
+                    if is_valid_move(config, piece.position, t, is_capture, state.board_size, &state.pieces, piece.owner_id) {
                         self.ctx.fill_rect(x as f64 * self.tile_size + offset_x + 2.0, y as f64 * self.tile_size + offset_y + 2.0, self.tile_size - 4.0, self.tile_size - 4.0);
                     }
                 }

@@ -233,6 +233,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
                         ghosts.values().any(|p| p.position == target),
                         board_size,
                         &ghosts,
+                        piece.owner_id,
                     )
                 {
                     is_interactive = true;
@@ -390,6 +391,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
                                 is_capture,
                                 reducer.state.board_size,
                                 &current_ghosts,
+                                p.owner_id,
                             ) {
                                 reducer.dispatch(GameAction::AddPmove(Pmove {
                                     piece_id: sid,
