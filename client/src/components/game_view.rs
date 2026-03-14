@@ -591,6 +591,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
                 let handle_input_start = handle_input_start.clone();
                 let manager_ref = manager_ref.clone();
                 let drag_start = drag_start.clone();
+                let latest_state = latest_state.clone();
                 let is_dead = props.reducer.is_dead;
                 Callback::from(move |e: TouchEvent| {
                     e.prevent_default();
@@ -612,6 +613,9 @@ pub fn game_view(props: &GameViewProps) -> Html {
                         mgr.velocity = (0.0, 0.0);
                         drop(mgr);
                         drag_start.set(None);
+                        if let Ok(mut s) = latest_state.try_borrow_mut() {
+                            s.1 = false;
+                        }
                     } else if let Some(touch) = e.touches().get(0) {
                         handle_input_start.emit((touch.client_x() as f64, touch.client_y() as f64, false));
                         let mut mgr = manager_ref.borrow_mut();
@@ -627,6 +631,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
                 let is_dead = props.reducer.is_dead;
                 let cam_state = cam_state.clone();
                 let zoom_state = zoom_state.clone();
+                let latest_state = latest_state.clone();
                 Callback::from(move |e: TouchEvent| {
                     e.prevent_default();
                     if is_dead {
@@ -657,6 +662,9 @@ pub fn game_view(props: &GameViewProps) -> Html {
                             zoom_state.set(mgr.zoom);
                         }
                         mgr.last_touch_dist = Some(dist);
+                        if let Ok(mut s) = latest_state.try_borrow_mut() {
+                            s.1 = false;
+                        }
                     } else if let Some(touch) = e.touches().get(0) {
                         let mut mgr = manager_ref.borrow_mut();
                         mgr.last_touch_dist = None;
@@ -669,6 +677,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
                 let handle_input_end = handle_input_end.clone();
                 let manager_ref = manager_ref.clone();
                 let drag_start = drag_start.clone();
+                let latest_state = latest_state.clone();
                 Callback::from(move |e: TouchEvent| {
                     e.prevent_default();
                     let mut mgr = manager_ref.borrow_mut();
@@ -677,6 +686,9 @@ pub fn game_view(props: &GameViewProps) -> Html {
                     mgr.velocity = (0.0, 0.0);
                     drop(mgr);
                     drag_start.set(None);
+                    if let Ok(mut s) = latest_state.try_borrow_mut() {
+                        s.1 = false;
+                    }
                     if let Some(touch) = e.changed_touches().get(0) {
                         handle_input_end.emit((touch.client_x() as f64, touch.client_y() as f64, false));
                     }
