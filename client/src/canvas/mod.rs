@@ -3,7 +3,7 @@ pub mod types;
 
 use crate::reducer::Pmove;
 use common::logic::{evaluate_expression, is_valid_move, is_within_board};
-use common::models::{GameState, Piece, PieceConfig};
+use common::models::{GameState, Piece, PieceConfig, ShopConfig};
 use glam::IVec2;
 use std::collections::HashMap;
 pub use types::*;
@@ -13,7 +13,11 @@ use wasm_bindgen::JsCast;
 use web_sys::HtmlCanvasElement;
 
 impl Renderer {
-    pub fn new(canvas: HtmlCanvasElement, piece_configs: HashMap<String, PieceConfig>) -> Self {
+    pub fn new(
+        canvas: HtmlCanvasElement,
+        piece_configs: HashMap<String, PieceConfig>,
+        shop_configs: HashMap<String, ShopConfig>,
+    ) -> Self {
         let ctx = canvas
             .get_context("2d")
             .unwrap()
@@ -27,6 +31,7 @@ impl Renderer {
             tile_size: 40.0,
             zoom: 1.0,
             piece_configs,
+            shop_configs,
         }
     }
 
@@ -42,6 +47,7 @@ impl Renderer {
         height: f64,
         zoom: f64,
         mode: Option<&common::models::GameModeClientConfig>,
+        shop_configs: &HashMap<String, ShopConfig>,
     ) {
         let tile_size = 40.0 * zoom;
         let player_king = state
@@ -157,7 +163,12 @@ impl Renderer {
         // Shops
         for shop in &state.shops {
             if (shop.position - king_pos).abs().max_element() <= view_radius_squares + 2 {
-                self.ctx.set_fill_style_str("#fde047");
+                let color = shop_configs
+                    .get(&shop.shop_id)
+                    .and_then(|c| c.color.as_ref())
+                    .map(|s| s.as_str())
+                    .unwrap_or("#fde047");
+                self.ctx.set_fill_style_str(color);
                 self.ctx.fill_rect(
                     shop.position.x as f64 * tile_size + offset_x + 5.0 * zoom,
                     shop.position.y as f64 * tile_size + offset_y + 5.0 * zoom,

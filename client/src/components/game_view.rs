@@ -90,11 +90,16 @@ pub fn game_view(props: &GameViewProps) -> Html {
     {
         let renderer_state = renderer_state.clone();
         let piece_configs = props.reducer.piece_configs.clone();
+        let shop_configs = props.reducer.shop_configs.clone();
         use_effect_with(
-            (canvas_ref.clone(), piece_configs),
-            move |(canvas_ref, piece_configs)| {
+            (canvas_ref.clone(), piece_configs, shop_configs),
+            move |(canvas_ref, piece_configs, shop_configs)| {
                 if let Some(canvas) = canvas_ref.cast::<HtmlCanvasElement>() {
-                    renderer_state.set(Some(Renderer::new(canvas, piece_configs.clone())));
+                    renderer_state.set(Some(Renderer::new(
+                        canvas,
+                        piece_configs.clone(),
+                        shop_configs.clone(),
+                    )));
                 }
                 || ()
             },
@@ -218,6 +223,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
     {
         let renderer_state = renderer_state.clone();
         let reducer = props.reducer.clone();
+        let shop_configs = props.reducer.shop_configs.clone();
         use_effect_with(
             (
                 *frame_id,
@@ -229,8 +235,9 @@ pub fn game_view(props: &GameViewProps) -> Html {
                 reducer.mode.clone(),
                 reducer.player_id,
                 (*selected_piece_id).clone(),
+                shop_configs,
             ),
-            move |(_, cam, zoom, window_size, state, pm_queue, mode, player_id, sid)| {
+            move |(_, cam, zoom, window_size, state, pm_queue, mode, player_id, sid, shop_configs)| {
                 if let Some(renderer) = renderer_state.as_ref() {
                     let mut ghosts = state.pieces.clone();
                     for pm in pm_queue {
@@ -249,6 +256,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
                         window_size.1,
                         **zoom,
                         mode.as_ref(),
+                        shop_configs,
                     );
                 }
                 || ()
@@ -546,20 +554,22 @@ pub fn game_view(props: &GameViewProps) -> Html {
         .filter(|p| p.owner_id == Some(player_id))
         .collect();
 
-    let shop_on_which_player_is = props
-        .reducer
-        .state
-        .shops
-        .iter()
-        .find(|s| player_pieces.iter().any(|p| p.position == s.position));
+    let mut active_shops = Vec::new();
+    for shop in &props.reducer.state.shops {
+        if let Some(p) = player_pieces.iter().find(|p| p.position == shop.position) {
+            let tile_size = props.globals.tile_size_px;
+            let px_x = p.position.x as f64 * tile_size + tile_size / 2.0;
+            let px_y = p.position.y as f64 * tile_size + tile_size / 2.0;
+            let dx = px_x - cam_state.0;
+            let dy = px_y - cam_state.1;
+            let dist_sq = dx * dx + dy * dy;
+            active_shops.push((shop, (*p).clone(), dist_sq));
+        }
+    }
+    active_shops.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal));
 
-    let piece_on_shop = shop_on_which_player_is.and_then(|s| {
-        player_pieces
-            .iter()
-            .find(|p| p.position == s.position)
-            .cloned()
-            .cloned()
-    });
+    let shop_on_which_player_is = active_shops.first().map(|(s, _, _)| *s);
+    let piece_on_shop = active_shops.first().map(|(_, p, _)| p.clone());
 
     html! {
         <div class="fixed inset-0 bg-slate-100 overflow-hidden touch-none"

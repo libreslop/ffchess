@@ -1,4 +1,4 @@
-use common::models::{GameState, Piece, PieceConfig};
+use common::models::{GameState, Piece, PieceConfig, ShopConfig};
 use std::collections::HashMap;
 use uuid::Uuid;
 use web_sys::CanvasRenderingContext2d;
@@ -11,6 +11,7 @@ pub struct Renderer {
     pub tile_size: f64,
     pub zoom: f64,
     pub piece_configs: HashMap<String, PieceConfig>,
+    pub shop_configs: HashMap<String, ShopConfig>,
 }
 
 pub struct PieceDrawParams<'a> {

@@ -34,6 +34,7 @@ pub struct ShopConfig {
     pub id: String,
     pub display_name: String,
     pub default_uses: u32,
+    pub color: Option<String>,
     pub groups: Vec<ShopGroupConfig>,
     pub default_group: ShopGroupConfig,
 }

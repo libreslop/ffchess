@@ -2,6 +2,7 @@
     "id": "spawn_shop",
     "display_name": "Mercenary Outpost",
     "default_uses": 3,
+    "color": "#3b82f6",
     "groups": [],
     "default_group": {
         "items": [

@@ -14,13 +14,18 @@
     "kits": [
         {
             "name": "Standard",
-            "description": "Standard Start",
-            "pieces": ["king", "pawn", "knight"]
+            "description": "2 Pawns, 2 Knights",
+            "pieces": ["king", "pawn", "pawn", "knight", "knight"]
         },
         {
             "name": "Scout",
-            "description": "Fast Start",
-            "pieces": ["king", "bishop"]
+            "description": "1 Pawn, 2 Bishops",
+            "pieces": ["king", "pawn", "bishop", "bishop"]
+        },
+        {
+            "name": "Tank",
+            "description": "1 Pawn, 1 Rook",
+            "pieces": ["king", "rook", "pawn"]
         }
     ],
     "hooks": [

@@ -40,9 +40,11 @@ pub fn shop_ui(props: &ShopUIProps) -> Html {
     }
 
     html! {
-        <div style="position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%); background: rgba(255, 255, 255, 0.9); padding: 15px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.2); display: flex; flex-direction: column; align-items: center; gap: 10px; z-index: 50; width: 90%; max-width: 600px;">
-            <span style="font-weight: bold; color: #1e3a8a; font-size: 0.9em; text-align: center;">{ &props.shop_config.display_name }</span>
-            <div style="display: flex; gap: 8px; flex-wrap: wrap; justify-content: center;">
+        <div style="position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 8px; z-index: 50; width: 95%; max-width: 800px; pointer-events: none;">
+            <span style="font-weight: 800; color: #1e293b; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.15em; pointer-events: auto; background: #ffffff; padding: 2px 8px; border: 2px solid #1e293b; border-bottom: none;">
+                { &props.shop_config.display_name }
+            </span>
+            <div style="display: flex; gap: 4px; flex-wrap: wrap; justify-content: center; pointer-events: auto;">
                 {
                     group.items.iter().enumerate().map(|(idx, item)| {
                         let price = common::logic::evaluate_expression(&item.price_expr, &vars) as u64;
@@ -61,13 +63,19 @@ pub fn shop_ui(props: &ShopUIProps) -> Html {
                                 onclick={on_buy}
                                 disabled={!can_afford}
                                 style={format!(
-                                    "padding: 6px 12px; cursor: {}; border-radius: 6px; border: 1px solid #ddd; background: {}; color: {}; font-size: 0.85em; white-space: nowrap;",
+                                    "display: flex; flex-direction: column; align-items: center; justify-content: center; width: 70px; height: 70px; padding: 2px; cursor: {}; border-radius: 0; border: 2px solid {}; background: {}; color: {}; transition: all 0.1s; aspect-ratio: 1/1;",
                                     if can_afford { "pointer" } else { "not-allowed" },
-                                    if can_afford { "white" } else { "#f1f5f9" },
-                                    if can_afford { "black" } else { "#94a3b8" }
+                                    if can_afford { "#1e293b" } else { "#94a3b8" },
+                                    if can_afford { "#ffffff" } else { "#f1f5f9" },
+                                    if can_afford { "#0f172a" } else { "#94a3b8" }
                                 )}
                             >
-                                {format!("{} ({})", item.display_name, price)}
+                                <span style="font-size: 0.7rem; font-weight: 900; line-height: 1.1; text-align: center; margin-bottom: 2px; text-transform: uppercase;">
+                                    { &item.display_name }
+                                </span>
+                                <span style="font-size: 0.65rem; font-family: monospace; font-weight: 600;">
+                                    { price }
+                                </span>
                             </button>
                         }
                     }).collect::<Html>()

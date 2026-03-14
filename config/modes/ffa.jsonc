@@ -24,19 +24,14 @@
             "pieces": ["king", "pawn", "pawn", "knight", "knight"]
         },
         {
-            "name": "Shield",
-            "description": "6 Pawns",
-            "pieces": ["king", "pawn", "pawn", "pawn", "pawn", "pawn", "pawn"]
-        },
-        {
             "name": "Scout",
             "description": "1 Pawn, 2 Bishops",
             "pieces": ["king", "pawn", "bishop", "bishop"]
         },
         {
             "name": "Tank",
-            "description": "1 Rook",
-            "pieces": ["king", "rook"]
+            "description": "1 Pawn, 1 Rook",
+            "pieces": ["king", "rook", "pawn"]
         }
     ],
     "hooks": [

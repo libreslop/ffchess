@@ -2,6 +2,7 @@
     "id": "upgrade_shop",
     "display_name": "Upgrade Forge",
     "default_uses": 3,
+    "color": "#fde047",
     "groups": [
         {
             "applies_to": ["pawn"],
