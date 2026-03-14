@@ -264,10 +264,10 @@ impl Renderer {
             if (ghost.position - king_pos).abs().max_element() <= view_radius_squares + 2 {
                 if let Some(real) = state.pieces.get(id) {
                     if real.position != ghost.position {
-                        // Draw real (server) piece faded
+                        // Draw ghost (predicted) piece faded
                         self.draw_piece(
                             PieceDrawParams {
-                                piece: real,
+                                piece: ghost,
                                 player_id,
                                 offset_x,
                                 offset_y,
@@ -279,10 +279,10 @@ impl Renderer {
                             zoom,
                         );
 
-                        // Draw ghost (predicted) piece solid
+                        // Draw real (server) piece solid
                         self.draw_piece(
                             PieceDrawParams {
-                                piece: ghost,
+                                piece: real,
                                 player_id,
                                 offset_x,
                                 offset_y,
