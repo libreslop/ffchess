@@ -96,6 +96,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
                     is_dragging,
                     reducer.mode.as_ref(),
                     piece_count,
+                    reducer.is_dead,
                 );
 
                 if changed {
@@ -133,6 +134,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
                     let delta = e.delta_y();
                     let factor = 1.2f64.powf(-delta / 100.0);
                     let mut manager = manager_ref.borrow_mut();
+                    manager.mouse_pos = (e.client_x() as f64, e.client_y() as f64);
                     manager.target_zoom = (manager.target_zoom * factor).clamp(0.2, 2.0);
                 });
                 return Box::new(move || drop(listener)) as Box<dyn FnOnce()>;
@@ -161,6 +163,15 @@ pub fn game_view(props: &GameViewProps) -> Html {
                 ));
             });
             || drop(listener)
+        });
+    }
+
+    {
+        let selected_piece_id = selected_piece_id.clone();
+        let player_id = props.reducer.player_id;
+        use_effect_with(player_id, move |_| {
+            selected_piece_id.set(None);
+            || ()
         });
     }
 
@@ -417,9 +428,6 @@ pub fn game_view(props: &GameViewProps) -> Html {
         player_pieces.iter().find(|p| p.position == s.position).cloned().cloned()
     });
 
-    let player_id_val = props.reducer.player_id.unwrap_or_else(Uuid::nil);
-    let is_alive = player_id_val != Uuid::nil() && props.reducer.state.players.contains_key(&player_id_val);
-
     html! {
         <div class="fixed inset-0 bg-slate-100 overflow-hidden touch-none"
              onmousedown={
@@ -480,11 +488,6 @@ pub fn game_view(props: &GameViewProps) -> Html {
                 </div>
             </div>
 
-            <crate::components::leaderboard::Leaderboard 
-                players={props.reducer.state.players.values().cloned().collect::<Vec<_>>()} 
-                self_id={player_id} 
-            />
-
             if let Some(shop) = shop_on_which_player_is {
                 if let Some(shop_config) = props.reducer.shop_configs.get(&shop.shop_id) {
                     <crate::components::shop_ui::ShopUI 
@@ -508,39 +511,6 @@ pub fn game_view(props: &GameViewProps) -> Html {
                 title={props.reducer.disconnected_title.clone()}
                 msg={props.reducer.disconnected_msg.clone()}
             />
-
-            if props.reducer.disconnected && !props.reducer.fatal_error {
-                <crate::components::disconnected_screen::DisconnectedScreen 
-                    show={true}
-                    disconnected={true}
-                    title={props.reducer.disconnected_title.clone()}
-                    msg={props.reducer.disconnected_msg.clone()}
-                />
-            }
-
-            if is_alive {
-                <div
-                    data-testid="stats-overlay"
-                    class="pointer-events-none"
-                    style="
-                        position: fixed;
-                        right: 4px;
-                        bottom: 4px;
-                        padding: 0;
-                        background: transparent;
-                        color: #000;
-                        font-family: monospace;
-                        font-size: 11px;
-                        line-height: 1.2;
-                        text-align: right;
-                        z-index: 50;
-                    "
-                >
-                    <div>{format!("FPS: {}", props.reducer.fps)}</div>
-                    <div>{format!("Ping: {}ms", props.reducer.ping_ms)}</div>
-                    <div>{format!("Board: {}x{}", props.reducer.state.board_size, props.reducer.state.board_size)}</div>
-                </div>
-            }
         </div>
     }
 }

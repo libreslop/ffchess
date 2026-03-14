@@ -35,34 +35,16 @@ pub fn app() -> Html {
 
     {
         let is_joining = is_joining.clone();
-        let reducer_state = reducer.clone();
         use_effect_with(
             (
-                reducer_state.player_id,
-                reducer_state.error.clone(),
-                reducer_state.disconnected,
+                reducer.player_id,
+                reducer.error.clone(),
+                reducer.disconnected,
             ),
             move |_| {
                 is_joining.set(false);
             },
         );
-    }
-
-    {
-        let show_disconnected = show_disconnected.clone();
-        let disconnected = reducer.disconnected && !reducer.fatal_error;
-        use_effect_with(disconnected, move |&disconnected| {
-            if disconnected {
-                show_disconnected.set(true);
-                Box::new(|| ()) as Box<dyn FnOnce()>
-            } else {
-                let sd = show_disconnected.clone();
-                let handle = Timeout::new(300, move || {
-                    sd.set(false);
-                });
-                Box::new(move || drop(handle)) as Box<dyn FnOnce()>
-            }
-        });
     }
 
     {
@@ -276,10 +258,26 @@ pub fn app() -> Html {
         })
     };
 
-    let is_joined = reducer.player_id.is_some() && reducer.player_id != Some(Uuid::nil());
     let player_id = reducer.player_id.unwrap_or_else(Uuid::nil);
-    let player = reducer.state.players.get(&player_id);
-    let is_dead = is_joined && player.is_none();
+    let is_dead = reducer.is_dead;
+    let is_joined = (reducer.player_id.is_some() && reducer.player_id != Some(Uuid::nil())) || is_dead;
+
+    {
+        let show_disconnected = show_disconnected.clone();
+        let should_show = reducer.disconnected && !reducer.fatal_error && is_joined && !is_dead;
+        use_effect_with(should_show, move |&should| {
+            if should {
+                show_disconnected.set(true);
+                Box::new(|| ()) as Box<dyn FnOnce()>
+            } else {
+                let sd = show_disconnected.clone();
+                let handle = Timeout::new(300, move || {
+                    sd.set(false);
+                });
+                Box::new(move || drop(handle)) as Box<dyn FnOnce()>
+            }
+        });
+    }
 
     let rejoin_cooldown = use_state(|| 5);
     let rc_ref = use_mut_ref(|| 5);
@@ -319,14 +317,7 @@ pub fn app() -> Html {
                 if reducer.disconnected {
                     return;
                 }
-                reducer.dispatch(GameAction::SetInit {
-                    player_id: Uuid::nil(),
-                    session_secret: Uuid::nil(),
-                    state: reducer.state.clone(),
-                    mode: reducer.mode.clone().unwrap_or_else(|| panic!("No mode")),
-                    pieces: reducer.piece_configs.clone(),
-                    shops: reducer.shop_configs.clone(),
-                });
+                reducer.dispatch(GameAction::Reset);
                 join_step.set(1);
             }
         })
@@ -343,33 +334,37 @@ pub fn app() -> Html {
         let rc_ref = rc_ref.clone();
         let is_joined = is_joined;
         let is_dead = is_dead;
+        let disconnected = reducer.disconnected;
 
-        use_effect_with((is_joined, is_dead, *join_step), move |&(joined, dead, step)| {
-            let listener = EventListener::new(&web_sys::window().unwrap(), "keydown", move |e| {
-                let e = e.dyn_ref::<web_sys::KeyboardEvent>().unwrap();
-                if e.key() == "Enter" {
-                    if !joined {
-                        if step == 0 && *landing_cooldown == 0 && !reducer.disconnected {
-                            let mut name = (*player_name).trim().to_string();
-                            if name.is_empty() {
-                                name = generate_random_name();
-                                player_name.set(name.clone());
+        use_effect_with(
+            (is_joined, is_dead, *join_step, *landing_cooldown, disconnected),
+            move |&(joined, dead, step, lc, disc)| {
+                let listener = EventListener::new(&web_sys::window().unwrap(), "keydown", move |e| {
+                    let e = e.dyn_ref::<web_sys::KeyboardEvent>().unwrap();
+                    if e.key() == "Enter" {
+                        if !joined && !dead {
+                            if step == 0 && lc == 0 && !disc {
+                                let mut name = (*player_name).trim().to_string();
+                                if name.is_empty() {
+                                    name = generate_random_name();
+                                    player_name.set(name.clone());
+                                }
+                                set_stored_name(&name);
+                                join_step.set(1);
+                                has_interacted.set(true);
+                            } else if step == 1 && !disc {
+                                on_join.emit("Standard".to_string());
+                                has_interacted.set(true);
                             }
-                            set_stored_name(&name);
-                            join_step.set(1);
-                            has_interacted.set(true);
-                        } else if step == 1 && !reducer.disconnected {
-                            on_join.emit("Standard".to_string());
+                        } else if dead && *rc_ref.borrow() == 0 && !disc {
+                            on_rejoin.emit(MouseEvent::new("click").unwrap());
                             has_interacted.set(true);
                         }
-                    } else if dead && *rc_ref.borrow() == 0 && !reducer.disconnected {
-                        on_rejoin.emit(MouseEvent::new("click").unwrap());
-                        has_interacted.set(true);
                     }
-                }
-            });
-            move || drop(listener)
-        });
+                });
+                move || drop(listener)
+            }
+        );
     }
 
     html! {
@@ -382,7 +377,7 @@ pub fn app() -> Html {
             "}</style>
 
             if let Some(sender) = (*tx).clone() {
-                <GameView key={player_id.to_string()} reducer={reducer.clone()} tx={sender} />
+                <GameView key="stable-game-view" reducer={reducer.clone()} tx={sender} />
             } else if !*show_disconnected || !*has_interacted {
                 <div style="position: absolute; inset: 0; background: #f0f2f5; display: flex; align-items: center; justify-content: center; z-index: 200;">
                     <div style="text-align: center;">
@@ -392,10 +387,10 @@ pub fn app() -> Html {
                 </div>
             }
 
-            if *show_disconnected && reducer.disconnected && !reducer.fatal_error && (is_joined || *has_interacted) {
+            if *show_disconnected {
                 <DisconnectedScreen
                     show={true}
-                    disconnected={true}
+                    disconnected={reducer.disconnected && !reducer.fatal_error && is_joined && !is_dead}
                     title={reducer.disconnected_title.clone()}
                     msg={reducer.disconnected_msg.clone()}
                 />
@@ -411,9 +406,32 @@ pub fn app() -> Html {
                 if is_dead {
                     <DefeatScreen score={reducer.last_score} kills={reducer.last_kills} captured={reducer.last_captured} survival_secs={reducer.last_survival_secs} on_rejoin={on_rejoin} rejoin_cooldown={*rejoin_cooldown} />
                 } else {
-                    <Leaderboard players={reducer.state.players.values().cloned().collect::<Vec<_>>()} self_id={player_id} />
+                    <div data-testid="in-game-hud">
+                        <Leaderboard players={reducer.state.players.values().cloned().collect::<Vec<_>>()} self_id={player_id} />
+                        <div
+                            data-testid="stats-overlay"
+                            class="pointer-events-none"
+                            style="
+                                position: fixed;
+                                right: 4px;
+                                bottom: 4px;
+                                padding: 0;
+                                background: transparent;
+                                color: #000;
+                                font-family: monospace;
+                                font-size: 11px;
+                                line-height: 1.2;
+                                text-align: right;
+                                z-index: 50;
+                            "
+                        >
+                            <div>{format!("FPS: {}", reducer.fps)}</div>
+                            <div>{format!("Ping: {}ms", reducer.ping_ms)}</div>
+                            <div>{format!("Board: {}x{}", reducer.state.board_size, reducer.state.board_size)}</div>
+                        </div>
+                    </div>
                 }
-            } else if tx.is_some() {
+            } else if tx.is_some() && !is_dead {
                 <JoinScreen
                     player_name={(*player_name).clone()}
                     on_name_input={on_name_input}

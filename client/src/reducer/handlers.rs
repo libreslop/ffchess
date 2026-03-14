@@ -79,4 +79,10 @@ pub fn handle_update_state(
     for id in removed_players {
         next.state.players.remove(&id);
     }
+
+    if let Some(player_id) = next.player_id {
+        if player_id != Uuid::nil() {
+            next.is_dead = !next.state.players.contains_key(&player_id);
+        }
+    }
 }

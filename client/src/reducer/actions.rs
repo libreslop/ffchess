@@ -39,4 +39,5 @@ pub enum GameAction {
         title: Option<String>,
         msg: Option<String>,
     },
+    Reset,
 }

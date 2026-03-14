@@ -27,11 +27,18 @@ impl Reducible for GameStateReducer {
                 next.pm_queue.clear();
                 next.error = None;
                 next.disconnected = false;
+
                 if player_id != Uuid::nil() {
                     next.fatal_error = false;
-                }
-                if let Some(p) = next.state.players.get(&player_id) {
-                    next.last_score = p.score;
+                    if let Some(p) = next.state.players.get(&player_id) {
+                        next.last_score = p.score;
+                        next.is_dead = false;
+                    } else {
+                        // If player is not in state yet, don't immediately set is_dead to true
+                        // as it might be a race condition during Init.
+                        // The next UpdateState will correct it if they are truly gone.
+                        next.is_dead = false;
+                    }
                 }
             }
             GameAction::UpdateState {
@@ -80,6 +87,7 @@ impl Reducible for GameStateReducer {
                 next.last_kills = kills;
                 next.last_captured = pieces_captured;
                 next.last_survival_secs = time_survived_secs;
+                next.is_dead = true;
             }
             GameAction::AddPmove(pm) => {
                 next.pm_queue.push(pm);
@@ -148,6 +156,17 @@ impl Reducible for GameStateReducer {
                 next.fatal_error = is_fatal;
                 next.disconnected_title = title;
                 next.disconnected_msg = msg;
+            }
+            GameAction::Reset => {
+                next.player_id = Some(Uuid::nil());
+                next.session_secret = None;
+                next.state = common::models::GameState::default();
+                next.pm_queue.clear();
+                next.error = None;
+                next.disconnected = false;
+                next.fatal_error = false;
+                next.is_dead = false;
+                // keep next.mode, next.piece_configs, next.shop_configs
             }
         }
         next.into()

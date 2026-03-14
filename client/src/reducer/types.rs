@@ -31,6 +31,7 @@ pub struct GameStateReducer {
     pub fps: u32,
     pub disconnected: bool,
     pub fatal_error: bool,
+    pub is_dead: bool,
     pub disconnected_title: Option<String>,
     pub disconnected_msg: Option<String>,
 }
