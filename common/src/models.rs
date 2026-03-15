@@ -24,7 +24,6 @@ pub struct ShopItemConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ShopGroupConfig {
-    #[serde(default)]
     pub applies_to: Vec<String>,
     pub items: Vec<ShopItemConfig>,
 }
@@ -103,9 +102,7 @@ pub struct Piece {
     pub owner_id: Option<Uuid>, // None for NPCs
     pub piece_type: String,
     pub position: IVec2,
-    #[serde(skip_serializing, default)]
     pub last_move_time: i64, // Milliseconds timestamp
-    #[serde(skip_serializing, default)]
     pub cooldown_ms: i64,
 }
 

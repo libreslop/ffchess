@@ -50,8 +50,9 @@ impl ConfigManager {
         {
             let content =
                 std::fs::read_to_string(entry.path()).expect("Failed to read piece config");
-            let config: PieceConfig = parse_jsonc(&content, entry.path());
-            pieces.insert(config.id.clone(), config);
+            let id = file_stem(entry.path());
+            let config: PieceConfig = parse_jsonc_with_id(&content, entry.path(), &id);
+            pieces.insert(id, config);
         }
 
         // Load shops
@@ -66,8 +67,9 @@ impl ConfigManager {
         {
             let content =
                 std::fs::read_to_string(entry.path()).expect("Failed to read shop config");
-            let config: ShopConfig = parse_jsonc(&content, entry.path());
-            shops.insert(config.id.clone(), config);
+            let id = file_stem(entry.path());
+            let config: ShopConfig = parse_shop_jsonc_with_id(&content, entry.path(), &id);
+            shops.insert(id, config);
         }
 
         // Load modes
@@ -82,8 +84,9 @@ impl ConfigManager {
         {
             let content =
                 std::fs::read_to_string(entry.path()).expect("Failed to read mode config");
-            let config: GameModeConfig = parse_jsonc(&content, entry.path());
-            modes.insert(config.id.clone(), config);
+            let id = file_stem(entry.path());
+            let config: GameModeConfig = parse_jsonc_with_id(&content, entry.path(), &id);
+            modes.insert(id, config);
         }
 
         // Load server global name pool
@@ -121,4 +124,60 @@ fn parse_jsonc<T: DeserializeOwned>(content: &str, path: &Path) -> T {
     serde_json::from_value(value)
         .map_err(|e| format!("Failed to deserialize config {:?}: {}", path, e))
         .unwrap()
+}
+
+fn parse_jsonc_with_id<T: DeserializeOwned>(
+    content: &str,
+    path: &Path,
+    id: &str,
+) -> T {
+    let mut value = parse_to_serde_value(content, &Default::default())
+        .map_err(|e| format!("Failed to parse config {:?}: {}", path, e))
+        .unwrap()
+        .unwrap_or_else(|| panic!("Failed to parse config {:?}: empty document", path));
+
+    if let serde_json::Value::Object(obj) = &mut value {
+        obj.insert("id".to_string(), serde_json::Value::String(id.to_string()));
+    } else {
+        panic!("Expected object in config {:?}", path);
+    }
+
+    serde_json::from_value(value)
+        .map_err(|e| format!("Failed to deserialize config {:?}: {}", path, e))
+        .unwrap()
+}
+
+fn parse_shop_jsonc_with_id(
+    content: &str,
+    path: &Path,
+    id: &str,
+) -> ShopConfig {
+    let mut value = parse_to_serde_value(content, &Default::default())
+        .map_err(|e| format!("Failed to parse config {:?}: {}", path, e))
+        .unwrap()
+        .unwrap_or_else(|| panic!("Failed to parse config {:?}: empty document", path));
+
+    if let serde_json::Value::Object(obj) = &mut value {
+        obj.insert("id".to_string(), serde_json::Value::String(id.to_string()));
+        if let Some(default_group) = obj.get_mut("default_group") {
+            if let serde_json::Value::Object(group_obj) = default_group {
+                group_obj
+                    .entry("applies_to")
+                    .or_insert_with(|| serde_json::Value::Array(vec![]));
+            }
+        }
+    } else {
+        panic!("Expected object in config {:?}", path);
+    }
+
+    serde_json::from_value(value)
+        .map_err(|e| format!("Failed to deserialize config {:?}: {}", path, e))
+        .unwrap()
+}
+
+fn file_stem(path: &Path) -> String {
+    path.file_stem()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string()
 }

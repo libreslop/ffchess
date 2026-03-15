@@ -1,5 +1,4 @@
 {
-    "id": "arena",
     "display_name": "Arena",
     "max_players": 10,
     "board_size": "20",

@@ -718,29 +718,20 @@ async fn connect_ws(
                             removed_players,
                             board_size,
                         },
-                        ServerMessage::Error(e) => {
-                            if let GameError::Custom { title, message } = &e {
-                                if title.to_lowercase().contains("invalid session secret") {
-                                    clear_stored_session(&mode_id);
-                                    GameAction::SetDisconnected {
-                                        disconnected: true,
-                                        is_fatal: false,
-                                        title: Some("Rejoining with a fresh session".to_string()),
-                                        msg: Some(
-                                            "We reset your session to reconnect.".to_string(),
-                                        ),
-                                    }
-                                } else {
-                                    GameAction::SetDisconnected {
-                                        disconnected: true,
-                                        is_fatal: true,
-                                        title: Some(title.clone()),
-                                        msg: Some(message.clone()),
-                                    }
-                                }
-                            } else {
-                                GameAction::SetError(e)
+                        ServerMessage::Error(e) => match &e {
+                            GameError::Custom { title, message }
+                                if title.to_lowercase().contains("invalid session secret") =>
+                            {
+                                clear_stored_session(&mode_id);
+                                GameAction::Reset
                             }
+                            GameError::Custom { title, message } => GameAction::SetDisconnected {
+                                disconnected: true,
+                                is_fatal: true,
+                                title: Some(title.clone()),
+                                msg: Some(message.clone()),
+                            },
+                            _ => GameAction::SetError(e),
                         }
                         ServerMessage::GameOver {
                             final_score,

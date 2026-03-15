@@ -1,5 +1,4 @@
 {
-    "id": "ffa",
     "display_name": "FFA",
     "max_players": 20,
     "board_size": "max(40, 25 + sqrt(floor(player_count/3)) * 15)",
