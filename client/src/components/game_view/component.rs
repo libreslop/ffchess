@@ -80,17 +80,17 @@ pub fn game_view(props: &GameViewProps) -> Html {
             .is_some()
     }
 
-    /// Toggles fullscreen mode for the document.
-    fn toggle_fullscreen() {
+    /// Requests fullscreen mode for the document if not already active.
+    fn request_fullscreen() {
         let Some(window) = web_sys::window() else {
             return;
         };
         let Some(document) = window.document() else {
             return;
         };
-        if document.fullscreen_element().is_some() {
-            document.exit_fullscreen();
-        } else if let Some(element) = document.document_element() {
+        if document.fullscreen_element().is_none()
+            && let Some(element) = document.document_element()
+        {
             let _ = element.request_fullscreen();
         }
     }
@@ -905,7 +905,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
                                 let dy = y - prev_y;
                                 if dt <= 300.0 && (dx * dx + dy * dy) <= 900.0 {
                                     *last = None;
-                                    toggle_fullscreen();
+                                    request_fullscreen();
                                     return;
                                 }
                             }
