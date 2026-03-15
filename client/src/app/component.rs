@@ -316,6 +316,10 @@ pub fn app() -> Html {
             if is_mobile() {
                 request_fullscreen();
             }
+            let trimmed_name = (*player_name).trim().to_string();
+            if !trimmed_name.is_empty() {
+                set_stored_name(&trimmed_name);
+            }
             if let Some(sender) = (*tx).as_ref() {
                 let mode_id = (*current_mode_id).clone();
                 is_joining.set(true);
@@ -363,6 +367,30 @@ pub fn app() -> Html {
     let is_dead = reducer.is_dead;
     let is_joined =
         (reducer.player_id.is_some() && reducer.player_id != Some(PlayerId::nil())) || is_dead;
+
+    {
+        let player_name = player_name.clone();
+        use_effect_with(
+            (
+                reducer.player_id,
+                reducer.state.players.clone(),
+                (*player_name).clone(),
+            ),
+            move |(player_id, players, current_name)| {
+                if current_name.trim().is_empty()
+                    && let Some(pid) = *player_id
+                    && pid != PlayerId::nil()
+                    && let Some(player) = players.get(&pid)
+                {
+                    let server_name = player.name.trim();
+                    if !server_name.is_empty() {
+                        player_name.set(server_name.to_string());
+                        set_stored_name(server_name);
+                    }
+                }
+            },
+        );
+    }
 
     {
         let show_disconnected = show_disconnected.clone();
