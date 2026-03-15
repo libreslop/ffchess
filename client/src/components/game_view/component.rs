@@ -35,6 +35,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
     let manager_ref = use_mut_ref(CameraManager::new);
     let piece_prev_positions = use_mut_ref(HashMap::<PieceId, IVec2>::new);
     let piece_anims = use_mut_ref(HashMap::<PieceId, PieceAnim>::new);
+    let last_tap = use_mut_ref(|| None::<(f64, f64, f64)>);
 
     let cam_state = use_state(|| (0.0, 0.0));
     let zoom_state = use_state(|| 1.0f64);
@@ -76,6 +77,21 @@ pub fn game_view(props: &GameViewProps) -> Html {
             .ok()
             .flatten()
             .is_some()
+    }
+
+    /// Toggles fullscreen mode for the document.
+    fn toggle_fullscreen() {
+        let Some(window) = web_sys::window() else {
+            return;
+        };
+        let Some(document) = window.document() else {
+            return;
+        };
+        if document.fullscreen_element().is_some() {
+            document.exit_fullscreen();
+        } else if let Some(element) = document.document_element() {
+            let _ = element.request_fullscreen();
+        }
     }
 
     // Drive a steady render heartbeat with requestAnimationFrame so visual elements (e.g., cooldown bars) update every frame
@@ -571,18 +587,23 @@ pub fn game_view(props: &GameViewProps) -> Html {
 
             let mut current_ghosts = reducer.state.pieces.clone();
             apply_visible_ghosts(&mut current_ghosts, &reducer.pm_queue, &reducer.state);
+            let selected_id = *selected_piece_id;
+            let target_has_piece = current_ghosts.values().any(|p| p.position == target);
+            let mut handled_action = false;
 
-            if let Some(sid) = *selected_piece_id {
+            if let Some(sid) = selected_id {
                 let proj_p = current_ghosts.get(&sid);
                 if let Some(p) = proj_p {
                     if target == p.position {
                         selected_piece_id.set(None);
                         reducer.dispatch(GameAction::ClearPmQueue(sid));
+                        handled_action = true;
                     } else if let Some(other) = current_ghosts
                         .values()
                         .find(|p| p.position == target && p.owner_id == Some(player_id))
                     {
                         selected_piece_id.set(Some(other.id));
+                        handled_action = true;
                     } else {
                         let target_occupied =
                             current_ghosts.values().find(|gp| gp.position == target);
@@ -607,6 +628,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
                                 old_last_move_time: TimestampMs::from_millis(0),
                                 old_cooldown_ms: DurationMs::zero(),
                             }));
+                            handled_action = true;
                         }
                     }
                 }
@@ -616,7 +638,12 @@ pub fn game_view(props: &GameViewProps) -> Html {
                     .find(|p| p.position == target && p.owner_id == Some(player_id));
                 if let Some(p) = piece {
                     selected_piece_id.set(Some(p.id));
+                    handled_action = true;
                 }
+            }
+
+            if !handled_action && !target_has_piece && selected_id.is_some() {
+                selected_piece_id.set(None);
             }
         })
     };
@@ -823,6 +850,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
                 let manager_ref = manager_ref.clone();
                 let drag_start = drag_start.clone();
                 let latest_state = latest_state.clone();
+                let last_tap = last_tap.clone();
                 Callback::from(move |e: TouchEvent| {
                     if is_shop_ui_target(e.target()) {
                         return;
@@ -838,6 +866,26 @@ pub fn game_view(props: &GameViewProps) -> Html {
                         s.1 = false;
                     }
                     if let Some(touch) = e.changed_touches().get(0) {
+                        if e.touches().length() == 0 {
+                            let now = web_sys::window()
+                                .and_then(|w| w.performance())
+                                .map(|p| p.now())
+                                .unwrap_or(0.0);
+                            let x = touch.client_x() as f64;
+                            let y = touch.client_y() as f64;
+                            let mut last = last_tap.borrow_mut();
+                            if let Some((prev_time, prev_x, prev_y)) = *last {
+                                let dt = now - prev_time;
+                                let dx = x - prev_x;
+                                let dy = y - prev_y;
+                                if dt <= 300.0 && (dx * dx + dy * dy) <= 900.0 {
+                                    *last = None;
+                                    toggle_fullscreen();
+                                    return;
+                                }
+                            }
+                            *last = Some((now, x, y));
+                        }
                         handle_input_end.emit((touch.client_x() as f64, touch.client_y() as f64, false));
                     }
                 })
