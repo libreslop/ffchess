@@ -373,8 +373,16 @@ pub fn app() -> Html {
         let current_mode_id = current_mode_id.clone();
         Callback::from(move |kit_name: String| {
             let current_reducer = reducer_ref.borrow().clone();
-            if *is_joining || current_reducer.disconnected || current_reducer.fatal_error {
+            if *is_joining {
                 return;
+            }
+            if current_reducer.disconnected || current_reducer.fatal_error {
+                current_reducer.dispatch(GameAction::SetDisconnected {
+                    disconnected: false,
+                    is_fatal: false,
+                    title: None,
+                    msg: None,
+                });
             }
             has_interacted.set(true);
             if is_mobile() {
