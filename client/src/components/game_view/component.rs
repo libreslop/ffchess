@@ -42,6 +42,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
     let zoom_state = use_state(|| 1.0f64);
     let frame_id = use_state(|| 0u64);
     let drag_start = use_state(|| None::<(f64, f64, bool)>);
+    let did_pan = use_mut_ref(|| false);
     let renderer_state = use_state(|| None::<Renderer>);
     let fps_counter = use_mut_ref(|| {
         (
@@ -69,15 +70,13 @@ pub fn game_view(props: &GameViewProps) -> Html {
 
     /// Returns true when a pointer/touch event originates from the shop UI overlay.
     fn is_shop_ui_target(target: Option<web_sys::EventTarget>) -> bool {
-        let Some(target) = target else { return false; };
+        let Some(target) = target else {
+            return false;
+        };
         let Ok(element) = target.dyn_into::<Element>() else {
             return false;
         };
-        element
-            .closest("[data-shop-ui]")
-            .ok()
-            .flatten()
-            .is_some()
+        element.closest("[data-shop-ui]").ok().flatten().is_some()
     }
 
     /// Requests fullscreen mode for the document if not already active.
@@ -429,6 +428,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
         let selected_piece_id = selected_piece_id.clone();
         let drag_start = drag_start.clone();
         let manager_ref = manager_ref.clone();
+        let did_pan = did_pan.clone();
         let canvas_ref = canvas_ref.clone();
         let reducer = props.reducer.clone();
         let tile_size_px = props.globals.tile_size_px;
@@ -440,6 +440,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
             if manager.input_locked {
                 return;
             }
+            *did_pan.borrow_mut() = false;
             let canvas = canvas_ref.cast::<HtmlCanvasElement>().unwrap();
             let rect = canvas.get_bounding_client_rect();
             let zoom = manager.zoom;
@@ -488,6 +489,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
         let drag_start = drag_start.clone();
         let cam_state = cam_state.clone();
         let manager_ref = manager_ref.clone();
+        let did_pan = did_pan.clone();
         let reducer = props.reducer.clone();
         Callback::from(move |(cx, cy): (f64, f64)| {
             if reducer.is_dead {
@@ -505,6 +507,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
                 let dx = cx - start_x;
                 let dy = cy - start_y;
                 if dx.abs() > 0.1 || dy.abs() > 0.1 {
+                    *did_pan.borrow_mut() = true;
                     manager.camera.0 -= dx;
                     manager.camera.1 -= dy;
 
@@ -529,17 +532,20 @@ pub fn game_view(props: &GameViewProps) -> Html {
         let selected_piece_id = selected_piece_id.clone();
         let manager_ref = manager_ref.clone();
         let drag_start = drag_start.clone();
+        let did_pan = did_pan.clone();
         let tile_size_px = props.globals.tile_size_px;
 
         Callback::from(move |(cx, cy, is_right_click): (f64, f64, bool)| {
             if reducer.is_dead {
                 drag_start.set(None);
                 manager_ref.borrow_mut().velocity = (0.0, 0.0);
+                *did_pan.borrow_mut() = false;
                 return;
             }
             if manager_ref.borrow().input_locked {
                 drag_start.set(None);
                 manager_ref.borrow_mut().velocity = (0.0, 0.0);
+                *did_pan.borrow_mut() = false;
                 return;
             }
             let start = *drag_start;
@@ -550,6 +556,9 @@ pub fn game_view(props: &GameViewProps) -> Html {
                 let dx = cx - sx;
                 let dy = cy - sy;
                 let dist = (dx * dx + dy * dy).sqrt();
+                if *did_pan.borrow() {
+                    is_tap = false;
+                }
                 if allow_panning && dist > 10.0 {
                     is_tap = false;
                 }
@@ -559,6 +568,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
             } else {
                 manager_ref.borrow_mut().velocity = (0.0, 0.0);
             }
+            *did_pan.borrow_mut() = false;
 
             if !is_tap {
                 return;
@@ -653,9 +663,11 @@ pub fn game_view(props: &GameViewProps) -> Html {
     let handle_mouse_leave = {
         let drag_start = drag_start.clone();
         let manager_ref = manager_ref.clone();
+        let did_pan = did_pan.clone();
         Callback::from(move |_| {
             let prev = *drag_start;
             drag_start.set(None);
+            *did_pan.borrow_mut() = false;
             if let Some((_, _, allow_panning)) = prev
                 && allow_panning
             {
@@ -670,10 +682,12 @@ pub fn game_view(props: &GameViewProps) -> Html {
     {
         let drag_start = drag_start.clone();
         let manager_ref = manager_ref.clone();
+        let did_pan = did_pan.clone();
         use_effect_with(props.reducer.is_dead, move |is_dead| {
             if *is_dead {
                 drag_start.set(None);
                 manager_ref.borrow_mut().velocity = (0.0, 0.0);
+                *did_pan.borrow_mut() = false;
             }
             || ()
         });
