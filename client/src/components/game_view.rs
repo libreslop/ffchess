@@ -2,6 +2,7 @@ use crate::camera::{CameraManager, update_camera};
 use crate::canvas::Renderer;
 use crate::reducer::{GameAction, GameStateReducer, MsgSender, Pmove};
 use common::logic::is_within_board;
+use common::models::{GameState, Piece};
 use glam::IVec2;
 use gloo_events::EventListener;
 use gloo_render::{AnimationFrame, request_animation_frame};
@@ -26,6 +27,48 @@ struct PieceAnim {
     start: IVec2,
     end: IVec2,
     started_at: f64,
+}
+
+fn now_epoch_ms() -> i64 {
+    #[cfg(target_arch = "wasm32")]
+    {
+        js_sys::Date::now() as i64
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0)
+    }
+}
+
+fn apply_visible_ghosts(
+    ghosts: &mut HashMap<Uuid, Piece>,
+    pm_queue: &[Pmove],
+    state: &GameState,
+    now_ms: i64,
+) {
+    for pm in pm_queue {
+        let is_on_cooldown = state
+            .pieces
+            .get(&pm.piece_id)
+            .map(|piece| {
+                let ready_at = piece
+                    .last_move_time
+                    .saturating_add(piece.cooldown_ms)
+                    .saturating_add(50);
+                now_ms < ready_at
+            })
+            .unwrap_or(false);
+
+        if is_on_cooldown {
+            if let Some(p) = ghosts.get_mut(&pm.piece_id) {
+                p.position = pm.target;
+            }
+        }
+    }
 }
 
 const MOVE_ANIM_MS: f64 = 200.0;
@@ -264,11 +307,10 @@ pub fn game_view(props: &GameViewProps) -> Html {
             )| {
                 if let Some(renderer) = renderer_state.as_ref() {
                     let mut ghosts = state.pieces.clone();
-                    for pm in pm_queue {
-                        if let Some(p) = ghosts.get_mut(&pm.piece_id) {
-                            p.position = pm.target;
-                        }
-                    }
+                    let now_epoch_ms = now_epoch_ms();
+
+                    apply_visible_ghosts(&mut ghosts, pm_queue, state, now_epoch_ms);
+
                     let now = web_sys::window().unwrap().performance().unwrap().now();
                     let mut anims = piece_anims.borrow_mut();
                     let mut animated_positions = HashMap::new();
@@ -421,11 +463,8 @@ pub fn game_view(props: &GameViewProps) -> Html {
 
             if !is_right_click && is_within_board(target, board_size) {
                 let mut ghosts = reducer.state.pieces.clone();
-                for pm in &reducer.pm_queue {
-                    if let Some(p) = ghosts.get_mut(&pm.piece_id) {
-                        p.position = pm.target;
-                    }
-                }
+                let now_ms = now_epoch_ms();
+                apply_visible_ghosts(&mut ghosts, &reducer.pm_queue, &reducer.state, now_ms);
 
                 if ghosts.values().any(|p| p.position == target) {
                     is_interactive = true;
@@ -552,11 +591,8 @@ pub fn game_view(props: &GameViewProps) -> Html {
             }
 
             let mut current_ghosts = reducer.state.pieces.clone();
-            for pm in &reducer.pm_queue {
-                if let Some(p) = current_ghosts.get_mut(&pm.piece_id) {
-                    p.position = pm.target;
-                }
-            }
+            let now_ms = now_epoch_ms();
+            apply_visible_ghosts(&mut current_ghosts, &reducer.pm_queue, &reducer.state, now_ms);
 
             if let Some(sid) = *selected_piece_id {
                 let proj_p = current_ghosts.get(&sid);
