@@ -193,7 +193,7 @@ impl Renderer {
                         continue;
                     }
 
-                    let target_piece = state.pieces.values().find(|p| p.position == t);
+                    let target_piece = ghost_pieces.values().find(|p| p.position == t);
                     let is_friendly = target_piece
                         .map(|tp| tp.owner_id == Some(player_id))
                         .unwrap_or(false);
@@ -208,7 +208,7 @@ impl Renderer {
                         t,
                         is_capture,
                         state.board_size,
-                        &state.pieces,
+                        ghost_pieces,
                         piece.owner_id,
                     ) {
                         self.ctx.fill_rect(

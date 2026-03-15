@@ -51,7 +51,7 @@ fn apply_visible_ghosts(
     now_ms: i64,
 ) {
     for pm in pm_queue {
-        if !pm_on_cooldown(pm, state, now_ms) {
+        if !pm_visible(pm, state, now_ms) {
             continue;
         }
 
@@ -61,25 +61,9 @@ fn apply_visible_ghosts(
     }
 }
 
-fn pm_on_cooldown(pm: &Pmove, state: &GameState, now_ms: i64) -> bool {
-    if pm.pending {
-        // Already submitted; treat as invisible to avoid flicker
-        return false;
-    }
-
-    state
-        .pieces
-        .get(&pm.piece_id)
-        .map(|piece| {
-            if piece.cooldown_ms <= 0 {
-                return false;
-            }
-            let ready_at = piece
-                .last_move_time
-                .saturating_add(piece.cooldown_ms);
-            now_ms < ready_at
-        })
-        .unwrap_or(false)
+fn pm_visible(pm: &Pmove, state: &GameState, _now_ms: i64) -> bool {
+    // Show ghosts/paths for any queued move as long as the piece still exists.
+    state.pieces.contains_key(&pm.piece_id)
 }
 
 const MOVE_ANIM_MS: f64 = 200.0;
@@ -324,7 +308,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
                     let visible_pm: Vec<_> = pm_queue
                         .iter()
                         .cloned()
-                        .filter(|pm| pm_on_cooldown(pm, state, now_epoch_ms))
+                        .filter(|pm| pm_visible(pm, state, now_epoch_ms))
                         .collect();
 
                     let now = web_sys::window().unwrap().performance().unwrap().now();
