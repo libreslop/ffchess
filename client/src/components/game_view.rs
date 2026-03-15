@@ -884,10 +884,6 @@ pub fn game_view(props: &GameViewProps) -> Html {
                 }
             }
 
-            if let Some(error) = props.reducer.error.clone() {
-                <crate::components::error_toast::ErrorToast error={error} />
-            }
-
             <crate::components::fatal_notification::FatalNotification
                 show={props.reducer.fatal_error}
                 title={props.reducer.disconnected_title.clone()}
