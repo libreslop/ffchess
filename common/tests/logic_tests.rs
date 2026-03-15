@@ -295,6 +295,6 @@ fn test_calculate_cooldown_returns_config_value() {
         capture_paths: vec![],
     };
 
-    let cooldown = common::logic::calculate_cooldown(&config, IVec2::new(0, 0), IVec2::new(0, 1));
+    let cooldown = common::logic::calculate_cooldown(&config);
     assert_eq!(cooldown, DurationMs::from_millis(1500));
 }

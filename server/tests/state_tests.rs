@@ -18,7 +18,7 @@ mod tests {
             .expect("FFA game should exist");
         let (tx, _) = mpsc::unbounded_channel();
 
-        let (p1, _p1_secret) = instance
+        let (p1, _) = instance
             .add_player(
                 "P1".to_string(),
                 KitId::from("Standard"),
@@ -28,7 +28,7 @@ mod tests {
             )
             .await
             .expect("Initial join should succeed");
-        let (p2, _p2_secret) = instance
+        let (p2, _) = instance
             .add_player(
                 "P2".to_string(),
                 KitId::from("Tank"),
@@ -69,7 +69,7 @@ mod tests {
             .expect("FFA game should exist");
         let (tx, _) = mpsc::unbounded_channel();
 
-        let (p1_id, _p1_secret) = instance
+        let (p1_id, _) = instance
             .add_player(
                 "P1".to_string(),
                 KitId::from("Standard"),
@@ -79,7 +79,7 @@ mod tests {
             )
             .await
             .expect("Initial join should succeed");
-        let (p2_id, _p2_secret) = instance
+        let (p2_id, _) = instance
             .add_player(
                 "P2".to_string(),
                 KitId::from("Standard"),

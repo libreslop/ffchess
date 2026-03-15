@@ -19,7 +19,7 @@ impl GameInstance {
     ) -> Result<(), GameError> {
         let mut game = self.game.write().await;
 
-        let (piece_type, start_pos, piece_owner, _cooldown) = {
+        let (piece_type, start_pos, piece_owner) = {
             let piece = game.pieces.get(&piece_id).ok_or(GameError::PieceNotFound)?;
             if piece.owner_id != Some(player_id) {
                 return Err(GameError::NotYourPiece);
@@ -33,7 +33,6 @@ impl GameInstance {
                 piece.piece_type.clone(),
                 piece.position,
                 piece.owner_id,
-                piece.cooldown_ms,
             )
         };
 

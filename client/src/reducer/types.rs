@@ -48,7 +48,7 @@ pub struct MsgSender(pub tokio::sync::mpsc::UnboundedSender<ClientMessage>);
 
 impl PartialEq for MsgSender {
     /// Treats all message senders as equal for Yew props diffing.
-    fn eq(&self, _other: &Self) -> bool {
+    fn eq(&self, _: &Self) -> bool {
         true
     }
 }

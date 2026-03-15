@@ -157,7 +157,7 @@ impl Reducible for GameStateReducer {
                             pm.old_cooldown_ms = p.cooldown_ms;
 
                             if let Some(config) = next.piece_configs.get(&p.piece_type) {
-                                p.cooldown_ms = calculate_cooldown(config, p.position, pm.target);
+                                p.cooldown_ms = calculate_cooldown(config);
                             }
                             p.last_move_time = now;
                         }

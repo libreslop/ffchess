@@ -99,9 +99,9 @@ pub fn is_valid_move(params: MoveValidationParams<'_>) -> bool {
 
 /// Calculates the movement cooldown for a piece.
 ///
-/// `piece_config` provides the cooldown; `_start` and `_end` are the move bounds.
+/// `piece_config` provides the cooldown value.
 /// Returns the cooldown duration in milliseconds.
-pub fn calculate_cooldown(piece_config: &PieceConfig, _start: IVec2, _end: IVec2) -> DurationMs {
+pub fn calculate_cooldown(piece_config: &PieceConfig) -> DurationMs {
     piece_config.cooldown_ms
 }
 
