@@ -517,7 +517,11 @@ pub fn app() -> Html {
         let is_dead = is_dead;
         let disconnected = reducer.disconnected;
 
-        let kits = reducer.mode.as_ref().map(|m| m.kits.clone()).unwrap_or_default();
+        let kits = reducer
+            .mode
+            .as_ref()
+            .map(|m| m.kits.clone())
+            .unwrap_or_default();
 
         use_effect_with(
             (
@@ -740,7 +744,7 @@ async fn connect_ws(
                                 msg: Some(message.clone()),
                             },
                             _ => GameAction::SetError(e),
-                        }
+                        },
                         ServerMessage::GameOver {
                             final_score,
                             kills,

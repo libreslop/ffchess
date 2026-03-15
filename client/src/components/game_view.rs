@@ -4,10 +4,11 @@ use crate::reducer::{GameAction, GameStateReducer, MsgSender, Pmove};
 use common::logic::is_within_board;
 use glam::IVec2;
 use gloo_events::EventListener;
-use uuid::Uuid;
-use gloo_render::{request_animation_frame, AnimationFrame};
-use std::rc::Rc;
+use gloo_render::{AnimationFrame, request_animation_frame};
 use std::cell::RefCell;
+use std::collections::HashMap;
+use std::rc::Rc;
+use uuid::Uuid;
 use wasm_bindgen::JsCast;
 use web_sys::HtmlCanvasElement;
 use yew::prelude::*;
@@ -20,11 +21,22 @@ pub struct GameViewProps {
     pub globals: crate::GlobalClientConfig,
 }
 
+#[derive(Clone)]
+struct PieceAnim {
+    start: IVec2,
+    end: IVec2,
+    started_at: f64,
+}
+
+const MOVE_ANIM_MS: f64 = 200.0;
+
 #[function_component(GameView)]
 pub fn game_view(props: &GameViewProps) -> Html {
     let canvas_ref = use_node_ref();
     let selected_piece_id = use_state(|| None::<Uuid>);
     let manager_ref = use_mut_ref(CameraManager::new);
+    let piece_prev_positions = use_mut_ref(HashMap::<Uuid, IVec2>::new);
+    let piece_anims = use_mut_ref(HashMap::<Uuid, PieceAnim>::new);
 
     let cam_state = use_state(|| (0.0, 0.0));
     let zoom_state = use_state(|| 1.0f64);
@@ -63,10 +75,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
             let start_cell = handle_cell.clone();
             let start_frame = frame_id.clone();
 
-            fn schedule(
-                cell: Rc<RefCell<Option<AnimationFrame>>>,
-                frame: UseStateHandle<u64>,
-            ) {
+            fn schedule(cell: Rc<RefCell<Option<AnimationFrame>>>, frame: UseStateHandle<u64>) {
                 let inner_cell = cell.clone();
                 let inner_frame = frame.clone();
                 let handle = request_animation_frame(move |ms| {
@@ -208,6 +217,9 @@ pub fn game_view(props: &GameViewProps) -> Html {
                         let delta = e.delta_y();
                         let factor = scroll_base.max(1.01).powf(-delta / 100.0);
                         let mut manager = manager_ref.borrow_mut();
+                        if manager.input_locked {
+                            return;
+                        }
                         manager.mouse_pos = (e.client_x() as f64, e.client_y() as f64);
                         manager.target_zoom =
                             (manager.target_zoom * factor).clamp(zoom_min, zoom_max);
@@ -224,6 +236,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
         let renderer_state = renderer_state.clone();
         let reducer = props.reducer.clone();
         let shop_configs = props.reducer.shop_configs.clone();
+        let piece_anims = piece_anims.clone();
         use_effect_with(
             (
                 *frame_id,
@@ -237,7 +250,18 @@ pub fn game_view(props: &GameViewProps) -> Html {
                 (*selected_piece_id).clone(),
                 shop_configs,
             ),
-            move |(_, cam, zoom, window_size, state, pm_queue, mode, player_id, sid, shop_configs)| {
+            move |(
+                _,
+                cam,
+                zoom,
+                window_size,
+                state,
+                pm_queue,
+                mode,
+                player_id,
+                sid,
+                shop_configs,
+            )| {
                 if let Some(renderer) = renderer_state.as_ref() {
                     let mut ghosts = state.pieces.clone();
                     for pm in pm_queue {
@@ -245,12 +269,33 @@ pub fn game_view(props: &GameViewProps) -> Html {
                             p.position = pm.target;
                         }
                     }
+                    let now = web_sys::window().unwrap().performance().unwrap().now();
+                    let mut anims = piece_anims.borrow_mut();
+                    let mut animated_positions = HashMap::new();
+                    anims.retain(|id, anim| {
+                        let Some(_) = state.pieces.get(id) else {
+                            return false;
+                        };
+
+                        let progress = ((now - anim.started_at) / MOVE_ANIM_MS).clamp(0.0, 1.0);
+                        if progress < 1.0 {
+                            let x =
+                                anim.start.x as f64 + (anim.end.x - anim.start.x) as f64 * progress;
+                            let y =
+                                anim.start.y as f64 + (anim.end.y - anim.start.y) as f64 * progress;
+                            animated_positions.insert(*id, (x, y));
+                            true
+                        } else {
+                            false
+                        }
+                    });
                     renderer.draw_with_ghosts(
                         state,
                         player_id.unwrap_or_else(Uuid::nil),
                         *sid,
                         pm_queue,
                         &ghosts,
+                        &animated_positions,
                         **cam,
                         window_size.0,
                         window_size.1,
@@ -311,6 +356,38 @@ pub fn game_view(props: &GameViewProps) -> Html {
         });
     }
 
+    {
+        let piece_prev_positions = piece_prev_positions.clone();
+        let piece_anims = piece_anims.clone();
+        let pieces = props.reducer.state.pieces.clone();
+        use_effect_with(pieces, move |pieces| {
+            let now = web_sys::window().unwrap().performance().unwrap().now();
+            let mut prev = piece_prev_positions.borrow_mut();
+            let mut anims = piece_anims.borrow_mut();
+
+            anims.retain(|id, _| pieces.contains_key(id));
+
+            for (id, piece) in pieces.iter() {
+                if let Some(old_pos) = prev.get(id)
+                    && old_pos != &piece.position
+                {
+                    anims.insert(
+                        *id,
+                        PieceAnim {
+                            start: *old_pos,
+                            end: piece.position,
+                            started_at: now,
+                        },
+                    );
+                }
+            }
+
+            prev.clear();
+            prev.extend(pieces.iter().map(|(id, p)| (*id, p.position)));
+            || ()
+        });
+    }
+
     let handle_input_start = {
         let selected_piece_id = selected_piece_id.clone();
         let drag_start = drag_start.clone();
@@ -321,9 +398,12 @@ pub fn game_view(props: &GameViewProps) -> Html {
             if reducer.is_dead {
                 return;
             }
+            let mut manager = manager_ref.borrow_mut();
+            if manager.input_locked {
+                return;
+            }
             let canvas = canvas_ref.cast::<HtmlCanvasElement>().unwrap();
             let rect = canvas.get_bounding_client_rect();
-            let mut manager = manager_ref.borrow_mut();
             let zoom = manager.zoom;
             let tile_size = 40.0 * zoom;
             let x = cx - rect.left();
@@ -380,6 +460,9 @@ pub fn game_view(props: &GameViewProps) -> Html {
                 return;
             }
             let mut manager = manager_ref.borrow_mut();
+            if manager.input_locked {
+                return;
+            }
             manager.mouse_pos = (cx, cy);
             if let Some((start_x, start_y, allow_panning)) = *drag_start {
                 if !allow_panning {
@@ -415,6 +498,11 @@ pub fn game_view(props: &GameViewProps) -> Html {
 
         Callback::from(move |(cx, cy, is_right_click): (f64, f64, bool)| {
             if reducer.is_dead {
+                drag_start.set(None);
+                manager_ref.borrow_mut().velocity = (0.0, 0.0);
+                return;
+            }
+            if manager_ref.borrow().input_locked {
                 drag_start.set(None);
                 manager_ref.borrow_mut().velocity = (0.0, 0.0);
                 return;

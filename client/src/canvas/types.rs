@@ -23,4 +23,5 @@ pub struct PieceDrawParams<'a> {
     pub state: &'a GameState,
     pub draw_name: bool,
     pub is_ghost: bool,
+    pub pos_override: Option<(f64, f64)>,
 }

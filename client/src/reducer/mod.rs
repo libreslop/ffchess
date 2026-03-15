@@ -69,7 +69,11 @@ impl Reducible for GameStateReducer {
             GameAction::SetError(e) => {
                 next.error = Some(e.clone());
                 // Identify the first pending move; errors from the server always correspond to a pending move
-                let failing_piece_id = next.pm_queue.iter().find(|pm| pm.pending).map(|pm| pm.piece_id);
+                let failing_piece_id = next
+                    .pm_queue
+                    .iter()
+                    .find(|pm| pm.pending)
+                    .map(|pm| pm.piece_id);
 
                 match e {
                     GameError::OnCooldown => {
@@ -89,8 +93,10 @@ impl Reducible for GameStateReducer {
                     _ => {
                         if let Some(pid) = failing_piece_id {
                             // Revert state for the failing piece only
-                            if let Some(pm) =
-                                next.pm_queue.iter().find(|pm| pm.piece_id == pid && pm.pending)
+                            if let Some(pm) = next
+                                .pm_queue
+                                .iter()
+                                .find(|pm| pm.piece_id == pid && pm.pending)
                             {
                                 if let Some(p) = next.state.pieces.get_mut(&pid) {
                                     p.last_move_time = pm.old_last_move_time;

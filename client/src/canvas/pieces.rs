@@ -6,6 +6,10 @@ impl Renderer {
     pub fn draw_piece(&self, params: PieceDrawParams, zoom: f64) {
         let tile_size = 40.0 * zoom;
         let is_self = params.piece.owner_id == Some(params.player_id);
+        let pos = params.pos_override.unwrap_or((
+            params.piece.position.x as f64,
+            params.piece.position.y as f64,
+        ));
 
         let color_str = if let Some(owner_id) = params.piece.owner_id {
             if let Some(player) = params.state.players.get(&owner_id) {
@@ -22,8 +26,8 @@ impl Renderer {
 
         self.ctx.begin_path();
         let _ = self.ctx.arc(
-            params.piece.position.x as f64 * tile_size + params.offset_x + tile_size / 2.0,
-            params.piece.position.y as f64 * tile_size + params.offset_y + tile_size / 2.0,
+            pos.0 * tile_size + params.offset_x + tile_size / 2.0,
+            pos.1 * tile_size + params.offset_y + tile_size / 2.0,
             tile_size / 3.0,
             0.0,
             std::f64::consts::TAU,
@@ -45,12 +49,8 @@ impl Renderer {
 
         let _ = self.ctx.fill_text(
             &label,
-            params.piece.position.x as f64 * tile_size + params.offset_x + tile_size / 2.0
-                - (5.0 * zoom),
-            params.piece.position.y as f64 * tile_size
-                + params.offset_y
-                + tile_size / 2.0
-                + (6.0 * zoom),
+            pos.0 * tile_size + params.offset_x + tile_size / 2.0 - (5.0 * zoom),
+            pos.1 * tile_size + params.offset_y + tile_size / 2.0 + (6.0 * zoom),
         );
 
         // Only draw cooldown on the real (non-ghost) piece for the owner
@@ -69,15 +69,15 @@ impl Renderer {
                 let bar_y_offset = tile_size - (8.0 * zoom);
 
                 self.ctx.fill_rect(
-                    params.piece.position.x as f64 * tile_size + params.offset_x + bar_margin,
-                    params.piece.position.y as f64 * tile_size + params.offset_y + bar_y_offset,
+                    pos.0 * tile_size + params.offset_x + bar_margin,
+                    pos.1 * tile_size + params.offset_y + bar_y_offset,
                     tile_size - (bar_margin * 2.0),
                     bar_h,
                 );
                 self.ctx.set_fill_style_str("#0f0");
                 self.ctx.fill_rect(
-                    params.piece.position.x as f64 * tile_size + params.offset_x + bar_margin,
-                    params.piece.position.y as f64 * tile_size + params.offset_y + bar_y_offset,
+                    pos.0 * tile_size + params.offset_x + bar_margin,
+                    pos.1 * tile_size + params.offset_y + bar_y_offset,
                     (tile_size - (bar_margin * 2.0)) * progress,
                     bar_h,
                 );
@@ -92,6 +92,7 @@ impl Renderer {
                 params.alpha,
                 params.state,
                 zoom,
+                params.pos_override,
             );
         }
     }
@@ -104,8 +105,10 @@ impl Renderer {
         alpha: f64,
         state: &GameState,
         zoom: f64,
+        pos_override: Option<(f64, f64)>,
     ) {
         let tile_size = 40.0 * zoom;
+        let pos = pos_override.unwrap_or((piece.position.x as f64, piece.position.y as f64));
         if piece.piece_type == "king"
             && let Some(owner_id) = piece.owner_id
             && let Some(player) = state.players.get(&owner_id)
@@ -121,9 +124,8 @@ impl Renderer {
 
             if let Ok(text_metrics) = self.ctx.measure_text(name) {
                 let text_width = text_metrics.width();
-                let x = piece.position.x as f64 * tile_size + offset_x + tile_size / 2.0
-                    - text_width / 2.0;
-                let y = piece.position.y as f64 * tile_size + offset_y - (5.0 * zoom);
+                let x = pos.0 * tile_size + offset_x + tile_size / 2.0 - text_width / 2.0;
+                let y = pos.1 * tile_size + offset_y - (5.0 * zoom);
 
                 // Draw outline
                 self.ctx

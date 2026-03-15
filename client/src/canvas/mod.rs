@@ -42,6 +42,7 @@ impl Renderer {
         selected_piece_id: Option<Uuid>,
         pm_queue: &[Pmove],
         ghost_pieces: &HashMap<Uuid, Piece>,
+        animated_positions: &HashMap<Uuid, (f64, f64)>,
         camera_pos: (f64, f64), // Pixel coords in world
         width: f64,
         height: f64,
@@ -262,6 +263,7 @@ impl Renderer {
         // Pieces
         for (id, ghost) in ghost_pieces {
             if (ghost.position - king_pos).abs().max_element() <= view_radius_squares + 2 {
+                let pos_override = animated_positions.get(id).copied();
                 if let Some(real) = state.pieces.get(id) {
                     if real.position != ghost.position {
                         // Draw ghost (predicted) piece faded
@@ -275,6 +277,7 @@ impl Renderer {
                                 state,
                                 draw_name: false,
                                 is_ghost: true,
+                                pos_override: None,
                             },
                             zoom,
                         );
@@ -290,6 +293,7 @@ impl Renderer {
                                 state,
                                 draw_name: false,
                                 is_ghost: false,
+                                pos_override,
                             },
                             zoom,
                         );
@@ -305,6 +309,7 @@ impl Renderer {
                                 state,
                                 draw_name: false,
                                 is_ghost: false,
+                                pos_override,
                             },
                             zoom,
                         );
@@ -318,7 +323,8 @@ impl Renderer {
             if piece.piece_type == "king"
                 && (piece.position - king_pos).abs().max_element() <= view_radius_squares + 2
             {
-                self.draw_piece_name(piece, offset_x, offset_y, 1.0, state, zoom);
+                let pos_override = animated_positions.get(&piece.id).copied();
+                self.draw_piece_name(piece, offset_x, offset_y, 1.0, state, zoom, pos_override);
             }
         }
 

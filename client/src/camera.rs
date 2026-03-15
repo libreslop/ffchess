@@ -10,6 +10,7 @@ pub struct CameraManager {
     pub target_zoom: f64,
     pub mouse_pos: (f64, f64),
     pub velocity: (f64, f64),
+    pub input_locked: bool,
     pub was_alive: bool,
     pub last_king_grid_pos: glam::IVec2,
     pub last_touch_dist: Option<f64>,
@@ -25,6 +26,7 @@ impl CameraManager {
             target_zoom: 1.0,
             mouse_pos: (0.0, 0.0),
             velocity: (0.0, 0.0),
+            input_locked: false,
             was_alive: false,
             last_king_grid_pos: glam::IVec2::ZERO,
             last_touch_dist: None,
@@ -133,6 +135,7 @@ pub fn update_camera(
                 manager.target_camera = (kpx, kpy);
                 manager.target_zoom = 1.0;
                 manager.last_king_grid_pos = king.position;
+                manager.input_locked = true;
                 manager.was_alive = true;
                 changed = true;
             } else {
@@ -181,6 +184,7 @@ pub fn update_camera(
             manager.target_zoom = target_zoom.clamp(zoom_min, zoom_max);
             manager.was_alive = false;
             manager.velocity = (0.0, 0.0);
+            manager.input_locked = false;
             changed = true;
         }
     } else {
@@ -189,6 +193,7 @@ pub fn update_camera(
         manager.target_camera = (0.0, 0.0);
         manager.target_zoom = 1.0;
         manager.was_alive = false;
+        manager.input_locked = false;
         changed = true;
     }
 
@@ -205,6 +210,16 @@ pub fn update_camera(
         manager.camera.0 += (manager.target_camera.0 - manager.camera.0) * factor;
         manager.camera.1 += (manager.target_camera.1 - manager.camera.1) * factor;
         changed = true;
+    }
+
+    if manager.input_locked {
+        let dx = manager.target_camera.0 - manager.camera.0;
+        let dy = manager.target_camera.1 - manager.camera.1;
+        let close_enough = dx.abs() < 1.0 && dy.abs() < 1.0;
+        let zoom_synced = (manager.target_zoom - manager.zoom).abs() < 0.01;
+        if close_enough && zoom_synced {
+            manager.input_locked = false;
+        }
     }
 
     changed

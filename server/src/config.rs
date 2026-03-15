@@ -126,11 +126,7 @@ fn parse_jsonc<T: DeserializeOwned>(content: &str, path: &Path) -> T {
         .unwrap()
 }
 
-fn parse_jsonc_with_id<T: DeserializeOwned>(
-    content: &str,
-    path: &Path,
-    id: &str,
-) -> T {
+fn parse_jsonc_with_id<T: DeserializeOwned>(content: &str, path: &Path, id: &str) -> T {
     let mut value = parse_to_serde_value(content, &Default::default())
         .map_err(|e| format!("Failed to parse config {:?}: {}", path, e))
         .unwrap()
@@ -147,11 +143,7 @@ fn parse_jsonc_with_id<T: DeserializeOwned>(
         .unwrap()
 }
 
-fn parse_shop_jsonc_with_id(
-    content: &str,
-    path: &Path,
-    id: &str,
-) -> ShopConfig {
+fn parse_shop_jsonc_with_id(content: &str, path: &Path, id: &str) -> ShopConfig {
     let mut value = parse_to_serde_value(content, &Default::default())
         .map_err(|e| format!("Failed to parse config {:?}: {}", path, e))
         .unwrap()
