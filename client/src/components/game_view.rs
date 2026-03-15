@@ -296,6 +296,21 @@ pub fn game_view(props: &GameViewProps) -> Html {
         });
     }
 
+    {
+        let selected_piece_id = selected_piece_id.clone();
+        let player_id = props.reducer.player_id.unwrap_or_else(Uuid::nil);
+        let pieces = props.reducer.state.pieces.clone();
+        use_effect_with((pieces, player_id), move |(pieces, player_id)| {
+            if let Some(sel) = *selected_piece_id {
+                match pieces.get(&sel) {
+                    Some(p) if p.owner_id == Some(*player_id) => {}
+                    _ => selected_piece_id.set(None),
+                }
+            }
+            || ()
+        });
+    }
+
     let handle_input_start = {
         let selected_piece_id = selected_piece_id.clone();
         let drag_start = drag_start.clone();

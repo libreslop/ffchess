@@ -1,6 +1,6 @@
 {
-    "id": "skirmish",
-    "display_name": "Skirmish",
+    "id": "arena",
+    "display_name": "Arena",
     "max_players": 10,
     "board_size": "20",
     "camera_pan_limit": "fog_of_war_radius + 0.5",
