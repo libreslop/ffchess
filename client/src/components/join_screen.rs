@@ -1,11 +1,12 @@
 use crate::utils::is_mobile;
 use common::models::GameModeClientConfig;
+use common::types::{KitId, ModeId};
 use serde::{Deserialize, Serialize};
 use yew::prelude::*;
 
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct ModeSummary {
-    pub id: String,
+    pub id: ModeId,
     pub display_name: String,
     pub players: u32,
     pub max_players: u32,
@@ -19,13 +20,13 @@ pub struct JoinScreenProps {
     pub on_name_submit: Callback<SubmitEvent>,
     pub landing_cooldown: i32,
     pub join_step: i32,
-    pub on_join: Callback<String>,
+    pub on_join: Callback<KitId>,
     pub error: Option<common::protocol::GameError>,
     pub is_loading: bool,
     pub mode: Option<GameModeClientConfig>,
     pub mode_options: Vec<ModeSummary>,
-    pub selected_mode_id: String,
-    pub on_select_mode: Callback<String>,
+    pub selected_mode_id: ModeId,
+    pub on_select_mode: Callback<ModeId>,
 }
 
 #[function_component(JoinScreen)]
@@ -101,7 +102,7 @@ pub fn join_screen(props: &JoinScreenProps) -> Html {
                                                 if is_disabled { "0.5" } else { "1.0" }
                                             )}
                                         >
-                                            <span style="font-weight: 900; font-size: 1.1em; line-height: 1.1; text-align: center; margin-bottom: 8px;">{ kit.name.to_uppercase() }</span>
+                                            <span style="font-weight: 900; font-size: 1.1em; line-height: 1.1; text-align: center; margin-bottom: 8px;">{ kit.name.as_ref().to_uppercase() }</span>
                                             <span style="font-weight: normal; font-size: 0.8em; color: #cbd5e1; line-height: 1.2; text-align: center; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden;">{ &kit.description }</span>
                                             <span style="position: absolute; bottom: 6px; right: 10px; font-size: 1em; font-weight: 900; opacity: 0.5;">
                                                 { idx + 1 }

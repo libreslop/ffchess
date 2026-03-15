@@ -1,6 +1,6 @@
+use common::types::{ColorHex, PlayerId};
 use rand::Rng;
 use std::collections::HashMap;
-use uuid::Uuid;
 
 pub const PREFERRED_COLORS: &[&str] = &[
     "#dc2626", // Red
@@ -19,9 +19,9 @@ pub const PREFERRED_COLORS: &[&str] = &[
 ];
 
 pub struct ColorManager {
-    pub player_colors: HashMap<Uuid, String>,
-    pub color_last_active: HashMap<String, i64>,
-    pub player_last_active: HashMap<Uuid, i64>,
+    pub player_colors: HashMap<PlayerId, ColorHex>,
+    pub color_last_active: HashMap<ColorHex, i64>,
+    pub player_last_active: HashMap<PlayerId, i64>,
 }
 
 impl ColorManager {
@@ -33,11 +33,15 @@ impl ColorManager {
         }
     }
 
-    pub fn get_or_assign_color(&mut self, player_id: Uuid, active_player_ids: &[Uuid]) -> String {
+    pub fn get_or_assign_color(
+        &mut self,
+        player_id: PlayerId,
+        active_player_ids: &[PlayerId],
+    ) -> ColorHex {
         let now = chrono::Utc::now().timestamp();
 
         // Identify currently active colors.
-        let active_colors: Vec<String> = active_player_ids
+        let active_colors: Vec<ColorHex> = active_player_ids
             .iter()
             .filter(|&id| *id != player_id)
             .filter_map(|id| self.player_colors.get(id).cloned())
@@ -63,7 +67,7 @@ impl ColorManager {
         // 2. Try to find a preferred color that is NOT active and NOT claimed.
         // If a color is expired, it is NO LONGER claimed.
         for &c in PREFERRED_COLORS {
-            let color = c.to_string();
+            let color = ColorHex::from(c);
             if !active_colors.contains(&color) {
                 let last_active = self.color_last_active.get(&color);
                 let claimed = last_active.is_some_and(|&last| now - last < 60);
@@ -80,7 +84,7 @@ impl ColorManager {
         // 3. Random color that is NOT active and NOT claimed.
         let mut rng = rand::thread_rng();
         for _ in 0..100 {
-            let color = format!("#{:06x}", rng.gen_range(0..0x1000000));
+            let color = ColorHex::from(format!("#{:06x}", rng.gen_range(0..0x1000000)));
             if !active_colors.contains(&color) {
                 let last_active = self.color_last_active.get(&color);
                 let claimed = last_active.is_some_and(|&last| now - last < 60);
@@ -96,7 +100,7 @@ impl ColorManager {
 
         // Fallback to anything not active if we are really crowded
         for &c in PREFERRED_COLORS {
-            let color = c.to_string();
+            let color = ColorHex::from(c);
             if !active_colors.contains(&color) {
                 tracing::info!(?player_id, ?color, "Assigning fallback preferred color");
                 self.player_colors.insert(player_id, color.clone());
@@ -107,7 +111,7 @@ impl ColorManager {
         }
 
         // Ultimate fallback
-        let color = format!("#{:06x}", rng.gen_range(0..0x1000000));
+        let color = ColorHex::from(format!("#{:06x}", rng.gen_range(0..0x1000000)));
         tracing::info!(
             ?player_id,
             ?color,
@@ -119,7 +123,7 @@ impl ColorManager {
         color
     }
 
-    pub fn update_activity(&mut self, player_id: Uuid) {
+    pub fn update_activity(&mut self, player_id: PlayerId) {
         let now = chrono::Utc::now().timestamp();
         if let Some(color) = self.player_colors.get(&player_id).cloned() {
             self.color_last_active.insert(color, now);

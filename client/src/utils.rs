@@ -1,4 +1,4 @@
-use rand::seq::SliceRandom;
+use common::types::{ModeId, PlayerId, SessionSecret};
 use uuid::Uuid;
 
 pub fn get_stored_name() -> String {
@@ -19,23 +19,24 @@ pub fn set_stored_name(name: &str) {
     }
 }
 
-fn storage_key(base: &str, mode_id: &str) -> String {
-    format!("{base}_{mode_id}")
+fn storage_key(base: &str, mode_id: &ModeId) -> String {
+    format!("{base}_{}", mode_id.as_ref())
 }
 
-pub fn get_stored_id(mode_id: &str) -> Option<Uuid> {
+pub fn get_stored_id(mode_id: &ModeId) -> Option<PlayerId> {
     let window = web_sys::window().unwrap();
     if let Ok(Some(storage)) = window.local_storage() {
         let key = storage_key("ffchess_player_id", mode_id);
         return storage
             .get_item(&key)
             .unwrap_or_else(|_| storage.get_item("ffchess_player_id").ok().flatten())
-            .and_then(|s| Uuid::parse_str(&s).ok());
+            .and_then(|s| Uuid::parse_str(&s).ok())
+            .map(PlayerId::from);
     }
     None
 }
 
-pub fn set_stored_id(mode_id: &str, id: Uuid) {
+pub fn set_stored_id(mode_id: &ModeId, id: PlayerId) {
     let window = web_sys::window().unwrap();
     if let Ok(Some(storage)) = window.local_storage() {
         let key = storage_key("ffchess_player_id", mode_id);
@@ -44,19 +45,20 @@ pub fn set_stored_id(mode_id: &str, id: Uuid) {
     }
 }
 
-pub fn get_stored_secret(mode_id: &str) -> Option<Uuid> {
+pub fn get_stored_secret(mode_id: &ModeId) -> Option<SessionSecret> {
     let window = web_sys::window().unwrap();
     if let Ok(Some(storage)) = window.local_storage() {
         let key = storage_key("ffchess_session_secret", mode_id);
         return storage
             .get_item(&key)
             .unwrap_or_else(|_| storage.get_item("ffchess_session_secret").ok().flatten())
-            .and_then(|s| Uuid::parse_str(&s).ok());
+            .and_then(|s| Uuid::parse_str(&s).ok())
+            .map(SessionSecret::from);
     }
     None
 }
 
-pub fn set_stored_secret(mode_id: &str, secret: Uuid) {
+pub fn set_stored_secret(mode_id: &ModeId, secret: SessionSecret) {
     let window = web_sys::window().unwrap();
     if let Ok(Some(storage)) = window.local_storage() {
         let key = storage_key("ffchess_session_secret", mode_id);
@@ -65,7 +67,7 @@ pub fn set_stored_secret(mode_id: &str, secret: Uuid) {
     }
 }
 
-pub fn clear_stored_session(mode_id: &str) {
+pub fn clear_stored_session(mode_id: &ModeId) {
     if let Ok(Some(storage)) = web_sys::window()
         .expect("no global `window` exists")
         .local_storage()
@@ -75,7 +77,7 @@ pub fn clear_stored_session(mode_id: &str) {
     }
 }
 
-pub fn get_death_info(mode_id: &str) -> (i64, i64) {
+pub fn get_death_info(mode_id: &ModeId) -> (i64, i64) {
     let window = web_sys::window().unwrap();
     if let Ok(Some(storage)) = window.local_storage() {
         let ts = storage
@@ -93,7 +95,7 @@ pub fn get_death_info(mode_id: &str) -> (i64, i64) {
     (0, 5000)
 }
 
-pub fn set_death_timestamp(mode_id: &str, ts: i64, cooldown_ms: i64) {
+pub fn set_death_timestamp(mode_id: &ModeId, ts: i64, cooldown_ms: i64) {
     let window = web_sys::window().unwrap();
     if let Ok(Some(storage)) = window.local_storage() {
         let _ = storage.set_item(&storage_key("ffchess_death_ts", mode_id), &ts.to_string());
@@ -102,10 +104,6 @@ pub fn set_death_timestamp(mode_id: &str, ts: i64, cooldown_ms: i64) {
             &cooldown_ms.to_string(),
         );
     }
-}
-
-pub fn generate_random_name() -> String {
-    "An Unnamed Player".to_string()
 }
 
 pub fn is_mobile() -> bool {

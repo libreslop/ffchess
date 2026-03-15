@@ -4,25 +4,25 @@
 This document outlines the architectural changes required to transition `ffchess-server` from a hardcoded chess variant to a generic, data-driven tile-based game engine.
 
 ## 1. Configuration System
-The system will rely on JSON configuration files located in a root `config/` directory.
+The system will rely on JSONC configuration files located in a root `config/` directory. Mode IDs are derived from filenames.
 
 ### 1.1 Directory Structure
 ```
 config/
 ├── pieces/
-│   ├── pawn.json
-│   ├── knight.json
+│   ├── pawn.jsonc
+│   ├── knight.jsonc
 │   └── ...
 ├── shops/
-│   ├── spawn_shop.json
-│   └── upgrade_shop.json
+│   ├── spawn_shop.jsonc
+│   └── upgrade_shop.jsonc
 └── modes/
-    └── standard.json
+    └── standard.jsonc
 ```
 
 ### 1.2 Schemas
 
-#### Piece Configuration (`config/pieces/*.json`)
+#### Piece Configuration (`config/pieces/*.jsonc`)
 ```json
 {
   "id": "string",
@@ -35,7 +35,7 @@ config/
 }
 ```
 
-#### Shop Configuration (`config/shops/*.json`)
+#### Shop Configuration (`config/shops/*.jsonc`)
 ```json
 {
   "id": "string",
@@ -44,7 +44,7 @@ config/
   "groups": [
     {
       "applies_to": ["piece_id", ...],
-      "entries": [
+      "items": [
         {
           "display_name": "string",
           "price_expr": "string", // Evaluated expression (e.g. "10 + pawn_count * 2")
@@ -55,12 +55,12 @@ config/
     }
   ],
   "default_group": {
-    "entries": [...]
+    "items": [...]
   }
 }
 ```
 
-#### Game Mode Configuration (`config/modes/*.json`)
+#### Game Mode Configuration (`config/modes/*.jsonc`)
 ```json
 {
   "id": "string",
@@ -72,13 +72,13 @@ config/
     { "piece_id": "string", "max_expr": "string" }
   ],
   "shop_counts": [
-    { "shop_id": "string", "count_expr": "string" }
+    { "shop_id": "string", "count": "u32" }
   ],
   "kits": [
     { "name": "string", "pieces": ["piece_id", ...] }
   ],
-  "win_conditions": [
-    { "type": "CapturePiece", "target_id": "string", "reward": "EliminateOwner" }
+  "hooks": [
+    { "trigger": "OnCapture", "target_piece_id": "string", "action": "EliminateOwner" }
   ]
 }
 ```

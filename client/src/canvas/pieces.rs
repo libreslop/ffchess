@@ -13,7 +13,7 @@ impl Renderer {
 
         let color_str = if let Some(owner_id) = params.piece.owner_id {
             if let Some(player) = params.state.players.get(&owner_id) {
-                player.color.clone()
+                player.color.as_ref().to_string()
             } else {
                 "#555555".to_string()
             }
@@ -109,7 +109,7 @@ impl Renderer {
     ) {
         let tile_size = 40.0 * zoom;
         let pos = pos_override.unwrap_or((piece.position.x as f64, piece.position.y as f64));
-        if piece.piece_type == "king"
+        if piece.piece_type.as_ref() == "king"
             && let Some(owner_id) = piece.owner_id
             && let Some(player) = state.players.get(&owner_id)
         {
@@ -134,7 +134,7 @@ impl Renderer {
                 let _ = self.ctx.stroke_text(name, x, y);
 
                 // Draw fill
-                self.ctx.set_fill_style_str(&player.color);
+                self.ctx.set_fill_style_str(player.color.as_ref());
                 self.ctx.set_global_alpha(alpha);
                 let _ = self.ctx.fill_text(name, x, y);
                 self.ctx.set_global_alpha(1.0);

@@ -7,13 +7,13 @@ use axum::{
     response::IntoResponse,
 };
 use common::protocol::{ClientMessage, GameError, ServerMessage};
+use common::types::{ModeId, PlayerId, SessionSecret};
 use futures_util::{SinkExt, StreamExt};
 use jsonc_parser::parse_to_serde_value;
 use rand::seq::SliceRandom;
 use serde::Serialize;
 use std::{fs, sync::Arc};
 use tokio::sync::mpsc;
-use uuid::Uuid;
 
 fn to_client_mode(cfg: &common::models::GameModeConfig) -> common::models::GameModeClientConfig {
     common::models::GameModeClientConfig {
@@ -36,7 +36,7 @@ fn to_client_mode(cfg: &common::models::GameModeConfig) -> common::models::GameM
 
 #[derive(Serialize)]
 pub struct ModeSummary {
-    pub id: String,
+    pub id: ModeId,
     pub display_name: String,
     pub players: u32,
     pub max_players: u32,
@@ -88,7 +88,7 @@ pub async fn ws_handler(
     Path(mode_id): Path<String>,
     State(state): State<Arc<ServerState>>,
 ) -> impl IntoResponse {
-    ws.on_upgrade(|socket| handle_socket(socket, mode_id, state))
+    ws.on_upgrade(|socket| handle_socket(socket, ModeId::from(mode_id), state))
 }
 
 pub async fn list_modes(State(state): State<Arc<ServerState>>) -> impl IntoResponse {
@@ -108,15 +108,13 @@ fn generate_name(state: &ServerState) -> String {
         .choose(&mut rng)
         .cloned()
         .unwrap_or_else(|| "Player".to_string());
-    if noun == adj {
-        if let Some(n) = pool.nouns.choose(&mut rng) {
-            noun = n.clone();
-        }
+    if noun == adj && let Some(n) = pool.nouns.choose(&mut rng) {
+        noun = n.clone();
     }
     format!("{adj} {noun}")
 }
 
-async fn handle_socket(socket: WebSocket, mode_id: String, state: Arc<ServerState>) {
+async fn handle_socket(socket: WebSocket, mode_id: ModeId, state: Arc<ServerState>) {
     let instance = match state.get_game(&mode_id).await {
         Some(i) => i,
         None => {
@@ -137,7 +135,7 @@ async fn handle_socket(socket: WebSocket, mode_id: String, state: Arc<ServerStat
         }
     });
 
-    let conn_id = Uuid::new_v4();
+    let conn_id = PlayerId::new();
     instance
         .player_channels
         .write()
@@ -147,16 +145,16 @@ async fn handle_socket(socket: WebSocket, mode_id: String, state: Arc<ServerStat
     {
         let game = instance.game.read().await;
         let _ = tx.send(ServerMessage::Init {
-            player_id: Uuid::nil(),
-            session_secret: Uuid::nil(),
-            state: game.clone(),
+            player_id: PlayerId::nil(),
+            session_secret: SessionSecret::nil(),
+            state: Box::new(game.clone()),
             mode: to_client_mode(&instance.mode_config),
             pieces: (*instance.piece_configs).clone(),
             shops: (*instance.shop_configs).clone(),
         });
     }
 
-    let mut player_id = None;
+    let mut player_id: Option<PlayerId> = None;
 
     while let Some(Ok(msg)) = receiver.next().await {
         if let Message::Text(text) = msg {
@@ -202,7 +200,7 @@ async fn handle_socket(socket: WebSocket, mode_id: String, state: Arc<ServerStat
                                 let _ = tx.send(ServerMessage::Init {
                                     player_id: id,
                                     session_secret: secret,
-                                    state: game.clone(),
+                                    state: Box::new(game.clone()),
                                     mode: to_client_mode(&instance.mode_config),
                                     pieces: (*instance.piece_configs).clone(),
                                     shops: (*instance.shop_configs).clone(),
@@ -219,22 +217,21 @@ async fn handle_socket(socket: WebSocket, mode_id: String, state: Arc<ServerStat
                         }
                     }
                     ClientMessage::MovePiece { piece_id, target } => {
-                        if let Some(pid) = player_id {
-                            if let Err(e) = instance.handle_move(pid, piece_id, target).await {
-                                let _ = tx.send(ServerMessage::Error(e));
-                            }
+                        if let Some(pid) = player_id
+                            && let Err(e) = instance.handle_move(pid, piece_id, target).await
+                        {
+                            let _ = tx.send(ServerMessage::Error(e));
                         }
                     }
                     ClientMessage::BuyPiece {
                         shop_pos,
                         item_index,
                     } => {
-                        if let Some(pid) = player_id {
-                            if let Err(e) =
+                        if let Some(pid) = player_id
+                            && let Err(e) =
                                 instance.handle_shop_buy(pid, shop_pos, item_index).await
-                            {
-                                let _ = tx.send(ServerMessage::Error(e));
-                            }
+                        {
+                            let _ = tx.send(ServerMessage::Error(e));
                         }
                     }
                     ClientMessage::Ping(t) => {

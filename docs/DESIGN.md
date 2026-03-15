@@ -9,7 +9,7 @@
 - **State Management:** In-memory board state (no persistent DB for now).
 
 ## 2. Gameplay Mechanics
-- **World:** A dynamic grid that starts at 25x25 and scales with player count (up to 200x200).
+- **World:** A dynamic grid sized per mode configuration (often scales with player count; cap depends on the mode).
 - **Multiplayer:** Many players coexist on the same board simultaneously.
 - **Move Interference:** First-come-first-served. Pieces block movement (except Knights).
 - **Pieces:** 
@@ -24,14 +24,14 @@
     - **Score:** Gained immediately upon capturing an enemy or NPC piece.
     - **Shop Areas:** Pieces on shop squares can be used to spawn new pieces by spending Score.
     - **Shop Movement:** Shop squares are single-use and reappear at a random location after being used.
-- **Kits:** Players choose a specialized starting set (Standard, Shield, Scout, Tank).
+- **Kits:** Players choose a specialized starting set (Standard, Scout, Tank) defined by the active mode.
 - **NPCs:** Roaming pieces that can be captured for score.
 
 ## 3. Visuals & UI
 - **Style:** Minimalist 2D ".io game" aesthetic with SVG chess pieces.
 - **Viewport (Dynamic):**
-    - **Focus:** The camera is strictly constrained to the player's King (cannot pan away from it).
-    - **Smooth Zoom:** Continuous zooming (0.2x to 2.0x) centered on the cursor position with exponential smoothing.
+    - **Focus:** The camera follows the King on spawn/death, with free panning inside a mode-configured radius.
+    - **Smooth Zoom:** Continuous zooming centered on the cursor position with exponential smoothing.
 - **Overlay:**
     - **Stats Bar:** A semi-transparent top bar showing FPS, Ping, Coordinates, and Player count.
     - **Leaderboard:** Top 10 players by score shown in the top-right corner.
@@ -41,7 +41,7 @@
     - **Cooldown Indicators:** Visual progress on each piece.
 
 ## 4. Technical Implementation
-- **Concurrency:** The server uses `tokio::sync::RwLock` for the `GameState`.
+- **Concurrency:** The server uses `tokio::sync::RwLock` for `GameState` inside per-mode `GameInstance`s.
 - **WASM Client:** The client utilizes `web-sys` for high-performance Canvas rendering.
 - **Protocol:** JSON-serialized messages over WebSockets.
 - **Scalability:** 

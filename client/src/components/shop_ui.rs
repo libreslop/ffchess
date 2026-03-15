@@ -1,6 +1,7 @@
 use crate::reducer::MsgSender;
 use common::models::{Piece, PieceConfig, ShopConfig};
 use common::protocol::ClientMessage;
+use common::types::PieceTypeId;
 use glam::IVec2;
 use std::collections::HashMap;
 use yew::prelude::*;
@@ -11,7 +12,7 @@ pub struct ShopUIProps {
     pub player_pieces_count: usize,
     pub piece_on_shop: Option<Piece>,
     pub shop_config: ShopConfig,
-    pub piece_configs: HashMap<String, PieceConfig>,
+    pub piece_configs: HashMap<PieceTypeId, PieceConfig>,
     pub tx: MsgSender,
     pub shop_pos: IVec2,
 }
@@ -36,7 +37,7 @@ pub fn shop_ui(props: &ShopUIProps) -> Html {
     );
     for p_id in props.piece_configs.keys() {
         // We don't have individual counts here easily, but we can assume 0 or just not use them in simple expressions
-        vars.insert(format!("{}_count", p_id), 0.0);
+        vars.insert(format!("{}_count", p_id.as_ref()), 0.0);
     }
 
     html! {

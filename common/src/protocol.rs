@@ -1,11 +1,11 @@
 use crate::models::{
     GameModeClientConfig, GameState, Piece, PieceConfig, Player, Shop, ShopConfig,
 };
+use crate::types::{KitId, PieceId, PieceTypeId, PlayerId, SessionSecret, ShopId};
 use glam::IVec2;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
-use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum GameError {
@@ -54,12 +54,12 @@ impl fmt::Display for GameError {
 pub enum ClientMessage {
     Join {
         name: String,
-        kit_name: String,
-        player_id: Option<Uuid>,
-        session_secret: Option<Uuid>,
+        kit_name: KitId,
+        player_id: Option<PlayerId>,
+        session_secret: Option<SessionSecret>,
     },
     MovePiece {
-        piece_id: Uuid,
+        piece_id: PieceId,
         target: IVec2,
     },
     BuyPiece {
@@ -72,19 +72,19 @@ pub enum ClientMessage {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ServerMessage {
     Init {
-        player_id: Uuid,
-        session_secret: Uuid,
-        state: GameState,
+        player_id: PlayerId,
+        session_secret: SessionSecret,
+        state: Box<GameState>,
         mode: GameModeClientConfig,
-        pieces: HashMap<String, PieceConfig>,
-        shops: HashMap<String, ShopConfig>,
+        pieces: HashMap<PieceTypeId, PieceConfig>,
+        shops: HashMap<ShopId, ShopConfig>,
     },
     UpdateState {
         players: Vec<Player>,
         pieces: Vec<Piece>,
         shops: Vec<Shop>,
-        removed_pieces: Vec<Uuid>,
-        removed_players: Vec<Uuid>,
+        removed_pieces: Vec<PieceId>,
+        removed_players: Vec<PlayerId>,
         board_size: i32,
     },
     Error(GameError),

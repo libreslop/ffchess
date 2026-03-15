@@ -1,23 +1,24 @@
 #[cfg(test)]
 mod tests {
-    use common::models::{Piece, PieceConfig};
-    use common::protocol::{ClientMessage, ServerMessage};
+    use common::models::Piece;
+    use common::types::{KitId, ModeId, PieceId, PieceTypeId};
     use glam::IVec2;
     use server::state::ServerState;
-    use std::sync::Arc;
     use tokio::sync::mpsc;
-    use uuid::Uuid;
 
     #[tokio::test]
     async fn test_player_spawn_and_kits() {
         let state = ServerState::new();
-        let instance = state.get_game("ffa").await.expect("FFA game should exist");
+        let instance = state
+            .get_game(&ModeId::from("ffa"))
+            .await
+            .expect("FFA game should exist");
         let (tx, _) = mpsc::unbounded_channel();
 
         let (p1, _p1_secret) = instance
             .add_player(
                 "P1".to_string(),
-                "Standard".to_string(),
+                KitId::from("Standard"),
                 tx.clone(),
                 None,
                 None,
@@ -25,7 +26,13 @@ mod tests {
             .await
             .expect("Initial join should succeed");
         let (p2, _p2_secret) = instance
-            .add_player("P2".to_string(), "Tank".to_string(), tx.clone(), None, None)
+            .add_player(
+                "P2".to_string(),
+                KitId::from("Tank"),
+                tx.clone(),
+                None,
+                None,
+            )
             .await
             .expect("Initial join should succeed");
 
@@ -37,25 +44,7 @@ mod tests {
             .values()
             .filter(|p| p.owner_id == Some(p1))
             .collect();
-        // Standard kit: 1 King + 5 pieces (from config/modes/ffa.jsonc)
-        // Wait, let's check ffa.jsonc
-        // "Standard": ["king", "pawn", "pawn", "knight", "knight"] -> that's 5 pieces total including king?
-        // Ah, my add_player adds a king AND then the pieces in the kit.
-        // FFA config says: "pieces": ["king", "pawn", "pawn", "knight", "knight"]
-        // So it's 1 + 5 = 6 pieces total if king is in the kit list.
-        // Let's check ffa.jsonc content again.
-        // Content from @config/modes/ffa.jsonc: "pieces": ["king", "pawn", "pawn", "knight", "knight"]
-        // My add_player code:
-        /*
-        let king_id = Uuid::new_v4();
-        game.pieces.insert(king_id, Piece { ... piece_type: "king".to_string(), ... });
-        for p_type_id in &kit.pieces {
-            ...
-            game.pieces.insert(p_id, Piece { ... piece_type: p_type_id.clone(), ... });
-        }
-        */
-        // Standard kit: "pieces": ["king", "pawn", "pawn", "knight", "knight"]
-        // Should be 5 pieces total.
+        // Standard kit: 5 pieces total, including the king.
         assert_eq!(p1_pieces.len(), 5);
 
         let p2_pieces: Vec<_> = game
@@ -63,21 +52,23 @@ mod tests {
             .values()
             .filter(|p| p.owner_id == Some(p2))
             .collect();
-        // Tank kit: "pieces": ["king", "rook"]
-        // Should be 2 pieces total.
-        assert_eq!(p2_pieces.len(), 2);
+        // Tank kit: "pieces": ["king", "rook", "pawn"]
+        assert_eq!(p2_pieces.len(), 3);
     }
 
     #[tokio::test]
     async fn test_king_capture_elimination() {
         let state = ServerState::new();
-        let instance = state.get_game("ffa").await.expect("FFA game should exist");
+        let instance = state
+            .get_game(&ModeId::from("ffa"))
+            .await
+            .expect("FFA game should exist");
         let (tx, _) = mpsc::unbounded_channel();
 
         let (p1_id, _p1_secret) = instance
             .add_player(
                 "P1".to_string(),
-                "Standard".to_string(),
+                KitId::from("Standard"),
                 tx.clone(),
                 None,
                 None,
@@ -87,7 +78,7 @@ mod tests {
         let (p2_id, _p2_secret) = instance
             .add_player(
                 "P2".to_string(),
-                "Standard".to_string(),
+                KitId::from("Standard"),
                 tx.clone(),
                 None,
                 None,
@@ -103,13 +94,13 @@ mod tests {
         // Add a queen for P2 near P1 king
         let p2_queen_id = {
             let mut game = instance.game.write().await;
-            let q_id = Uuid::new_v4();
+            let q_id = PieceId::new();
             game.pieces.insert(
                 q_id,
                 Piece {
                     id: q_id,
                     owner_id: Some(p2_id),
-                    piece_type: "queen".to_string(),
+                    piece_type: PieceTypeId::from("queen"),
                     position: IVec2::new(10, 10),
                     last_move_time: 0,
                     cooldown_ms: 0,

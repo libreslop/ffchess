@@ -1,12 +1,12 @@
 use common::models::{GameModeClientConfig, GameState, PieceConfig, ShopConfig};
 use common::protocol::{ClientMessage, GameError};
+use common::types::{PieceId, PieceTypeId, PlayerId, SessionSecret, ShopId};
 use glam::IVec2;
 use std::collections::HashMap;
-use uuid::Uuid;
 
 #[derive(Clone, PartialEq, Default, Debug)]
 pub struct Pmove {
-    pub piece_id: Uuid,
+    pub piece_id: PieceId,
     pub target: IVec2,
     pub pending: bool,
     pub old_last_move_time: i64,
@@ -17,10 +17,10 @@ pub struct Pmove {
 pub struct GameStateReducer {
     pub state: GameState,
     pub mode: Option<GameModeClientConfig>,
-    pub piece_configs: HashMap<String, PieceConfig>,
-    pub shop_configs: HashMap<String, ShopConfig>,
-    pub player_id: Option<Uuid>,
-    pub session_secret: Option<Uuid>,
+    pub piece_configs: HashMap<PieceTypeId, PieceConfig>,
+    pub shop_configs: HashMap<ShopId, ShopConfig>,
+    pub player_id: Option<PlayerId>,
+    pub session_secret: Option<SessionSecret>,
     pub error: Option<GameError>,
     pub pm_queue: Vec<Pmove>,
     pub last_score: u64,

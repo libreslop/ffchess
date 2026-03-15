@@ -6,7 +6,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 pub struct ServerState {
-    pub games: Arc<RwLock<HashMap<String, Arc<GameInstance>>>>,
+    pub games: Arc<RwLock<HashMap<ModeId, Arc<GameInstance>>>>,
     pub config_manager: Arc<ConfigManager>,
 }
 
@@ -33,7 +33,7 @@ impl ServerState {
         }
     }
 
-    pub async fn get_game(&self, mode_id: &str) -> Option<Arc<GameInstance>> {
+    pub async fn get_game(&self, mode_id: &ModeId) -> Option<Arc<GameInstance>> {
         self.games.read().await.get(mode_id).cloned()
     }
 }

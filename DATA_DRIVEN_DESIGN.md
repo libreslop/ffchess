@@ -1,6 +1,6 @@
 # FFChess Data-Driven Engine Design
 
-FFChess has been refactored from a hardcoded game into a flexible, data-driven engine. This allows for rapid iteration of game modes, piece types, and shop configurations without recompiling the server or client.
+FFChess has been refactored from a hardcoded game into a flexible, data-driven engine. This allows for rapid iteration of game modes, piece types, and shop configurations without recompiling the server or client. Core identifiers are strongly typed in the `common` crate (e.g., `ModeId`, `PieceTypeId`, `ShopId`) to enforce semantics.
 
 ## Core Architecture
 
@@ -10,10 +10,10 @@ The server now supports multiple encapsulated game instances. Each instance runs
 - **Encapsulation:** Every `GameInstance` has its own `GameState`, configurations, and player channels.
 
 ### 2. Configuration System
-Configurations are stored as JSON files in the `config/` directory:
-- `config/pieces/*.json`: Individual piece definitions (move paths, capture paths, cooldowns, score values).
-- `config/shops/*.json`: Shop definitions (entry groups, price expressions, pieces to recruit/upgrade).
-- `config/modes/*.json`: Game mode definitions (board size formulas, NPC limits, win conditions, starting kits).
+Configurations are stored as JSONC files in the `config/` directory. Mode IDs are derived from filenames (e.g., `ffa.jsonc` → `ModeId("ffa")`).
+- `config/pieces/*.jsonc`: Individual piece definitions (move paths, capture paths, cooldowns, score values).
+- `config/shops/*.jsonc`: Shop definitions (item groups, price expressions, pieces to recruit/upgrade).
+- `config/modes/*.jsonc`: Game mode definitions (board size formulas, NPC limits, hooks, starting kits).
 
 ### 3. Expression Engine (`meval`)
 Dynamic values such as shop prices, board sizes, and NPC spawn limits are calculated using mathematical expressions.
@@ -60,7 +60,7 @@ The Yew client has been updated to be fully configuration-aware:
   "groups": [
     {
       "applies_to": ["pawn"],
-      "entries": [
+      "items": [
         { "replace_with": "knight", "price_expr": "50 + knight_count * 25" }
       ]
     }
@@ -77,8 +77,8 @@ The Yew client has been updated to be fully configuration-aware:
   "kits": [
     { "name": "standard", "pieces": ["king", "pawn", "pawn", "knight", "knight"] }
   ],
-  "win_conditions": [
-    { "type": "CapturePiece", "target_id": "king", "reward": "EliminateOwner" }
+  "hooks": [
+    { "trigger": "OnCapture", "target_piece_id": "king", "action": "EliminateOwner" }
   ]
 }
 ```
@@ -116,7 +116,7 @@ The Yew client has been updated to be fully configuration-aware:
 - `move_paths` / `capture_paths`: Lists of finite step paths. Blocking ends the path; Knights are encoded as one-step paths to allow jumps.
 
 ### Shops – `config/shops/*.jsonc`
-- `id`, `display_name`, `default_uses`: Identity and how many times a shop can be used before despawning.
+- `id`, `display_name`, `default_uses`, `color`: Identity, display info, and how many times a shop can be used before despawning.
 - `groups`: Per-piece applicability. Each `group` has `applies_to` (piece ids) and `items`.
 - Shop `items`: `{ display_name, price_expr, replace_with?, add_pieces[] }`. `replace_with` upgrades the acting piece; `add_pieces` spawns new ones.
 - `default_group`: Fallback `items` applied when no `group` matches the acting piece.

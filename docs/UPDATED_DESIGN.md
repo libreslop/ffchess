@@ -16,7 +16,7 @@ The system is built using a modern Rust stack for both performance and type safe
 
 ### 3.1 Dynamic World Scaling
 - **Coordinate System:** Centered at `(0,0)`. Range expands from `-(size/2)` to `(size+1)/2 - 1`.
-- **Scaling Formula:** `(25.0 + (player_count as f32).sqrt() * 17.5).clamp(25.0, 200.0)`.
+- **Scaling Formula:** Defined per mode via the `board_size` expression in `config/modes/*.jsonc`.
 - **Expansion:** Instant when player count increases.
 - **Contraction:** Deferred until all player pieces have cleared the region to be removed, preventing unfair eliminations.
 
@@ -29,15 +29,15 @@ The system is built using a modern Rust stack for both performance and type safe
 - **Illegal Move Recovery:** If a predicted move is rejected by the server, the client reverts the piece's cooldown state to its original values instead of resetting them.
 
 ### 3.3 NPC Intelligence
-- **NPC Density:** Scales with board size (approx. 1 per 250 squares).
+- **NPC Density:** Controlled per mode via `npc_limits` expressions.
 - **Behavioral Modes:**
     - **Hunt:** Prioritizes King captures, then other player pieces within a 12-square radius.
     - **Roam:** Moves randomly when no players are nearby.
-- **Spawn Buffer:** NPCs are strictly prohibited from spawning within a 10-square grid radius (Chebyshev distance) of any player piece.
+- **Spawn Buffer:** NPCs avoid spawning within ~10 tiles (Euclidean) of any piece and ~5 tiles of shops.
 
 ### 3.4 Economy & Kits
 - **Score:** Earned by capturing pieces (King = 500, Queen = 90, etc.).
-- **Kits:** Players choose from Standard, Shield, Scout, or Tank starting armies.
+- **Kits:** Players choose from Standard, Scout, or Tank starting armies (per mode config).
 - **Shops:** Single-use squares for spawning or upgrading pieces. Relocate randomly after use.
 
 ### 4.4 Security Architecture (Added March 2026)
@@ -63,6 +63,7 @@ The system is built using a modern Rust stack for both performance and type safe
 ### 4.2 Camera & Interaction
 - **Smooth Interpolation:** Pan and zoom use exponential smoothing for a "cinematic" feel.
 - **Death Camera:** Pans to the location of the King's defeat and dims the background with a 300ms fade.
+- **Pan Limits:** Free panning is constrained by the per-mode `camera_pan_limit` expression.
 - **Fog of War (Client-Side Only):** The client provides radial vision centered on the King. Currently, the server broadcasts the **full** board state; a server-side implementation is planned to prevent data scraping of the entire world.
 
 ### 4.3 Network Stability
@@ -73,7 +74,8 @@ The system is built using a modern Rust stack for both performance and type safe
 - **Static Boot, Live Update:** The HTML embeds the initial mode list and global client settings inside `<script>` tags. The WASM app hydrates from these values, then refreshes mode metadata on a timer without a page reload.
 - **Dropdown Navigation:** The home screen exposes a dropdown built from `config/modes/*.jsonc`; switching modes keeps the page alive while swapping to the selected game instance and updating the hash (`/#mode_id`).
 - **Serialized Config, Not Files:** The server serializes the active mode/global slices it needs to share; raw JSON files are never sent to the client. This keeps sensitive or unused config keys private.
-- **Per-Mode Respawn Cooldowns:** Each mode advertises `respawn_cooldown_ms`, allowing distinct pacing between modes like `ffa` and `skirmish`.
+- **Mode IDs:** Mode IDs are derived from filenames, and the client receives `GameModeClientConfig` plus the active piece/shop configs during `Init`.
+- **Per-Mode Respawn Cooldowns:** Each mode advertises `respawn_cooldown_ms`, allowing distinct pacing between modes like `ffa` and `arena`.
 
 ## 5. Deployment & Tooling
 - **Build System:** `trunk` for WebAssembly bundling.

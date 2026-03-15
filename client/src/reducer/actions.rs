@@ -2,25 +2,25 @@ use crate::reducer::types::{MsgSender, Pmove};
 use common::models::{
     GameModeClientConfig, GameState, Piece, PieceConfig, Player, Shop, ShopConfig,
 };
-use common::protocol::{GameError, ServerMessage};
+use common::protocol::GameError;
+use common::types::{PieceId, PieceTypeId, PlayerId, SessionSecret, ShopId};
 use std::collections::HashMap;
-use uuid::Uuid;
 
 pub enum GameAction {
     SetInit {
-        player_id: Uuid,
-        session_secret: Uuid,
+        player_id: PlayerId,
+        session_secret: SessionSecret,
         state: GameState,
         mode: GameModeClientConfig,
-        pieces: HashMap<String, PieceConfig>,
-        shops: HashMap<String, ShopConfig>,
+        pieces: HashMap<PieceTypeId, PieceConfig>,
+        shops: HashMap<ShopId, ShopConfig>,
     },
     UpdateState {
         players: Vec<Player>,
         pieces: Vec<Piece>,
         shops: Vec<Shop>,
-        removed_pieces: Vec<Uuid>,
-        removed_players: Vec<Uuid>,
+        removed_pieces: Vec<PieceId>,
+        removed_players: Vec<PlayerId>,
         board_size: i32,
     },
     SetError(GameError),
@@ -31,7 +31,7 @@ pub enum GameAction {
         time_survived_secs: u64,
     },
     AddPmove(Pmove),
-    ClearPmQueue(Uuid),
+    ClearPmQueue(PieceId),
     Tick(MsgSender),
     Pong(u64),
     SetFPS(u32),

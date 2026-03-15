@@ -3,13 +3,13 @@ use crate::canvas::Renderer;
 use crate::reducer::{GameAction, GameStateReducer, MsgSender, Pmove};
 use common::logic::is_within_board;
 use common::models::{GameState, Piece};
+use common::types::{PieceId, PlayerId};
 use glam::IVec2;
 use gloo_events::EventListener;
 use gloo_render::{AnimationFrame, request_animation_frame};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
-use uuid::Uuid;
 use wasm_bindgen::JsCast;
 use web_sys::HtmlCanvasElement;
 use yew::prelude::*;
@@ -45,7 +45,7 @@ fn now_epoch_ms() -> i64 {
 }
 
 fn apply_visible_ghosts(
-    ghosts: &mut HashMap<Uuid, Piece>,
+    ghosts: &mut HashMap<PieceId, Piece>,
     pm_queue: &[Pmove],
     state: &GameState,
     now_ms: i64,
@@ -71,10 +71,10 @@ const MOVE_ANIM_MS: f64 = 200.0;
 #[function_component(GameView)]
 pub fn game_view(props: &GameViewProps) -> Html {
     let canvas_ref = use_node_ref();
-    let selected_piece_id = use_state(|| None::<Uuid>);
+    let selected_piece_id = use_state(|| None::<PieceId>);
     let manager_ref = use_mut_ref(CameraManager::new);
-    let piece_prev_positions = use_mut_ref(HashMap::<Uuid, IVec2>::new);
-    let piece_anims = use_mut_ref(HashMap::<Uuid, PieceAnim>::new);
+    let piece_prev_positions = use_mut_ref(HashMap::<PieceId, IVec2>::new);
+    let piece_anims = use_mut_ref(HashMap::<PieceId, PieceAnim>::new);
 
     let cam_state = use_state(|| (0.0, 0.0));
     let zoom_state = use_state(|| 1.0f64);
@@ -194,7 +194,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
                 {
                     let mut manager = manager_ref.borrow_mut();
 
-                    let player_id_val = reducer_state.player_id.unwrap_or_else(Uuid::nil);
+                    let player_id_val = reducer_state.player_id.unwrap_or_else(PlayerId::nil);
                     let piece_count = reducer_state
                         .state
                         .pieces
@@ -204,22 +204,24 @@ pub fn game_view(props: &GameViewProps) -> Html {
 
                     let changed = update_camera(
                         &mut manager,
-                        &reducer_state.state,
-                        reducer_state.player_id,
-                        &canvas_ref,
-                        is_dragging,
-                        reducer_state.mode.as_ref(),
-                        piece_count,
-                        reducer_state.is_dead,
-                        globals.camera_zoom_min,
-                        globals.camera_zoom_max,
-                        globals.zoom_lerp,
-                        globals.inertia_decay,
-                        globals.velocity_cutoff,
-                        globals.pan_lerp_alive,
-                        globals.pan_lerp_dead,
-                        globals.tile_size_px,
-                        globals.death_zoom,
+                        crate::camera::CameraUpdateParams {
+                            state: &reducer_state.state,
+                            player_id: reducer_state.player_id,
+                            canvas_ref: &canvas_ref,
+                            is_dragging,
+                            mode: reducer_state.mode.as_ref(),
+                            piece_count,
+                            is_dead: reducer_state.is_dead,
+                            zoom_min: globals.camera_zoom_min,
+                            zoom_max: globals.camera_zoom_max,
+                            zoom_lerp: globals.zoom_lerp,
+                            inertia_decay: globals.inertia_decay,
+                            velocity_cutoff: globals.velocity_cutoff,
+                            pan_lerp_alive: globals.pan_lerp_alive,
+                            pan_lerp_dead: globals.pan_lerp_dead,
+                            tile_size_px: globals.tile_size_px,
+                            death_zoom: globals.death_zoom,
+                        },
                     );
 
                     if changed {
@@ -331,20 +333,20 @@ pub fn game_view(props: &GameViewProps) -> Html {
                             false
                         }
                     });
-                    renderer.draw_with_ghosts(
+                    renderer.draw_with_ghosts(crate::canvas::RenderParams {
                         state,
-                        player_id.unwrap_or_else(Uuid::nil),
-                        *sid,
-                        &visible_pm,
-                        &ghosts,
-                        &animated_positions,
-                        **cam,
-                        window_size.0,
-                        window_size.1,
-                        **zoom,
-                        mode.as_ref(),
+                        player_id: player_id.unwrap_or_else(PlayerId::nil),
+                        selected_piece_id: *sid,
+                        pm_queue: &visible_pm,
+                        ghost_pieces: &ghosts,
+                        animated_positions: &animated_positions,
+                        camera_pos: **cam,
+                        width: window_size.0,
+                        height: window_size.1,
+                        zoom: **zoom,
+                        mode: mode.as_ref(),
                         shop_configs,
-                    );
+                    });
                 }
                 || ()
             },
@@ -385,7 +387,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
 
     {
         let selected_piece_id = selected_piece_id.clone();
-        let player_id = props.reducer.player_id.unwrap_or_else(Uuid::nil);
+        let player_id = props.reducer.player_id.unwrap_or_else(PlayerId::nil);
         let pieces = props.reducer.state.pieces.clone();
         use_effect_with((pieces, player_id), move |(pieces, player_id)| {
             if let Some(sel) = *selected_piece_id {
@@ -513,9 +515,9 @@ pub fn game_view(props: &GameViewProps) -> Html {
                     manager.camera.0 -= dx;
                     manager.camera.1 -= dy;
 
-                    let player_id_val = reducer.player_id.unwrap_or_else(Uuid::nil);
+                    let player_id_val = reducer.player_id.unwrap_or_else(PlayerId::nil);
                     let is_alive = reducer.state.players.contains_key(&player_id_val)
-                        && player_id_val != Uuid::nil();
+                        && player_id_val != PlayerId::nil();
 
                     if !is_alive {
                         manager.target_camera = manager.camera;
@@ -582,11 +584,11 @@ pub fn game_view(props: &GameViewProps) -> Html {
             let grid_x = (world_x / tile_size).floor() as i32;
             let grid_y = (world_y / tile_size).floor() as i32;
             let target = IVec2::new(grid_x, grid_y);
-            let player_id = reducer.player_id.unwrap_or_else(Uuid::nil);
+            let player_id = reducer.player_id.unwrap_or_else(PlayerId::nil);
 
             if is_right_click {
                 selected_piece_id.set(None);
-                reducer.dispatch(GameAction::ClearPmQueue(Uuid::nil()));
+                reducer.dispatch(GameAction::ClearPmQueue(PieceId::nil()));
                 return;
             }
 
@@ -675,7 +677,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
 
     let (width, height) = *window_size;
 
-    let player_id = props.reducer.player_id.unwrap_or_else(Uuid::nil);
+    let player_id = props.reducer.player_id.unwrap_or_else(PlayerId::nil);
     let player_score = props
         .reducer
         .state

@@ -3,16 +3,16 @@
 Command your army in a real-time, multiplayer chess world. Scale your board, capture territories, and outfox your opponents in a dynamic, expanding battlefield.
 
 ## 🚀 Features
-- **Dynamic Board:** The board size scales based on the number of active players.
+- **Dynamic Board:** Board size is defined per mode using expressions (often scaling with `player_count`).
 - **Independent Cooldowns:** Every piece has its own cooldown timer based on its type and travel distance.
-- **Physics-Based Camera:** Smooth panning with momentum and exponential zoom smoothing.
+- **Physics-Based Camera:** Smooth panning with momentum, exponential zoom smoothing, and a mode-configured pan limit.
 - **King-Centric Strategy:** Lose your King, lose your entire army.
-- **Dynamic Viewport:** Your vision (Fog of War) expands as your army grows.
+- **Dynamic Viewport:** Fog-of-war radius is mode-configured and can scale with your army.
 - **Recruitment & Upgrades:** 
     - **Recruit:** Buy a Pawn to spawn a new unit in the nearest free square.
     - **Upgrade:** Use a shop square to transform an existing piece into a Knight, Bishop, Rook, or Queen.
     - **Note:** The King cannot be upgraded, but it can use shop squares to recruit new Pawns!
-- **Starting Kits:** Choose between Standard, Shield, Scout, or Tank starting sets.
+- **Starting Kits:** Choose between Standard, Scout, or Tank starting sets (per mode config).
 - **Unique Pawn Movement:** Pawns move in 4 adjacent directions and capture in 4 diagonal directions.
 - **Resource Optimized:** Server automatically suspends NPC logic when no players are active to minimize CPU load.
 - **Persistent NPCs:** Automated pieces populate the board, hunting players or roaming based on proximity.
@@ -59,7 +59,7 @@ Then run the server in a separate terminal. Note that the client will be on `loc
 ## ⚙️ Configuration Overview
 - **Global (server):** `config/global/server.jsonc` holds server-side defaults such as the adjective/noun name pool that is used when a player does not provide a name.
 - **Global (client):** `config/global/client.jsonc` tunes render/heartbeat intervals, reconnect timing, camera limits, and scroll/drag smoothing. Values are injected into the HTML `<script>` tag so the client boots without an extra request.
-- **Modes:** `config/modes/*.jsonc` define each game mode (board sizing formulas, fog-of-war radius, respawn cooldown, shops, kits, hooks). The home screen dropdown is built from these definitions and switching modes does **not** refresh the page.
+- **Modes:** `config/modes/*.jsonc` define each game mode (board sizing formulas, fog-of-war radius, respawn cooldown, shops, kits, hooks). Mode IDs are derived from the filename. The home screen dropdown is built from these definitions and switching modes does **not** refresh the page.
 - **Pieces & Shops:** `config/pieces/*.jsonc` describe movement, capture, cooldowns, and glyphs. `config/shops/*.jsonc` drive spawn/upgrade prices and options using expressions.
 
 ## 🧪 Testing

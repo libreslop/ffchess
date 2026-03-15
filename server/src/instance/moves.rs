@@ -1,0 +1,103 @@
+use super::GameInstance;
+use common::protocol::GameError;
+use common::types::{PieceId, PlayerId};
+use glam::IVec2;
+
+impl GameInstance {
+    pub async fn handle_move(
+        &self,
+        player_id: PlayerId,
+        piece_id: PieceId,
+        target: IVec2,
+    ) -> Result<(), GameError> {
+        let mut game = self.game.write().await;
+
+        let (piece_type, start_pos, piece_owner, _cooldown) = {
+            let piece = game.pieces.get(&piece_id).ok_or(GameError::PieceNotFound)?;
+            if piece.owner_id != Some(player_id) {
+                return Err(GameError::NotYourPiece);
+            }
+            let now = chrono::Utc::now().timestamp_millis();
+            let elapsed = now - piece.last_move_time;
+            if elapsed < piece.cooldown_ms {
+                return Err(GameError::OnCooldown);
+            }
+            (
+                piece.piece_type.clone(),
+                piece.position,
+                piece.owner_id,
+                piece.cooldown_ms,
+            )
+        };
+
+        let target_piece = game.pieces.values().find(|p| p.position == target).cloned();
+        let is_capture = if let Some(ref tp) = target_piece {
+            if tp.owner_id == Some(player_id) {
+                return Err(GameError::TargetFriendly);
+            }
+            true
+        } else {
+            false
+        };
+
+        let piece_config = self
+            .piece_configs
+            .get(&piece_type)
+            .ok_or_else(|| GameError::Internal("Piece config not found".to_string()))?;
+
+        if !common::logic::is_valid_move(
+            piece_config,
+            start_pos,
+            target,
+            is_capture,
+            game.board_size,
+            &game.pieces,
+            piece_owner,
+        ) {
+            return Err(GameError::InvalidMove);
+        }
+
+        // Apply move
+        if let Some(tp) = target_piece {
+            game.pieces.remove(&tp.id);
+            self.record_piece_removal(tp.id).await;
+
+            let attacker_score = self
+                .piece_configs
+                .get(&tp.piece_type)
+                .map(|c| c.score_value)
+                .unwrap_or(0);
+
+            if let Some(player) = game.players.get_mut(&player_id) {
+                player.score += attacker_score;
+                player.pieces_captured += 1;
+                if tp.piece_type.as_ref() == "king" {
+                    player.kills += 1;
+                }
+            }
+
+            // Handle hooks (e.g., EliminateOwner)
+            for hook in &self.mode_config.hooks {
+                if hook.trigger == "OnCapture"
+                    && hook.target_piece_id == tp.piece_type
+                    && let Some(target_owner_id) = tp.owner_id
+                    && hook.action == "EliminateOwner"
+                {
+                    // Record player removal (updates death timestamps)
+                    self.record_player_removal(target_owner_id, &mut game).await;
+                    game.players.remove(&target_owner_id);
+                }
+            }
+        }
+
+        if let Some(piece) = game.pieces.get_mut(&piece_id) {
+            piece.position = target;
+            piece.last_move_time = chrono::Utc::now().timestamp_millis();
+
+            // Cooldown uses the base value from config for now.
+            piece.cooldown_ms = piece_config.cooldown_ms as i64;
+        }
+
+        Ok(())
+    }
+}

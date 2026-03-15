@@ -14,4 +14,3 @@ pub use fatal_notification::FatalNotification;
 pub use game_view::GameView;
 pub use join_screen::JoinScreen;
 pub use leaderboard::Leaderboard;
-pub use shop_ui::ShopUI;

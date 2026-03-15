@@ -5,7 +5,7 @@ mod reducer;
 mod utils;
 
 use common::protocol::{ClientMessage, GameError, ServerMessage};
-pub use common::*;
+use common::types::{KitId, ModeId, PlayerId};
 use components::join_screen::ModeSummary;
 use components::{
     DefeatScreen, DisconnectedScreen, ErrorToast, FatalNotification, GameView, JoinScreen,
@@ -23,7 +23,6 @@ use reducer::{GameAction, GameStateReducer, MsgSender};
 use std::rc::Rc;
 use tokio::sync::mpsc;
 use utils::*;
-use uuid::Uuid;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::spawn_local;
 use yew::prelude::*;
@@ -36,7 +35,7 @@ struct NamePoolConfig {
 
 #[derive(Clone, serde::Deserialize, Default, PartialEq)]
 struct GlobalClientConfig {
-    game_order: Vec<String>,
+    game_order: Vec<ModeId>,
     modes_refresh_ms: u32,
     ping_interval_ms: u32,
     tick_interval_ms: u32,
@@ -85,7 +84,7 @@ fn load_global_config() -> GlobalClientConfig {
     }
 }
 
-fn order_modes(mut list: Vec<ModeSummary>, order: &[String]) -> Vec<ModeSummary> {
+fn order_modes(mut list: Vec<ModeSummary>, order: &[ModeId]) -> Vec<ModeSummary> {
     list.sort_by_key(|m| {
         order
             .iter()
@@ -138,13 +137,13 @@ pub fn app() -> Html {
             .trim_start_matches('#')
             .to_string();
         if !hash.is_empty() {
-            hash
+            ModeId::from(hash)
         } else if let Some(first) = global_cfg.game_order.first() {
             first.clone()
         } else if let Some(m) = injected_mode_info.as_ref() {
             m.id.clone()
         } else {
-            "ffa".to_string()
+            ModeId::from("ffa")
         }
     };
     let current_mode_id = use_state(|| initial_mode_id.clone());
@@ -343,7 +342,7 @@ pub fn app() -> Html {
                         "ws:"
                     };
 
-                    let ws_url = format!("{}//{}/api/ws/{}", protocol, host, mode_id);
+                    let ws_url = format!("{}//{}/api/ws/{}", protocol, host, mode_id.as_ref());
                     let fut = Abortable::new(
                         connect_ws(
                             ws_url,
@@ -371,7 +370,7 @@ pub fn app() -> Html {
         let is_joining = is_joining.clone();
         let has_interacted = has_interacted.clone();
         let current_mode_id = current_mode_id.clone();
-        Callback::from(move |kit_name: String| {
+        Callback::from(move |kit_name: KitId| {
             let current_reducer = reducer_ref.borrow().clone();
             if *is_joining {
                 return;
@@ -431,10 +430,10 @@ pub fn app() -> Html {
         })
     };
 
-    let player_id = reducer.player_id.unwrap_or_else(Uuid::nil);
+    let player_id = reducer.player_id.unwrap_or_else(PlayerId::nil);
     let is_dead = reducer.is_dead;
     let is_joined =
-        (reducer.player_id.is_some() && reducer.player_id != Some(Uuid::nil())) || is_dead;
+        (reducer.player_id.is_some() && reducer.player_id != Some(PlayerId::nil())) || is_dead;
 
     {
         let show_disconnected = show_disconnected.clone();
@@ -653,9 +652,9 @@ pub fn app() -> Html {
                     mode={reducer.mode.clone()}
                     mode_options={(*mode_options).clone()}
                     selected_mode_id={(*current_mode_id).clone()}
-                    on_select_mode={Callback::from(move |id: String| {
+                    on_select_mode={Callback::from(move |id: ModeId| {
                         let window = web_sys::window().unwrap();
-                        let _ = window.location().set_hash(&format!("#{id}"));
+                        let _ = window.location().set_hash(&format!("#{}", id.as_ref()));
                         current_mode_id.set(id);
                     })}
                 />
@@ -672,7 +671,7 @@ pub fn app() -> Html {
 
 async fn connect_ws(
     ws_url: String,
-    mode_id: String,
+    mode_id: ModeId,
     listener_reducer_ref: Rc<std::cell::RefCell<yew::UseReducerHandle<GameStateReducer>>>,
     current_ws_tx: Rc<std::cell::RefCell<Option<mpsc::UnboundedSender<Message>>>>,
 ) {
@@ -702,10 +701,11 @@ async fn connect_ws(
                             pieces,
                             shops,
                         } => {
-                            if player_id != Uuid::nil() {
+                            if player_id != PlayerId::nil() {
                                 set_stored_id(&mode_id, player_id);
                                 set_stored_secret(&mode_id, session_secret);
                             }
+                            let state = *state;
                             GameAction::SetInit {
                                 player_id,
                                 session_secret,
@@ -731,7 +731,7 @@ async fn connect_ws(
                             board_size,
                         },
                         ServerMessage::Error(e) => match &e {
-                            GameError::Custom { title, message }
+                            GameError::Custom { title, message: _ }
                                 if title.to_lowercase().contains("invalid session secret") =>
                             {
                                 clear_stored_session(&mode_id);

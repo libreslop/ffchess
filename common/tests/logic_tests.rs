@@ -1,12 +1,12 @@
 use common::logic::{is_valid_move, is_within_board};
 use common::models::{Piece, PieceConfig};
+use common::types::{PieceId, PieceTypeId, PlayerId};
 use glam::IVec2;
 use std::collections::HashMap;
-use uuid::Uuid;
 
 fn mock_pawn_config() -> PieceConfig {
     PieceConfig {
-        id: "pawn".to_string(),
+        id: PieceTypeId::from("pawn"),
         display_name: "Pawn".to_string(),
         char: 'P',
         score_value: 10,
@@ -133,13 +133,13 @@ fn test_pawn_movement() {
 
     // Add some targets to test captures
     let mut pieces = HashMap::new();
-    let target_id = Uuid::new_v4();
+    let target_id = PieceId::new();
     pieces.insert(
         target_id,
         Piece {
             id: target_id,
-            owner_id: Some(Uuid::new_v4()), // Different owner
-            piece_type: "pawn".to_string(),
+            owner_id: Some(PlayerId::new()), // Different owner
+            piece_type: PieceTypeId::from("pawn"),
             position: IVec2::new(1, 1),
             last_move_time: 0,
             cooldown_ms: 0,
@@ -172,13 +172,13 @@ fn test_path_blocking() {
     let size = 100;
     let start = IVec2::new(0, 0);
     let mut pieces = HashMap::new();
-    let blocker_id = Uuid::new_v4();
+    let blocker_id = PieceId::new();
     pieces.insert(
         blocker_id,
         Piece {
             id: blocker_id,
-            owner_id: Some(Uuid::new_v4()),
-            piece_type: "pawn".to_string(),
+            owner_id: Some(PlayerId::new()),
+            piece_type: PieceTypeId::from("pawn"),
             position: IVec2::new(0, 1),
             last_move_time: 0,
             cooldown_ms: 0,
@@ -186,7 +186,7 @@ fn test_path_blocking() {
     );
 
     let mut rook_config = PieceConfig {
-        id: "rook".to_string(),
+        id: PieceTypeId::from("rook"),
         display_name: "Rook".to_string(),
         char: 'R',
         score_value: 50,

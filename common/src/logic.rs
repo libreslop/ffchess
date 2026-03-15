@@ -1,7 +1,7 @@
 use crate::models::{GameModeConfig, Piece, PieceConfig};
+use crate::types::{PieceId, PlayerId};
 use glam::IVec2;
 use std::collections::HashMap;
-use uuid::Uuid;
 
 pub fn evaluate_expression(expr: &str, vars: &HashMap<String, f64>) -> f64 {
     let mut context = meval::Context::new();
@@ -29,8 +29,8 @@ pub fn is_valid_move(
     end: IVec2,
     is_capture: bool,
     board_size: i32,
-    pieces: &HashMap<Uuid, Piece>,
-    moving_owner: Option<Uuid>,
+    pieces: &HashMap<PieceId, Piece>,
+    moving_owner: Option<PlayerId>,
 ) -> bool {
     if start == end || !is_within_board(end, board_size) {
         return false;
@@ -53,18 +53,16 @@ pub fn is_valid_move(
             }
             None => return false, // Cannot capture an empty square
         }
-    } else {
-        if target_piece.is_some() {
-            return false; // Cannot move to an occupied square
-        }
+    } else if target_piece.is_some() {
+        return false; // Cannot move to an occupied square
     }
 
     for path in paths {
         for (i, &step) in path.iter().enumerate() {
             if step == diff {
                 // Check if path is blocked (intermediate squares)
-                for j in 0..i {
-                    let intermediate_pos = start + path[j];
+                for step in path.iter().take(i) {
+                    let intermediate_pos = start + *step;
                     if pieces.values().any(|p| p.position == intermediate_pos) {
                         return false; // Path blocked
                     }
@@ -79,22 +77,4 @@ pub fn is_valid_move(
 
 pub fn calculate_cooldown(piece_config: &PieceConfig, _start: IVec2, _end: IVec2) -> i64 {
     piece_config.cooldown_ms as i64
-}
-
-pub fn is_move_blocked(start: IVec2, end: IVec2, pieces: &HashMap<Uuid, Piece>) -> bool {
-    // This is now handled within is_valid_move for path-based pieces.
-    // Keeping it for legacy or general checks if needed, but path-based is preferred.
-    let diff = end - start;
-    if diff.x != 0 && diff.y != 0 && diff.x.abs() != diff.y.abs() {
-        return false;
-    }
-    let step = IVec2::new(diff.x.signum(), diff.y.signum());
-    let mut current = start + step;
-    while current != end {
-        if pieces.values().any(|p| p.position == current) {
-            return true;
-        }
-        current += step;
-    }
-    false
 }

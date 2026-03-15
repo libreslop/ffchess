@@ -1,6 +1,5 @@
 use common::logic::evaluate_expression;
 use common::*;
-use uuid::Uuid;
 use yew::prelude::*;
 
 pub struct CameraManager {
@@ -35,46 +34,51 @@ impl CameraManager {
     }
 }
 
+/// Input parameters for a camera update tick.
+pub struct CameraUpdateParams<'a> {
+    pub state: &'a GameState,
+    pub player_id: Option<PlayerId>,
+    pub canvas_ref: &'a NodeRef,
+    pub is_dragging: bool,
+    pub mode: Option<&'a common::models::GameModeClientConfig>,
+    pub piece_count: usize,
+    pub is_dead: bool,
+    pub zoom_min: f64,
+    pub zoom_max: f64,
+    pub zoom_lerp: f64,
+    pub inertia_decay: f64,
+    pub velocity_cutoff: f64,
+    pub pan_lerp_alive: f64,
+    pub pan_lerp_dead: f64,
+    pub tile_size_px: f64,
+    pub death_zoom: f64,
+}
+
 pub fn update_camera(
     manager: &mut CameraManager,
-    state: &GameState,
-    player_id: Option<Uuid>,
-    canvas_ref: &NodeRef,
-    is_dragging: bool,
-    mode: Option<&common::models::GameModeClientConfig>,
-    piece_count: usize,
-    is_dead: bool,
-    zoom_min: f64,
-    zoom_max: f64,
-    zoom_lerp: f64,
-    inertia_decay: f64,
-    velocity_cutoff: f64,
-    pan_lerp_alive: f64,
-    pan_lerp_dead: f64,
-    tile_size_px: f64,
-    death_zoom: f64,
+    params: CameraUpdateParams<'_>,
 ) -> bool {
     let mut changed = false;
-    let player_id_val = player_id.unwrap_or_else(Uuid::nil);
-    let player = state.players.get(&player_id_val);
-    let is_alive = player.is_some() && player_id_val != Uuid::nil() && !is_dead;
+    let player_id_val = params.player_id.unwrap_or_else(PlayerId::nil);
+    let player = params.state.players.get(&player_id_val);
+    let is_alive = player.is_some() && player_id_val != PlayerId::nil() && !params.is_dead;
 
-    manager.target_zoom = manager.target_zoom.clamp(zoom_min, zoom_max);
-    manager.zoom = manager.zoom.clamp(zoom_min, zoom_max);
+    manager.target_zoom = manager.target_zoom.clamp(params.zoom_min, params.zoom_max);
+    manager.zoom = manager.zoom.clamp(params.zoom_min, params.zoom_max);
 
     // 1. Zoom interpolation
     if (manager.target_zoom - manager.zoom).abs() > 0.000001 {
-        let factor = zoom_lerp;
+        let factor = params.zoom_lerp;
         let old_z = manager.zoom;
         manager.zoom += (manager.target_zoom - manager.zoom) * factor;
         let ratio = manager.zoom / old_z;
 
-        if let Some(canvas) = canvas_ref.cast::<web_sys::HtmlCanvasElement>() {
+        if let Some(canvas) = params.canvas_ref.cast::<web_sys::HtmlCanvasElement>() {
             let rect = canvas.get_bounding_client_rect();
 
             // Mouse position relative to canvas center
             // When dead, anchor zoom to canvas center so the death focus stays accurate.
-            let (mx, my) = if is_dead {
+            let (mx, my) = if params.is_dead {
                 (0.0, 0.0)
             } else {
                 (
@@ -94,7 +98,7 @@ pub fn update_camera(
             // CameraPos' = (Zoom' / Zoom) * (Zoom * W) - (M - CanvasWidth/2)
             // CameraPos' = Ratio * (CameraPos + M - CanvasWidth/2) - (M - CanvasWidth/2)
 
-            if !is_dead {
+            if !params.is_dead {
                 manager.camera.0 = ratio * (manager.camera.0 + mx) - mx;
                 manager.camera.1 = ratio * (manager.camera.1 + my) - my;
                 manager.target_camera.0 = ratio * (manager.target_camera.0 + mx) - mx;
@@ -105,13 +109,14 @@ pub fn update_camera(
     }
 
     // 2. Velocity (inertia)
-    if !is_dragging {
-        if manager.velocity.0.abs() > velocity_cutoff || manager.velocity.1.abs() > velocity_cutoff
+    if !params.is_dragging {
+        if manager.velocity.0.abs() > params.velocity_cutoff
+            || manager.velocity.1.abs() > params.velocity_cutoff
         {
             manager.camera.0 += manager.velocity.0;
             manager.camera.1 += manager.velocity.1;
-            manager.velocity.0 *= inertia_decay;
-            manager.velocity.1 *= inertia_decay;
+            manager.velocity.0 *= params.inertia_decay;
+            manager.velocity.1 *= params.inertia_decay;
             manager.target_camera = manager.camera;
             changed = true;
         } else {
@@ -124,9 +129,9 @@ pub fn update_camera(
     // 3. King Following / Death Focusing / Menu Focusing
     if is_alive {
         if let Some(p) = player
-            && let Some(king) = state.pieces.get(&p.king_id)
+            && let Some(king) = params.state.pieces.get(&p.king_id)
         {
-            let tile_size = tile_size_px * manager.zoom;
+            let tile_size = params.tile_size_px * manager.zoom;
             let kpx = king.position.x as f64 * tile_size + tile_size / 2.0;
             let kpy = king.position.y as f64 * tile_size + tile_size / 2.0;
 
@@ -144,9 +149,9 @@ pub fn update_camera(
             }
 
             // 4. Global Clamping (Respect camera_pan_limit)
-            if let Some(m) = mode {
+            if let Some(m) = params.mode {
                 let mut vars = std::collections::HashMap::new();
-                vars.insert("player_piece_count".to_string(), piece_count as f64);
+                vars.insert("player_piece_count".to_string(), params.piece_count as f64);
 
                 let fog_of_war_radius = evaluate_expression(&m.fog_of_war_radius, &vars);
                 vars.insert("fog_of_war_radius".to_string(), fog_of_war_radius);
@@ -158,30 +163,28 @@ pub fn update_camera(
                 let dy = manager.camera.1 - kpy;
                 let dist = (dx * dx + dy * dy).sqrt();
 
-                if dist > limit_radius_px && dist > 0.1 {
-                    if !is_dragging {
-                        // Not dragging: Smoothly interpolate back to the allowed region
-                        let target_dist = limit_radius_px;
-                        let ratio = target_dist / dist;
-                        let target_x = kpx + dx * ratio;
-                        let target_y = kpy + dy * ratio;
+                if dist > limit_radius_px && dist > 0.1 && !params.is_dragging {
+                    // Not dragging: Smoothly interpolate back to the allowed region
+                    let target_dist = limit_radius_px;
+                    let ratio = target_dist / dist;
+                    let target_x = kpx + dx * ratio;
+                    let target_y = kpy + dy * ratio;
 
-                        manager.target_camera.0 = target_x;
-                        manager.target_camera.1 = target_y;
-                    }
+                    manager.target_camera.0 = target_x;
+                    manager.target_camera.1 = target_y;
                 }
             }
         }
-    } else if is_dead {
+    } else if params.is_dead {
         if manager.was_alive {
             // Just died, focus on last position
             let grid_pos = manager.last_king_grid_pos;
-            let target_zoom = death_zoom;
-            let tile_size = tile_size_px * target_zoom;
+            let target_zoom = params.death_zoom;
+            let tile_size = params.tile_size_px * target_zoom;
             let desired_focus_x = grid_pos.x as f64 * tile_size + tile_size / 2.0;
             let desired_focus_y = grid_pos.y as f64 * tile_size + tile_size / 2.0;
             manager.target_camera = (desired_focus_x, desired_focus_y);
-            manager.target_zoom = target_zoom.clamp(zoom_min, zoom_max);
+            manager.target_zoom = target_zoom.clamp(params.zoom_min, params.zoom_max);
             manager.was_alive = false;
             manager.velocity = (0.0, 0.0);
             manager.input_locked = false;
@@ -198,14 +201,14 @@ pub fn update_camera(
     }
 
     // 5. Final interpolation for target_camera
-    if !is_dragging
+    if !params.is_dragging
         && ((manager.target_camera.0 - manager.camera.0).abs() > 0.1
             || (manager.target_camera.1 - manager.camera.1).abs() > 0.1)
     {
         let factor = if is_alive {
-            pan_lerp_alive
+            params.pan_lerp_alive
         } else {
-            pan_lerp_dead
+            params.pan_lerp_dead
         }; // Slightly slower pan in menus
         manager.camera.0 += (manager.target_camera.0 - manager.camera.0) * factor;
         manager.camera.1 += (manager.target_camera.1 - manager.camera.1) * factor;
