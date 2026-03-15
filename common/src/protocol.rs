@@ -1,7 +1,9 @@
 use crate::models::{
     GameModeClientConfig, GameState, Piece, PieceConfig, Player, Shop, ShopConfig,
 };
-use crate::types::{KitId, PieceId, PieceTypeId, PlayerId, SessionSecret, ShopId};
+use crate::types::{
+    BoardSize, KitId, PieceId, PieceTypeId, PlayerId, Score, SessionSecret, ShopId,
+};
 use glam::IVec2;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -20,7 +22,7 @@ pub enum GameError {
     ShopNotFound,
     ShopDepleted,
     PlayerNotFound,
-    InsufficientScore { needed: u64, have: u64 },
+    InsufficientScore { needed: Score, have: Score },
     NoSpaceNearby,
     Internal(String),
     Custom { title: String, message: String },
@@ -85,11 +87,11 @@ pub enum ServerMessage {
         shops: Vec<Shop>,
         removed_pieces: Vec<PieceId>,
         removed_players: Vec<PlayerId>,
-        board_size: i32,
+        board_size: BoardSize,
     },
     Error(GameError),
     GameOver {
-        final_score: u64,
+        final_score: Score,
         kills: u32,
         pieces_captured: u32,
         time_survived_secs: u64,

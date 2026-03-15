@@ -1,4 +1,4 @@
-use common::types::{ModeId, PlayerId, SessionSecret};
+use common::types::{DurationMs, ModeId, PlayerId, SessionSecret, TimestampMs};
 use uuid::Uuid;
 
 pub fn get_stored_name() -> String {
@@ -77,7 +77,7 @@ pub fn clear_stored_session(mode_id: &ModeId) {
     }
 }
 
-pub fn get_death_info(mode_id: &ModeId) -> (i64, i64) {
+pub fn get_death_info(mode_id: &ModeId) -> (TimestampMs, DurationMs) {
     let window = web_sys::window().unwrap();
     if let Ok(Some(storage)) = window.local_storage() {
         let ts = storage
@@ -90,18 +90,21 @@ pub fn get_death_info(mode_id: &ModeId) -> (i64, i64) {
             .unwrap_or_default()
             .and_then(|s| s.parse::<i64>().ok())
             .unwrap_or(5000);
-        return (ts, cd);
+        return (TimestampMs::from_millis(ts), DurationMs::from_millis(cd));
     }
-    (0, 5000)
+    (TimestampMs::from_millis(0), DurationMs::from_millis(5000))
 }
 
-pub fn set_death_timestamp(mode_id: &ModeId, ts: i64, cooldown_ms: i64) {
+pub fn set_death_timestamp(mode_id: &ModeId, ts: TimestampMs, cooldown_ms: DurationMs) {
     let window = web_sys::window().unwrap();
     if let Ok(Some(storage)) = window.local_storage() {
-        let _ = storage.set_item(&storage_key("ffchess_death_ts", mode_id), &ts.to_string());
+        let _ = storage.set_item(
+            &storage_key("ffchess_death_ts", mode_id),
+            &ts.as_i64().to_string(),
+        );
         let _ = storage.set_item(
             &storage_key("ffchess_death_cd", mode_id),
-            &cooldown_ms.to_string(),
+            &cooldown_ms.as_i64().to_string(),
         );
     }
 }

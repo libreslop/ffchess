@@ -1,9 +1,9 @@
+use super::helpers::{MOVE_ANIM_MS, PieceAnim, apply_visible_ghosts, pm_visible};
 use crate::camera::{CameraManager, update_camera};
 use crate::canvas::Renderer;
 use crate::reducer::{GameAction, GameStateReducer, MsgSender, Pmove};
 use common::logic::is_within_board;
-use common::models::{GameState, Piece};
-use common::types::{PieceId, PlayerId};
+use common::types::{DurationMs, PieceId, PlayerId, Score, TimestampMs};
 use glam::IVec2;
 use gloo_events::EventListener;
 use gloo_render::{AnimationFrame, request_animation_frame};
@@ -14,59 +14,14 @@ use wasm_bindgen::JsCast;
 use web_sys::HtmlCanvasElement;
 use yew::prelude::*;
 
+/// Properties for the main game viewport.
 #[derive(Properties, PartialEq)]
 pub struct GameViewProps {
     pub reducer: UseReducerHandle<GameStateReducer>,
     pub tx: MsgSender,
     pub render_interval_ms: u32,
-    pub globals: crate::GlobalClientConfig,
+    pub globals: crate::app::GlobalClientConfig,
 }
-
-#[derive(Clone)]
-struct PieceAnim {
-    start: IVec2,
-    end: IVec2,
-    started_at: f64,
-}
-
-fn now_epoch_ms() -> i64 {
-    #[cfg(target_arch = "wasm32")]
-    {
-        js_sys::Date::now() as i64
-    }
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        use std::time::{SystemTime, UNIX_EPOCH};
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_millis() as i64)
-            .unwrap_or(0)
-    }
-}
-
-fn apply_visible_ghosts(
-    ghosts: &mut HashMap<PieceId, Piece>,
-    pm_queue: &[Pmove],
-    state: &GameState,
-    now_ms: i64,
-) {
-    for pm in pm_queue {
-        if !pm_visible(pm, state, now_ms) {
-            continue;
-        }
-
-        if let Some(p) = ghosts.get_mut(&pm.piece_id) {
-            p.position = pm.target;
-        }
-    }
-}
-
-fn pm_visible(pm: &Pmove, state: &GameState, _now_ms: i64) -> bool {
-    // Show ghosts/paths for any queued move as long as the piece still exists.
-    state.pieces.contains_key(&pm.piece_id)
-}
-
-const MOVE_ANIM_MS: f64 = 200.0;
 
 #[function_component(GameView)]
 pub fn game_view(props: &GameViewProps) -> Html {
@@ -276,6 +231,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
         let renderer_state = renderer_state.clone();
         let reducer = props.reducer.clone();
         let shop_configs = props.reducer.shop_configs.clone();
+        let globals = props.globals.clone();
         let piece_anims = piece_anims.clone();
         use_effect_with(
             (
@@ -287,8 +243,9 @@ pub fn game_view(props: &GameViewProps) -> Html {
                 reducer.pm_queue.clone(),
                 reducer.mode.clone(),
                 reducer.player_id,
-                (*selected_piece_id).clone(),
+                *selected_piece_id,
                 shop_configs,
+                globals.clone(),
             ),
             move |(
                 _,
@@ -301,16 +258,15 @@ pub fn game_view(props: &GameViewProps) -> Html {
                 player_id,
                 sid,
                 shop_configs,
+                globals,
             )| {
                 if let Some(renderer) = renderer_state.as_ref() {
                     let mut ghosts = state.pieces.clone();
-                    let now_epoch_ms = now_epoch_ms();
-
-                    apply_visible_ghosts(&mut ghosts, pm_queue, state, now_epoch_ms);
+                    apply_visible_ghosts(&mut ghosts, pm_queue, state);
                     let visible_pm: Vec<_> = pm_queue
                         .iter()
+                        .filter(|pm| pm_visible(pm, state))
                         .cloned()
-                        .filter(|pm| pm_visible(pm, state, now_epoch_ms))
                         .collect();
 
                     let now = web_sys::window().unwrap().performance().unwrap().now();
@@ -344,6 +300,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
                         width: window_size.0,
                         height: window_size.1,
                         zoom: **zoom,
+                        tile_size_px: globals.tile_size_px,
                         mode: mode.as_ref(),
                         shop_configs,
                     });
@@ -438,6 +395,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
         let manager_ref = manager_ref.clone();
         let canvas_ref = canvas_ref.clone();
         let reducer = props.reducer.clone();
+        let tile_size_px = props.globals.tile_size_px;
         Callback::from(move |(cx, cy, is_right_click): (f64, f64, bool)| {
             if reducer.is_dead {
                 return;
@@ -449,7 +407,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
             let canvas = canvas_ref.cast::<HtmlCanvasElement>().unwrap();
             let rect = canvas.get_bounding_client_rect();
             let zoom = manager.zoom;
-            let tile_size = 40.0 * zoom;
+            let tile_size = tile_size_px * zoom;
             let x = cx - rect.left();
             let y = cy - rect.top();
 
@@ -465,23 +423,22 @@ pub fn game_view(props: &GameViewProps) -> Html {
 
             if !is_right_click && is_within_board(target, board_size) {
                 let mut ghosts = reducer.state.pieces.clone();
-                let now_ms = now_epoch_ms();
-                apply_visible_ghosts(&mut ghosts, &reducer.pm_queue, &reducer.state, now_ms);
+                apply_visible_ghosts(&mut ghosts, &reducer.pm_queue, &reducer.state);
 
                 if ghosts.values().any(|p| p.position == target) {
                     is_interactive = true;
                 } else if let Some(sid) = *selected_piece_id
                     && let Some(piece) = ghosts.get(&sid)
                     && let Some(config) = reducer.piece_configs.get(&piece.piece_type)
-                    && common::logic::is_valid_move(
-                        config,
-                        piece.position,
-                        target,
-                        ghosts.values().any(|p| p.position == target),
+                    && common::logic::is_valid_move(common::logic::MoveValidationParams {
+                        piece_config: config,
+                        start: piece.position,
+                        end: target,
+                        is_capture: ghosts.values().any(|p| p.position == target),
                         board_size,
-                        &ghosts,
-                        piece.owner_id,
-                    )
+                        pieces: &ghosts,
+                        moving_owner: piece.owner_id,
+                    })
                 {
                     is_interactive = true;
                 }
@@ -536,6 +493,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
         let selected_piece_id = selected_piece_id.clone();
         let manager_ref = manager_ref.clone();
         let drag_start = drag_start.clone();
+        let tile_size_px = props.globals.tile_size_px;
 
         Callback::from(move |(cx, cy, is_right_click): (f64, f64, bool)| {
             if reducer.is_dead {
@@ -574,7 +532,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
             let rect = canvas.get_bounding_client_rect();
             let manager = manager_ref.borrow_mut();
             let zoom = manager.zoom;
-            let tile_size = 40.0 * zoom;
+            let tile_size = tile_size_px * zoom;
             let x = cx - rect.left();
             let y = cy - rect.top();
 
@@ -593,8 +551,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
             }
 
             let mut current_ghosts = reducer.state.pieces.clone();
-            let now_ms = now_epoch_ms();
-            apply_visible_ghosts(&mut current_ghosts, &reducer.pm_queue, &reducer.state, now_ms);
+            apply_visible_ghosts(&mut current_ghosts, &reducer.pm_queue, &reducer.state);
 
             if let Some(sid) = *selected_piece_id {
                 let proj_p = current_ghosts.get(&sid);
@@ -613,24 +570,24 @@ pub fn game_view(props: &GameViewProps) -> Html {
                         let is_capture = target_occupied.is_some()
                             && target_occupied.unwrap().owner_id != Some(player_id);
 
-                        if let Some(config) = reducer.piece_configs.get(&p.piece_type) {
-                            if common::logic::is_valid_move(
-                                config,
-                                p.position,
-                                target,
+                        if let Some(config) = reducer.piece_configs.get(&p.piece_type)
+                            && common::logic::is_valid_move(common::logic::MoveValidationParams {
+                                piece_config: config,
+                                start: p.position,
+                                end: target,
                                 is_capture,
-                                reducer.state.board_size,
-                                &current_ghosts,
-                                p.owner_id,
-                            ) {
-                                reducer.dispatch(GameAction::AddPmove(Pmove {
-                                    piece_id: sid,
-                                    target,
-                                    pending: false,
-                                    old_last_move_time: 0,
-                                    old_cooldown_ms: 0,
-                                }));
-                            }
+                                board_size: reducer.state.board_size,
+                                pieces: &current_ghosts,
+                                moving_owner: p.owner_id,
+                            })
+                        {
+                            reducer.dispatch(GameAction::AddPmove(Pmove {
+                                piece_id: sid,
+                                target,
+                                pending: false,
+                                old_last_move_time: TimestampMs::from_millis(0),
+                                old_cooldown_ms: DurationMs::zero(),
+                            }));
                         }
                     }
                 }
@@ -652,12 +609,12 @@ pub fn game_view(props: &GameViewProps) -> Html {
         Callback::from(move |_| {
             let prev = *drag_start;
             drag_start.set(None);
-            if let Some((_, _, allow_panning)) = prev {
-                if allow_panning {
-                    // Treat like a mouse release: keep current velocity for inertia but lock target to current position
-                    let mut mgr = manager_ref.borrow_mut();
-                    mgr.target_camera = mgr.camera;
-                }
+            if let Some((_, _, allow_panning)) = prev
+                && allow_panning
+            {
+                // Treat like a mouse release: keep current velocity for inertia but lock target to current position
+                let mut mgr = manager_ref.borrow_mut();
+                mgr.target_camera = mgr.camera;
             }
         })
     };
@@ -684,7 +641,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
         .players
         .get(&player_id)
         .map(|p| p.score)
-        .unwrap_or(0);
+        .unwrap_or_else(Score::zero);
     let player_pieces_count = props
         .reducer
         .state
@@ -868,7 +825,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
             <div class="absolute top-4 left-4 flex flex-col gap-2 pointer-events-none">
                 <div class="bg-white/90 backdrop-blur px-3 py-1.5 rounded-lg shadow-sm border border-slate-200">
                     <span class="text-xs font-bold text-slate-500 uppercase tracking-wider block">{"Score"}</span>
-                    <span class="text-xl font-black text-slate-800 tabular-nums">{player_score}</span>
+                    <span class="text-xl font-black text-slate-800 tabular-nums">{player_score.to_string()}</span>
                 </div>
             </div>
 

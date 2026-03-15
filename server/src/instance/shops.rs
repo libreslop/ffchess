@@ -1,7 +1,7 @@
 use super::GameInstance;
 use common::models::Shop;
 use common::protocol::GameError;
-use common::types::{PieceId, PlayerId};
+use common::types::{DurationMs, PieceId, PlayerId, Score, TimestampMs};
 use glam::IVec2;
 
 impl GameInstance {
@@ -31,15 +31,7 @@ impl GameInstance {
             .find(|p| p.position == shop_pos && p.owner_id == Some(player_id))
             .cloned();
 
-        let group = if let Some(ref p) = player_piece_on_shop {
-            shop_config
-                .groups
-                .iter()
-                .find(|g| g.applies_to.contains(&p.piece_type))
-                .unwrap_or(&shop_config.default_group)
-        } else {
-            &shop_config.default_group
-        };
+        let group = common::logic::select_shop_group(shop_config, player_piece_on_shop.as_ref());
 
         let item = group
             .items
@@ -47,25 +39,24 @@ impl GameInstance {
             .ok_or(GameError::Internal("Invalid shop item index".to_string()))?;
 
         // Evaluate price
-        let mut vars = std::collections::HashMap::new();
-        vars.insert(
-            "player_piece_count".to_string(),
-            game.pieces
-                .values()
-                .filter(|p| p.owner_id == Some(player_id))
-                .count() as f64,
+        let player_piece_count = game
+            .pieces
+            .values()
+            .filter(|p| p.owner_id == Some(player_id))
+            .count();
+        let vars = common::logic::build_price_vars(
+            player_piece_count,
+            self.piece_configs.keys().map(|p_id| {
+                let count = game
+                    .pieces
+                    .values()
+                    .filter(|p| p.owner_id == Some(player_id) && &p.piece_type == p_id)
+                    .count();
+                (p_id, count)
+            }),
         );
-        // Add specific piece counts
-        for p_id in self.piece_configs.keys() {
-            let count = game
-                .pieces
-                .values()
-                .filter(|p| p.owner_id == Some(player_id) && &p.piece_type == p_id)
-                .count();
-            vars.insert(format!("{}_count", p_id.as_ref()), count as f64);
-        }
 
-        let price = common::logic::evaluate_expression(&item.price_expr, &vars) as u64;
+        let price = Score::from(common::logic::evaluate_expression(&item.price_expr, &vars) as u64);
 
         let player = game
             .players
@@ -90,39 +81,15 @@ impl GameInstance {
             piece.cooldown_ms = self
                 .piece_configs
                 .get(replace_type)
-                .map(|c| c.cooldown_ms as i64)
-                .unwrap_or(1000);
+                .map(|c| c.cooldown_ms)
+                .unwrap_or_else(|| DurationMs::from_millis(1000));
         }
 
         for add_type in &item.add_pieces {
             let p_id = PieceId::new();
-            let mut p_pos = shop_pos;
-            // Find nearby space
-            let neighbors = [
-                IVec2::new(1, 0),
-                IVec2::new(-1, 0),
-                IVec2::new(0, 1),
-                IVec2::new(0, -1),
-                IVec2::new(1, 1),
-                IVec2::new(-1, 1),
-                IVec2::new(1, -1),
-                IVec2::new(-1, -1),
-            ];
-            let mut found = false;
-            for offset in neighbors {
-                let candidate = shop_pos + offset;
-                if common::logic::is_within_board(candidate, game.board_size)
-                    && !game.pieces.values().any(|p| p.position == candidate)
-                    && !game.shops.iter().any(|s| s.position == candidate)
-                {
-                    p_pos = candidate;
-                    found = true;
-                    break;
-                }
-            }
-            if !found {
+            let Some(p_pos) = crate::spawning::find_adjacent_free_pos(&game, shop_pos) else {
                 return Err(GameError::NoSpaceNearby);
-            }
+            };
 
             game.pieces.insert(
                 p_id,
@@ -131,8 +98,8 @@ impl GameInstance {
                     owner_id: Some(player_id),
                     piece_type: add_type.clone(),
                     position: p_pos,
-                    last_move_time: 0,
-                    cooldown_ms: 0,
+                    last_move_time: TimestampMs::from_millis(0),
+                    cooldown_ms: DurationMs::zero(),
                 },
             );
         }

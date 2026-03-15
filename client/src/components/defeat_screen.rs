@@ -1,9 +1,11 @@
 use crate::utils::is_mobile;
+use common::types::Score;
 use yew::prelude::*;
 
+/// Properties for the defeat overlay.
 #[derive(Properties, PartialEq)]
 pub struct DefeatScreenProps {
-    pub score: u64,
+    pub score: Score,
     pub kills: u32,
     pub captured: u32,
     pub survival_secs: u64,
@@ -27,7 +29,7 @@ pub fn defeat_screen(props: &DefeatScreenProps) -> Html {
                     <div style="margin: 30px 0; display: flex; flex-direction: column; gap: 15px;">
                         <div style="padding: 15px;">
                             <span style="display: block; font-size: 0.9em; text-transform: uppercase; color: #cbd5e1; margin-bottom: 5px; letter-spacing: 1px;">{"Final Score"}</span>
-                            <span style={format!("font-size: {}; font-weight: 900; color: #fff;", score_size)}>{props.score}</span>
+                            <span style={format!("font-size: {}; font-weight: 900; color: #fff;", score_size)}>{props.score.to_string()}</span>
                         </div>
 
                         <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;">

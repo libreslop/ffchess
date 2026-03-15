@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
+/// Shared server state containing mode instances and configuration.
 pub struct ServerState {
     pub games: Arc<RwLock<HashMap<ModeId, Arc<GameInstance>>>>,
     pub config_manager: Arc<ConfigManager>,

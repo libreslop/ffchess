@@ -1,18 +1,22 @@
 use common::models::{GameModeClientConfig, GameState, PieceConfig, ShopConfig};
 use common::protocol::{ClientMessage, GameError};
-use common::types::{PieceId, PieceTypeId, PlayerId, SessionSecret, ShopId};
+use common::types::{
+    DurationMs, PieceId, PieceTypeId, PlayerId, Score, SessionSecret, ShopId, TimestampMs,
+};
 use glam::IVec2;
 use std::collections::HashMap;
 
+/// Client-side pending move entry for prediction and reconciliation.
 #[derive(Clone, PartialEq, Default, Debug)]
 pub struct Pmove {
     pub piece_id: PieceId,
     pub target: IVec2,
     pub pending: bool,
-    pub old_last_move_time: i64,
-    pub old_cooldown_ms: i64,
+    pub old_last_move_time: TimestampMs,
+    pub old_cooldown_ms: DurationMs,
 }
 
+/// Aggregated client game state and UI state.
 #[derive(Clone, PartialEq, Default)]
 pub struct GameStateReducer {
     pub state: GameState,
@@ -23,7 +27,7 @@ pub struct GameStateReducer {
     pub session_secret: Option<SessionSecret>,
     pub error: Option<GameError>,
     pub pm_queue: Vec<Pmove>,
-    pub last_score: u64,
+    pub last_score: Score,
     pub last_kills: u32,
     pub last_captured: u32,
     pub last_survival_secs: u64,
@@ -36,6 +40,7 @@ pub struct GameStateReducer {
     pub disconnected_msg: Option<String>,
 }
 
+/// Channel sender wrapper for client messages.
 #[derive(Clone)]
 pub struct MsgSender(pub tokio::sync::mpsc::UnboundedSender<ClientMessage>);
 

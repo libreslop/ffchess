@@ -1,9 +1,9 @@
-use super::actions::GameAction;
+use super::actions::{GameAction, InitPayload};
 use super::handlers::handle_update_state;
 use super::types::GameStateReducer;
 use common::logic::calculate_cooldown;
 use common::protocol::{ClientMessage, GameError};
-use common::types::{PieceId, PlayerId};
+use common::types::{DurationMs, PieceId, PlayerId, TimestampMs};
 use std::rc::Rc;
 use yew::prelude::*;
 
@@ -13,14 +13,15 @@ impl Reducible for GameStateReducer {
     fn reduce(self: Rc<Self>, action: Self::Action) -> Rc<Self> {
         let mut next = (*self).clone();
         match action {
-            GameAction::SetInit {
-                player_id,
-                session_secret,
-                state,
-                mode,
-                pieces,
-                shops,
-            } => {
+            GameAction::SetInit(payload) => {
+                let InitPayload {
+                    player_id,
+                    session_secret,
+                    state,
+                    mode,
+                    pieces,
+                    shops,
+                } = *payload;
                 next.player_id = Some(player_id);
                 next.session_secret = Some(session_secret);
                 next.state = state;
@@ -44,25 +45,8 @@ impl Reducible for GameStateReducer {
                     }
                 }
             }
-            GameAction::UpdateState {
-                players,
-                pieces,
-                shops,
-                removed_pieces,
-                removed_players,
-                board_size,
-            } => {
-                handle_update_state(
-                    &mut next,
-                    super::handlers::UpdateStateParams {
-                        players,
-                        pieces,
-                        shops,
-                        removed_pieces,
-                        removed_players,
-                        board_size,
-                    },
-                );
+            GameAction::UpdateState(payload) => {
+                handle_update_state(&mut next, *payload);
             }
             GameAction::SetError(e) => {
                 next.error = Some(e.clone());
@@ -95,11 +79,10 @@ impl Reducible for GameStateReducer {
                                 .pm_queue
                                 .iter()
                                 .find(|pm| pm.piece_id == pid && pm.pending)
+                                && let Some(p) = next.state.pieces.get_mut(&pid)
                             {
-                                if let Some(p) = next.state.pieces.get_mut(&pid) {
-                                    p.last_move_time = pm.old_last_move_time;
-                                    p.cooldown_ms = pm.old_cooldown_ms;
-                                }
+                                p.last_move_time = pm.old_last_move_time;
+                                p.cooldown_ms = pm.old_cooldown_ms;
                             }
                             next.pm_queue.retain(|pm| pm.piece_id != pid);
                         } else {
@@ -141,9 +124,9 @@ impl Reducible for GameStateReducer {
             }
             GameAction::Tick(tx) => {
                 #[cfg(target_arch = "wasm32")]
-                let now = js_sys::Date::now() as i64;
+                let now = TimestampMs::from_millis(js_sys::Date::now() as i64);
                 #[cfg(not(target_arch = "wasm32"))]
-                let now = chrono::Utc::now().timestamp_millis();
+                let now = TimestampMs::from_millis(chrono::Utc::now().timestamp_millis());
 
                 let mut processed_pieces = std::collections::HashSet::<PieceId>::new();
                 for pm in next.pm_queue.iter_mut() {
@@ -152,7 +135,10 @@ impl Reducible for GameStateReducer {
                         continue;
                     }
                     if let Some(piece) = next.state.pieces.get(&pm.piece_id)
-                        && now >= piece.last_move_time + piece.cooldown_ms + 50
+                        && now
+                            >= piece.last_move_time
+                                + piece.cooldown_ms
+                                + DurationMs::from_millis(50)
                     {
                         let _ = tx.0.send(ClientMessage::MovePiece {
                             piece_id: pm.piece_id,

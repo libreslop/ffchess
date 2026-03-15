@@ -2,5 +2,8 @@ pub mod colors;
 pub mod config;
 pub mod handlers;
 pub mod instance;
+pub mod paths;
 pub mod spawning;
 pub mod state;
+pub mod time;
+pub mod types;

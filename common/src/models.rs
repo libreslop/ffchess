@@ -1,4 +1,7 @@
-use crate::types::{ColorHex, KitId, ModeId, PieceId, PieceTypeId, PlayerId, ShopId};
+use crate::types::{
+    BoardSize, ColorHex, DurationMs, ExprString, KitId, ModeId, PieceId, PieceTypeId, PlayerId,
+    Score, ShopId, TimestampMs,
+};
 use glam::IVec2;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -9,8 +12,8 @@ pub struct PieceConfig {
     pub id: PieceTypeId,
     pub display_name: String,
     pub char: char,
-    pub score_value: u64,
-    pub cooldown_ms: u64,
+    pub score_value: Score,
+    pub cooldown_ms: DurationMs,
     pub move_paths: Vec<Vec<IVec2>>,
     pub capture_paths: Vec<Vec<IVec2>>,
 }
@@ -19,7 +22,7 @@ pub struct PieceConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ShopItemConfig {
     pub display_name: String,
-    pub price_expr: String,
+    pub price_expr: ExprString,
     pub replace_with: Option<PieceTypeId>,
     pub add_pieces: Vec<PieceTypeId>,
 }
@@ -54,7 +57,7 @@ pub struct KitConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct NpcLimitConfig {
     pub piece_id: PieceTypeId,
-    pub max_expr: String,
+    pub max_expr: ExprString,
 }
 
 /// How many shops of a given type should spawn.
@@ -85,9 +88,9 @@ pub struct KitSummary {
 pub struct GameModeClientConfig {
     pub id: ModeId,
     pub display_name: String,
-    pub camera_pan_limit: String,
-    pub fog_of_war_radius: String,
-    pub respawn_cooldown_ms: u32,
+    pub camera_pan_limit: ExprString,
+    pub fog_of_war_radius: ExprString,
+    pub respawn_cooldown_ms: DurationMs,
     pub kits: Vec<KitSummary>,
 }
 
@@ -97,10 +100,10 @@ pub struct GameModeConfig {
     pub id: ModeId,
     pub display_name: String,
     pub max_players: u32,
-    pub board_size: String,
-    pub camera_pan_limit: String,
-    pub fog_of_war_radius: String,
-    pub respawn_cooldown_ms: u32,
+    pub board_size: ExprString,
+    pub camera_pan_limit: ExprString,
+    pub fog_of_war_radius: ExprString,
+    pub respawn_cooldown_ms: DurationMs,
     pub npc_limits: Vec<NpcLimitConfig>,
     pub shop_counts: Vec<ShopCountConfig>,
     pub kits: Vec<KitConfig>,
@@ -114,8 +117,8 @@ pub struct Piece {
     pub owner_id: Option<PlayerId>, // None for NPCs
     pub piece_type: PieceTypeId,
     pub position: IVec2,
-    pub last_move_time: i64, // Milliseconds timestamp
-    pub cooldown_ms: i64,
+    pub last_move_time: TimestampMs, // Milliseconds timestamp
+    pub cooldown_ms: DurationMs,
 }
 
 /// Player state for the active match.
@@ -123,10 +126,10 @@ pub struct Piece {
 pub struct Player {
     pub id: PlayerId,
     pub name: String,
-    pub score: u64,
+    pub score: Score,
     pub kills: u32,
     pub pieces_captured: u32,
-    pub join_time: i64,
+    pub join_time: TimestampMs,
     pub king_id: PieceId,
     pub color: ColorHex, // Hex color code
 }
@@ -145,7 +148,7 @@ pub struct GameState {
     pub players: HashMap<PlayerId, Player>,
     pub pieces: HashMap<PieceId, Piece>,
     pub shops: Vec<Shop>,
-    pub board_size: i32,
+    pub board_size: BoardSize,
     pub mode_id: ModeId,
 }
 
@@ -155,8 +158,39 @@ impl Default for GameState {
             players: HashMap::new(),
             pieces: HashMap::new(),
             shops: Vec::new(),
-            board_size: 40,
+            board_size: BoardSize::default(),
             mode_id: ModeId::from("ffa"),
+        }
+    }
+}
+
+/// Summary info for mode selection screens.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ModeSummary {
+    pub id: ModeId,
+    pub display_name: String,
+    pub players: u32,
+    pub max_players: u32,
+    pub respawn_cooldown_ms: DurationMs,
+}
+
+impl GameModeConfig {
+    pub fn to_client_config(&self) -> GameModeClientConfig {
+        GameModeClientConfig {
+            id: self.id.clone(),
+            display_name: self.display_name.clone(),
+            camera_pan_limit: self.camera_pan_limit.clone(),
+            fog_of_war_radius: self.fog_of_war_radius.clone(),
+            respawn_cooldown_ms: self.respawn_cooldown_ms,
+            kits: self
+                .kits
+                .iter()
+                .map(|k| KitSummary {
+                    name: k.name.clone(),
+                    description: k.description.clone(),
+                    pieces: k.pieces.clone(),
+                })
+                .collect(),
         }
     }
 }

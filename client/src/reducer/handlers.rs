@@ -1,36 +1,24 @@
+use super::actions::UpdateStatePayload;
 use crate::reducer::types::GameStateReducer;
 use common::*;
 
-/// Snapshot payload from the server for a state update.
-pub struct UpdateStateParams {
-    pub players: Vec<Player>,
-    pub pieces: Vec<Piece>,
-    pub shops: Vec<Shop>,
-    pub removed_pieces: Vec<PieceId>,
-    pub removed_players: Vec<PlayerId>,
-    pub board_size: i32,
-}
-
-pub fn handle_update_state(
-    next: &mut GameStateReducer,
-    params: UpdateStateParams,
-) {
+pub fn handle_update_state(next: &mut GameStateReducer, params: UpdateStatePayload) {
     next.error = None;
     next.disconnected = false;
     next.state.board_size = params.board_size;
     let player_id_val = next.player_id.unwrap_or_else(PlayerId::nil);
 
     #[cfg(target_arch = "wasm32")]
-    let now_ms = js_sys::Date::now() as i64;
+    let now_ms = TimestampMs::from_millis(js_sys::Date::now() as i64);
     #[cfg(not(target_arch = "wasm32"))]
-    let now_ms = chrono::Utc::now().timestamp_millis();
+    let now_ms = TimestampMs::from_millis(chrono::Utc::now().timestamp_millis());
 
     for p in params.players {
         if next.player_id == Some(p.id) {
             next.last_score = p.score;
             next.last_kills = p.kills;
             next.last_captured = p.pieces_captured;
-            next.last_survival_secs = ((now_ms - p.join_time).max(0) / 1000) as u64;
+            next.last_survival_secs = (now_ms - p.join_time).as_u64() / 1000;
         }
         next.state.players.insert(p.id, p);
     }
@@ -84,9 +72,9 @@ pub fn handle_update_state(
         next.state.players.remove(&id);
     }
 
-    if let Some(player_id) = next.player_id {
-        if player_id != PlayerId::nil() {
-            next.is_dead = !next.state.players.contains_key(&player_id);
-        }
+    if let Some(player_id) = next.player_id
+        && player_id != PlayerId::nil()
+    {
+        next.is_dead = !next.state.players.contains_key(&player_id);
     }
 }

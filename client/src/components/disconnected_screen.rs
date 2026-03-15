@@ -1,5 +1,6 @@
 use yew::prelude::*;
 
+/// Properties for the disconnected overlay.
 #[derive(Properties, PartialEq)]
 pub struct DisconnectedScreenProps {
     pub show: bool,

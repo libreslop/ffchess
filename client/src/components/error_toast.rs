@@ -1,6 +1,7 @@
 use common::protocol::GameError;
 use yew::prelude::*;
 
+/// Properties for the transient error toast.
 #[derive(Properties, PartialEq)]
 pub struct ErrorToastProps {
     pub error: GameError,

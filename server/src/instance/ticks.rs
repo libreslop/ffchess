@@ -1,19 +1,21 @@
 use super::GameInstance;
+use crate::time::now_ms;
 use common::protocol::ServerMessage;
-use common::types::PieceId;
+use common::types::{DurationMs, PieceId};
 use rand::Rng;
 
 impl GameInstance {
     pub async fn handle_tick(&self) {
-        let now = chrono::Utc::now().timestamp_millis();
-        let players_viewing = !self.player_channels.read().await.is_empty();
+        let now = now_ms();
+        let players_viewing = !self.player_channels.read().await.is_empty()
+            || !self.connection_channels.read().await.is_empty();
 
         if players_viewing {
             *self.last_viewed_at.write().await = now;
         }
 
         let last_viewed = *self.last_viewed_at.read().await;
-        if now - last_viewed < 5000 {
+        if now - last_viewed < DurationMs::from_millis(5000) {
             self.tick_npcs().await;
         }
 
@@ -23,10 +25,12 @@ impl GameInstance {
         if tick % 600 == 0 {
             // Cleanup death timestamps
             let mut dt = self.death_timestamps.write().await;
-            dt.retain(|_, timestamp_ms| now - *timestamp_ms <= 10 * 60 * 1000);
+            dt.retain(|_, timestamp_ms| {
+                now - *timestamp_ms <= DurationMs::from_millis(10 * 60 * 1000)
+            });
 
             let mut cm = self.color_manager.write().await;
-            cm.cleanup(now / 1000, 24 * 60 * 60);
+            cm.cleanup(now.as_i64() / 1000, 24 * 60 * 60);
         }
 
         {
@@ -84,8 +88,7 @@ impl GameInstance {
                 .pieces
                 .values()
                 .filter(|p| {
-                    p.owner_id.is_none()
-                        && p.piece_type.as_ref() == limit.piece_id.as_ref()
+                    p.owner_id.is_none() && p.piece_type.as_ref() == limit.piece_id.as_ref()
                 })
                 .count();
             let mut vars = std::collections::HashMap::new();
@@ -102,12 +105,12 @@ impl GameInstance {
                         owner_id: None,
                         piece_type: limit.piece_id.clone(),
                         position: spawn_pos,
-                        last_move_time: chrono::Utc::now().timestamp_millis(),
+                        last_move_time: now_ms(),
                         cooldown_ms: self
                             .piece_configs
                             .get(&limit.piece_id)
-                            .map(|c| c.cooldown_ms as i64)
-                            .unwrap_or(2000),
+                            .map(|c| c.cooldown_ms)
+                            .unwrap_or_else(|| DurationMs::from_millis(2000)),
                     },
                 );
             }
@@ -120,7 +123,7 @@ impl GameInstance {
             .filter(|(_, p)| p.owner_id.is_none())
             .map(|(id, _)| *id)
             .collect();
-        let now = chrono::Utc::now().timestamp_millis();
+        let now = now_ms();
 
         for id in npc_ids {
             let (p_type, p_pos, last_move, cooldown) = {
@@ -163,30 +166,30 @@ impl GameInstance {
                     let mut possible_moves = Vec::new();
                     for path in &piece_config.capture_paths {
                         for step in path {
-                            if common::logic::is_valid_move(
+                            if common::logic::is_valid_move(common::logic::MoveValidationParams {
                                 piece_config,
-                                p_pos,
-                                p_pos + *step,
-                                true,
+                                start: p_pos,
+                                end: p_pos + *step,
+                                is_capture: true,
                                 board_size,
-                                &game.pieces,
-                                None,
-                            ) {
+                                pieces: &game.pieces,
+                                moving_owner: None,
+                            }) {
                                 possible_moves.push((p_pos + *step, true));
                             }
                         }
                     }
                     for path in &piece_config.move_paths {
                         for step in path {
-                            if common::logic::is_valid_move(
+                            if common::logic::is_valid_move(common::logic::MoveValidationParams {
                                 piece_config,
-                                p_pos,
-                                p_pos + *step,
-                                false,
+                                start: p_pos,
+                                end: p_pos + *step,
+                                is_capture: false,
                                 board_size,
-                                &game.pieces,
-                                None,
-                            ) {
+                                pieces: &game.pieces,
+                                moving_owner: None,
+                            }) {
                                 possible_moves.push((p_pos + *step, false));
                             }
                         }
@@ -209,7 +212,7 @@ impl GameInstance {
                         {
                             game.pieces.remove(&tp.id);
                             self.record_piece_removal(tp.id).await;
-                            if tp.piece_type.as_ref() == "king"
+                            if tp.piece_type.is_king()
                                 && let Some(owner_id) = tp.owner_id
                             {
                                 // Eliminate player
@@ -221,7 +224,7 @@ impl GameInstance {
                         if let Some(p) = game.pieces.get_mut(&id) {
                             p.position = best_move;
                             p.last_move_time = now;
-                            p.cooldown_ms = piece_config.cooldown_ms as i64;
+                            p.cooldown_ms = piece_config.cooldown_ms;
                             moved = true;
                         }
                     }
@@ -242,19 +245,19 @@ impl GameInstance {
                         all_steps[rng.gen_range(0..all_steps.len())]
                     };
                     let target = p_pos + step;
-                    if common::logic::is_valid_move(
+                    if common::logic::is_valid_move(common::logic::MoveValidationParams {
                         piece_config,
-                        p_pos,
-                        target,
-                        false,
+                        start: p_pos,
+                        end: target,
+                        is_capture: false,
                         board_size,
-                        &game.pieces,
-                        None,
-                    ) && let Some(p) = game.pieces.get_mut(&id)
+                        pieces: &game.pieces,
+                        moving_owner: None,
+                    }) && let Some(p) = game.pieces.get_mut(&id)
                     {
                         p.position = target;
                         p.last_move_time = now;
-                        p.cooldown_ms = piece_config.cooldown_ms as i64;
+                        p.cooldown_ms = piece_config.cooldown_ms;
                     }
                 }
             }

@@ -1,9 +1,8 @@
 use super::GameInstance;
+use crate::time::now_ms;
 use common::models::{GameState, Piece, Player};
 use common::protocol::{GameError, ServerMessage};
-use common::types::{KitId, PieceId, PieceTypeId, PlayerId, SessionSecret};
-use glam::IVec2;
-use rand::Rng;
+use common::types::{DurationMs, KitId, PieceId, PlayerId, Score, SessionSecret, TimestampMs};
 use tokio::sync::mpsc;
 
 impl GameInstance {
@@ -21,6 +20,9 @@ impl GameInstance {
             .iter()
             .find(|k| k.name == kit_name)
             .ok_or_else(|| GameError::Internal("Kit not found".to_string()))?;
+        if !kit.pieces.iter().any(|p| p.is_king()) {
+            return Err(GameError::Internal("Kit missing king piece".to_string()));
+        }
 
         let player_id = pid.unwrap_or_default();
 
@@ -40,14 +42,14 @@ impl GameInstance {
         };
         drop(secrets);
 
-        let respawn_ms = self.mode_config.respawn_cooldown_ms as i64;
-        if respawn_ms > 0 {
+        let respawn_ms = self.mode_config.respawn_cooldown_ms;
+        if respawn_ms > DurationMs::zero() {
             let deaths = self.death_timestamps.read().await;
             if let Some(death_time) = deaths.get(&player_id) {
-                let now = chrono::Utc::now().timestamp_millis();
-                let elapsed = now - death_time;
+                let now = now_ms();
+                let elapsed = now - *death_time;
                 if elapsed < respawn_ms {
-                    let remaining = (respawn_ms - elapsed) / 1000;
+                    let remaining = (respawn_ms - elapsed).as_u64() / 1000;
                     return Err(GameError::Custom {
                         title: "Respawn cooldown".to_string(),
                         message: format!("Wait {} seconds", remaining.max(1)),
@@ -88,49 +90,43 @@ impl GameInstance {
             });
         }
 
-        let mut king_id = PieceId::nil(); // Placeholder
-        let king_type = PieceTypeId::from("king");
+        let mut king_id = None;
 
         {
             let mut rng = rand::thread_rng();
             for p_type_id in &kit.pieces {
                 let p_id = PieceId::new();
-                let mut p_pos = spawn_pos;
-
-                if p_type_id == &king_type {
-                    king_id = p_id;
-                    // Try to put king at center
-                    if !game.pieces.values().any(|p| p.position == spawn_pos) {
-                        p_pos = spawn_pos;
+                let p_pos = if p_type_id.is_king() {
+                    king_id = Some(p_id);
+                    if crate::spawning::is_free_position(&game, spawn_pos) {
+                        spawn_pos
                     } else {
-                        // find nearby
-                        for _ in 0..10 {
-                            let offset = IVec2::new(rng.gen_range(-2..=2), rng.gen_range(-2..=2));
-                            let candidate = spawn_pos + offset;
-                            if candidate != spawn_pos
-                                && common::logic::is_within_board(candidate, game.board_size)
-                                && !game.pieces.values().any(|p| p.position == candidate)
-                                && !game.shops.iter().any(|s| s.position == candidate)
-                            {
-                                p_pos = candidate;
-                                break;
-                            }
-                        }
+                        crate::spawning::find_random_nearby_free_pos(
+                            &game,
+                            spawn_pos,
+                            &mut rng,
+                            -2..=2,
+                            10,
+                        )
+                        .unwrap_or_else(|| crate::spawning::find_spawn_pos(&game))
                     }
                 } else {
-                    for _ in 0..10 {
-                        let offset = IVec2::new(rng.gen_range(-2..=2), rng.gen_range(-2..=2));
-                        let candidate = spawn_pos + offset;
-                        if candidate != spawn_pos // Reserve exact center for king if possible (though loop order matters)
-                            && common::logic::is_within_board(candidate, game.board_size)
-                            && !game.pieces.values().any(|p| p.position == candidate)
-                            && !game.shops.iter().any(|s| s.position == candidate)
-                        {
-                            p_pos = candidate;
-                            break;
+                    crate::spawning::find_random_nearby_free_pos(
+                        &game,
+                        spawn_pos,
+                        &mut rng,
+                        -2..=2,
+                        10,
+                    )
+                    .or_else(|| {
+                        if crate::spawning::is_free_position(&game, spawn_pos) {
+                            Some(spawn_pos)
+                        } else {
+                            None
                         }
-                    }
-                }
+                    })
+                    .unwrap_or_else(|| crate::spawning::find_spawn_pos(&game))
+                };
 
                 game.pieces.insert(
                     p_id,
@@ -139,36 +135,23 @@ impl GameInstance {
                         owner_id: Some(player_id),
                         piece_type: p_type_id.clone(),
                         position: p_pos,
-                        last_move_time: 0,
-                        cooldown_ms: 0,
+                        last_move_time: TimestampMs::from_millis(0),
+                        cooldown_ms: DurationMs::zero(),
                     },
                 );
             }
         }
 
-        // Fallback if kit didn't have a king (shouldn't happen with valid config)
-        if king_id == PieceId::nil() {
-            king_id = PieceId::new();
-            game.pieces.insert(
-                king_id,
-                Piece {
-                    id: king_id,
-                    owner_id: Some(player_id),
-                    piece_type: king_type,
-                    position: spawn_pos,
-                    last_move_time: 0,
-                    cooldown_ms: 0,
-                },
-            );
-        }
+        let king_id =
+            king_id.ok_or_else(|| GameError::Internal("Kit missing king piece".to_string()))?;
 
         let player = Player {
             id: player_id,
             name,
-            score: 0,
+            score: Score::zero(),
             kills: 0,
             pieces_captured: 0,
-            join_time: chrono::Utc::now().timestamp_millis(),
+            join_time: now_ms(),
             king_id,
             color,
         };
@@ -190,8 +173,8 @@ impl GameInstance {
         };
 
         if let Some((score, kills, pieces_captured, join_time)) = stats {
-            let now_ms = chrono::Utc::now().timestamp_millis();
-            let duration = ((now_ms - join_time).max(0) / 1000) as u64;
+            let now_ms = now_ms();
+            let duration = (now_ms - join_time).as_u64() / 1000;
             let channels = self.player_channels.read().await;
             if let Some(tx) = channels.get(&player_id) {
                 let _ = tx.send(ServerMessage::GameOver {
@@ -215,7 +198,7 @@ impl GameInstance {
         self.death_timestamps
             .write()
             .await
-            .insert(player_id, chrono::Utc::now().timestamp_millis());
+            .insert(player_id, now_ms());
         let mut rp = self.removed_pieces.write().await;
         game.pieces.retain(|id, p| {
             if p.owner_id == Some(player_id) {

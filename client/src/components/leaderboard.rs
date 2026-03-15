@@ -2,6 +2,7 @@ use common::models::Player;
 use common::types::PlayerId;
 use yew::prelude::*;
 
+/// Properties for the leaderboard overlay.
 #[derive(Properties, PartialEq)]
 pub struct LeaderboardProps {
     pub players: Vec<Player>,
@@ -27,7 +28,7 @@ pub fn leaderboard(props: &LeaderboardProps) -> Html {
                         html! {
                             <div style={format!("display: flex; justify-content: space-between; gap: 16px; font-size: 0.9em; font-weight: bold; color: {};", p.color.as_ref())}>
                                 <span style={format!("overflow: hidden; text-overflow: ellipsis; white-space: nowrap; {}", if is_self { "text-decoration: underline;" } else { "" })}>{display_name}</span>
-                                <span>{p.score}</span>
+                                <span>{p.score.to_string()}</span>
                             </div>
                         }
                     }).collect::<Html>()

@@ -1,18 +1,9 @@
 use crate::utils::is_mobile;
-use common::models::GameModeClientConfig;
+use common::models::{GameModeClientConfig, ModeSummary};
 use common::types::{KitId, ModeId};
-use serde::{Deserialize, Serialize};
 use yew::prelude::*;
 
-#[derive(Clone, PartialEq, Serialize, Deserialize)]
-pub struct ModeSummary {
-    pub id: ModeId,
-    pub display_name: String,
-    pub players: u32,
-    pub max_players: u32,
-    pub respawn_cooldown_ms: u32,
-}
-
+/// Properties for the join screen inputs.
 #[derive(Properties, PartialEq)]
 pub struct JoinScreenProps {
     pub player_name: String,

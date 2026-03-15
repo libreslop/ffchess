@@ -18,6 +18,7 @@ pub const PREFERRED_COLORS: &[&str] = &[
     "#ea580c", // Dark Orange
 ];
 
+/// Tracks and assigns player colors while avoiding recent duplicates.
 pub struct ColorManager {
     pub player_colors: HashMap<PlayerId, ColorHex>,
     pub color_last_active: HashMap<ColorHex, i64>,

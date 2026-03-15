@@ -1,6 +1,7 @@
 use super::GameInstance;
+use crate::time::now_ms;
 use common::protocol::GameError;
-use common::types::{PieceId, PlayerId};
+use common::types::{PieceId, PlayerId, Score};
 use glam::IVec2;
 
 impl GameInstance {
@@ -17,7 +18,7 @@ impl GameInstance {
             if piece.owner_id != Some(player_id) {
                 return Err(GameError::NotYourPiece);
             }
-            let now = chrono::Utc::now().timestamp_millis();
+            let now = now_ms();
             let elapsed = now - piece.last_move_time;
             if elapsed < piece.cooldown_ms {
                 return Err(GameError::OnCooldown);
@@ -45,15 +46,15 @@ impl GameInstance {
             .get(&piece_type)
             .ok_or_else(|| GameError::Internal("Piece config not found".to_string()))?;
 
-        if !common::logic::is_valid_move(
+        if !common::logic::is_valid_move(common::logic::MoveValidationParams {
             piece_config,
-            start_pos,
-            target,
+            start: start_pos,
+            end: target,
             is_capture,
-            game.board_size,
-            &game.pieces,
-            piece_owner,
-        ) {
+            board_size: game.board_size,
+            pieces: &game.pieces,
+            moving_owner: piece_owner,
+        }) {
             return Err(GameError::InvalidMove);
         }
 
@@ -66,12 +67,12 @@ impl GameInstance {
                 .piece_configs
                 .get(&tp.piece_type)
                 .map(|c| c.score_value)
-                .unwrap_or(0);
+                .unwrap_or_else(Score::zero);
 
             if let Some(player) = game.players.get_mut(&player_id) {
                 player.score += attacker_score;
                 player.pieces_captured += 1;
-                if tp.piece_type.as_ref() == "king" {
+                if tp.piece_type.is_king() {
                     player.kills += 1;
                 }
             }
@@ -92,10 +93,10 @@ impl GameInstance {
 
         if let Some(piece) = game.pieces.get_mut(&piece_id) {
             piece.position = target;
-            piece.last_move_time = chrono::Utc::now().timestamp_millis();
+            piece.last_move_time = now_ms();
 
             // Cooldown uses the base value from config for now.
-            piece.cooldown_ms = piece_config.cooldown_ms as i64;
+            piece.cooldown_ms = piece_config.cooldown_ms;
         }
 
         Ok(())

@@ -6,12 +6,14 @@ use std::collections::HashMap;
 use std::path::Path;
 use walkdir::WalkDir;
 
+/// Name parts used for generating default player names.
 #[derive(Default, serde::Deserialize, Clone)]
 pub struct NamePool {
     pub adjectives: Vec<String>,
     pub nouns: Vec<String>,
 }
 
+/// Loads and stores all runtime configuration.
 pub struct ConfigManager {
     pub pieces: HashMap<PieceTypeId, PieceConfig>,
     pub shops: HashMap<ShopId, ShopConfig>,

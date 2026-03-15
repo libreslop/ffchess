@@ -1,4 +1,5 @@
 use crate::state::ServerState;
+use crate::types::ConnectionId;
 use axum::{
     extract::{
         Path, State,
@@ -6,42 +7,14 @@ use axum::{
     },
     response::IntoResponse,
 };
+use common::models::ModeSummary;
 use common::protocol::{ClientMessage, GameError, ServerMessage};
 use common::types::{ModeId, PlayerId, SessionSecret};
 use futures_util::{SinkExt, StreamExt};
 use jsonc_parser::parse_to_serde_value;
 use rand::seq::SliceRandom;
-use serde::Serialize;
 use std::{fs, sync::Arc};
 use tokio::sync::mpsc;
-
-fn to_client_mode(cfg: &common::models::GameModeConfig) -> common::models::GameModeClientConfig {
-    common::models::GameModeClientConfig {
-        id: cfg.id.clone(),
-        display_name: cfg.display_name.clone(),
-        camera_pan_limit: cfg.camera_pan_limit.clone(),
-        fog_of_war_radius: cfg.fog_of_war_radius.clone(),
-        respawn_cooldown_ms: cfg.respawn_cooldown_ms,
-        kits: cfg
-            .kits
-            .iter()
-            .map(|k| common::models::KitSummary {
-                name: k.name.clone(),
-                description: k.description.clone(),
-                pieces: k.pieces.clone(),
-            })
-            .collect(),
-    }
-}
-
-#[derive(Serialize)]
-pub struct ModeSummary {
-    pub id: ModeId,
-    pub display_name: String,
-    pub players: u32,
-    pub max_players: u32,
-    pub respawn_cooldown_ms: u32,
-}
 
 async fn mode_list_snapshot(state: &Arc<ServerState>) -> Vec<ModeSummary> {
     let mut list = Vec::new();
@@ -60,7 +33,8 @@ async fn mode_list_snapshot(state: &Arc<ServerState>) -> Vec<ModeSummary> {
 }
 
 pub async fn index_html(State(state): State<Arc<ServerState>>) -> impl IntoResponse {
-    let html = fs::read_to_string("client/dist/index.html")
+    let html_path = crate::paths::client_dist_dir().join("index.html");
+    let html = fs::read_to_string(html_path)
         .unwrap_or_else(|_| "<!doctype html><body>missing index</body>".to_string());
     let modes_json = serde_json::to_string(&mode_list_snapshot(&state).await)
         .unwrap_or_else(|_| "[]".to_string());
@@ -108,7 +82,9 @@ fn generate_name(state: &ServerState) -> String {
         .choose(&mut rng)
         .cloned()
         .unwrap_or_else(|| "Player".to_string());
-    if noun == adj && let Some(n) = pool.nouns.choose(&mut rng) {
+    if noun == adj
+        && let Some(n) = pool.nouns.choose(&mut rng)
+    {
         noun = n.clone();
     }
     format!("{adj} {noun}")
@@ -135,9 +111,9 @@ async fn handle_socket(socket: WebSocket, mode_id: ModeId, state: Arc<ServerStat
         }
     });
 
-    let conn_id = PlayerId::new();
+    let conn_id = ConnectionId::new();
     instance
-        .player_channels
+        .connection_channels
         .write()
         .await
         .insert(conn_id, tx.clone());
@@ -148,7 +124,7 @@ async fn handle_socket(socket: WebSocket, mode_id: ModeId, state: Arc<ServerStat
             player_id: PlayerId::nil(),
             session_secret: SessionSecret::nil(),
             state: Box::new(game.clone()),
-            mode: to_client_mode(&instance.mode_config),
+            mode: instance.mode_config.to_client_config(),
             pieces: (*instance.piece_configs).clone(),
             shops: (*instance.shop_configs).clone(),
         });
@@ -188,7 +164,7 @@ async fn handle_socket(socket: WebSocket, mode_id: ModeId, state: Arc<ServerStat
                             player_id = None;
                         }
 
-                        instance.player_channels.write().await.remove(&conn_id);
+                        instance.connection_channels.write().await.remove(&conn_id);
 
                         match instance
                             .add_player(name, kit_name, tx.clone(), pid, secret)
@@ -201,7 +177,7 @@ async fn handle_socket(socket: WebSocket, mode_id: ModeId, state: Arc<ServerStat
                                     player_id: id,
                                     session_secret: secret,
                                     state: Box::new(game.clone()),
-                                    mode: to_client_mode(&instance.mode_config),
+                                    mode: instance.mode_config.to_client_config(),
                                     pieces: (*instance.piece_configs).clone(),
                                     shops: (*instance.shop_configs).clone(),
                                 });
@@ -209,7 +185,7 @@ async fn handle_socket(socket: WebSocket, mode_id: ModeId, state: Arc<ServerStat
                             Err(e) => {
                                 let _ = tx.send(ServerMessage::Error(e));
                                 instance
-                                    .player_channels
+                                    .connection_channels
                                     .write()
                                     .await
                                     .insert(conn_id, tx.clone());
@@ -247,9 +223,8 @@ async fn handle_socket(socket: WebSocket, mode_id: ModeId, state: Arc<ServerStat
 
     if let Some(pid) = player_id {
         instance.remove_player(pid).await;
-        instance.player_channels.write().await.remove(&pid);
     } else {
-        instance.player_channels.write().await.remove(&conn_id);
+        instance.connection_channels.write().await.remove(&conn_id);
     }
     send_task.abort();
 }

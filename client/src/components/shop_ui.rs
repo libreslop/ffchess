@@ -1,14 +1,15 @@
 use crate::reducer::MsgSender;
 use common::models::{Piece, PieceConfig, ShopConfig};
 use common::protocol::ClientMessage;
-use common::types::PieceTypeId;
+use common::types::{PieceTypeId, Score};
 use glam::IVec2;
 use std::collections::HashMap;
 use yew::prelude::*;
 
+/// Properties for the shop overlay UI.
 #[derive(Properties, PartialEq)]
 pub struct ShopUIProps {
-    pub player_score: u64,
+    pub player_score: Score,
     pub player_pieces_count: usize,
     pub piece_on_shop: Option<Piece>,
     pub shop_config: ShopConfig,
@@ -19,26 +20,12 @@ pub struct ShopUIProps {
 
 #[function_component(ShopUI)]
 pub fn shop_ui(props: &ShopUIProps) -> Html {
-    let group = if let Some(ref p) = props.piece_on_shop {
-        props
-            .shop_config
-            .groups
-            .iter()
-            .find(|g| g.applies_to.contains(&p.piece_type))
-            .unwrap_or(&props.shop_config.default_group)
-    } else {
-        &props.shop_config.default_group
-    };
+    let group = common::logic::select_shop_group(&props.shop_config, props.piece_on_shop.as_ref());
 
-    let mut vars = HashMap::new();
-    vars.insert(
-        "player_piece_count".to_string(),
-        props.player_pieces_count as f64,
+    let vars = common::logic::build_price_vars(
+        props.player_pieces_count,
+        props.piece_configs.keys().map(|p_id| (p_id, 0)),
     );
-    for p_id in props.piece_configs.keys() {
-        // We don't have individual counts here easily, but we can assume 0 or just not use them in simple expressions
-        vars.insert(format!("{}_count", p_id.as_ref()), 0.0);
-    }
 
     html! {
         <div style="position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 8px; z-index: 50; width: 95%; max-width: 800px; pointer-events: none;">
@@ -48,7 +35,7 @@ pub fn shop_ui(props: &ShopUIProps) -> Html {
             <div style="display: flex; gap: 4px; flex-wrap: wrap; justify-content: center; pointer-events: auto;">
                 {
                     group.items.iter().enumerate().map(|(idx, item)| {
-                        let price = common::logic::evaluate_expression(&item.price_expr, &vars) as u64;
+                        let price = Score::from(common::logic::evaluate_expression(&item.price_expr, &vars) as u64);
                         let can_afford = props.player_score >= price;
                         let shop_pos = props.shop_pos;
                         let tx = props.tx.clone();
@@ -75,7 +62,7 @@ pub fn shop_ui(props: &ShopUIProps) -> Html {
                                     { &item.display_name }
                                 </span>
                                 <span style="font-size: 0.65rem; font-family: monospace; font-weight: 600;">
-                                    { price }
+                                    { price.to_string() }
                                 </span>
                             </button>
                         }

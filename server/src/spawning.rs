@@ -2,11 +2,57 @@ use common::*;
 use glam::IVec2;
 use rand::Rng;
 
+/// Check whether a board position is in-bounds and unoccupied by pieces or shops.
+pub fn is_free_position(game: &GameState, pos: IVec2) -> bool {
+    common::logic::is_within_board(pos, game.board_size)
+        && !game.pieces.values().any(|p| p.position == pos)
+        && !game.shops.iter().any(|s| s.position == pos)
+}
+
+/// Find a nearby open position using a fixed list of offsets.
+pub fn find_adjacent_free_pos(game: &GameState, origin: IVec2) -> Option<IVec2> {
+    const OFFSETS: [IVec2; 8] = [
+        IVec2::new(1, 0),
+        IVec2::new(-1, 0),
+        IVec2::new(0, 1),
+        IVec2::new(0, -1),
+        IVec2::new(1, 1),
+        IVec2::new(-1, 1),
+        IVec2::new(1, -1),
+        IVec2::new(-1, -1),
+    ];
+    OFFSETS
+        .iter()
+        .map(|offset| origin + *offset)
+        .find(|pos| is_free_position(game, *pos))
+}
+
+/// Find a random nearby open position within the provided offset bounds.
+pub fn find_random_nearby_free_pos(
+    game: &GameState,
+    origin: IVec2,
+    rng: &mut impl Rng,
+    offset_range: std::ops::RangeInclusive<i32>,
+    attempts: usize,
+) -> Option<IVec2> {
+    for _ in 0..attempts {
+        let offset = IVec2::new(
+            rng.gen_range(offset_range.clone()),
+            rng.gen_range(offset_range.clone()),
+        );
+        let candidate = origin + offset;
+        if candidate != origin && is_free_position(game, candidate) {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
 pub fn find_spawn_pos(game: &GameState) -> IVec2 {
     let mut rng = rand::thread_rng();
     let board_size = game.board_size;
-    let half = board_size / 2;
-    let limit = (board_size + 1) / 2;
+    let half = board_size.half();
+    let limit = board_size.limit_pos();
     let margin = 3;
 
     for _ in 0..100 {

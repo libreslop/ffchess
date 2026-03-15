@@ -2,6 +2,7 @@ use common::logic::evaluate_expression;
 use common::*;
 use yew::prelude::*;
 
+/// Mutable camera state for smooth panning and zoom transitions.
 pub struct CameraManager {
     pub camera: (f64, f64),
     pub target_camera: (f64, f64),
@@ -54,10 +55,7 @@ pub struct CameraUpdateParams<'a> {
     pub death_zoom: f64,
 }
 
-pub fn update_camera(
-    manager: &mut CameraManager,
-    params: CameraUpdateParams<'_>,
-) -> bool {
+pub fn update_camera(manager: &mut CameraManager, params: CameraUpdateParams<'_>) -> bool {
     let mut changed = false;
     let player_id_val = params.player_id.unwrap_or_else(PlayerId::nil);
     let player = params.state.players.get(&player_id_val);

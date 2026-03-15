@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
     use common::models::Piece;
-    use common::types::{KitId, ModeId, PieceId, PieceTypeId};
+    use common::types::{DurationMs, KitId, ModeId, PieceId, PieceTypeId, Score, TimestampMs};
     use glam::IVec2;
     use server::state::ServerState;
     use tokio::sync::mpsc;
@@ -102,8 +102,8 @@ mod tests {
                     owner_id: Some(p2_id),
                     piece_type: PieceTypeId::from("queen"),
                     position: IVec2::new(10, 10),
-                    last_move_time: 0,
-                    cooldown_ms: 0,
+                    last_move_time: TimestampMs::from_millis(0),
+                    cooldown_ms: DurationMs::zero(),
                 },
             );
             q_id
@@ -135,6 +135,6 @@ mod tests {
         assert_eq!(p1_piece_count, 0);
 
         // P2 should have gained score (King value is 500)
-        assert_eq!(game.players.get(&p2_id).unwrap().score, 500);
+        assert_eq!(game.players.get(&p2_id).unwrap().score, Score::from(500));
     }
 }

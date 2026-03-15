@@ -1,23 +1,27 @@
 use crate::colors::ColorManager;
+use crate::time::now_ms;
+use crate::types::ConnectionId;
 use common::models::{GameModeConfig, GameState, PieceConfig, ShopConfig};
 use common::protocol::ServerMessage;
-use common::types::{PieceId, PieceTypeId, PlayerId, SessionSecret, ShopId};
+use common::types::{PieceId, PieceTypeId, PlayerId, SessionSecret, ShopId, TimestampMs};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{RwLock, mpsc};
 
+/// Live game instance state for a single mode.
 pub struct GameInstance {
     pub mode_config: GameModeConfig,
     pub piece_configs: Arc<HashMap<PieceTypeId, PieceConfig>>,
     pub shop_configs: Arc<HashMap<ShopId, ShopConfig>>,
     pub game: RwLock<GameState>,
+    pub connection_channels: RwLock<HashMap<ConnectionId, mpsc::UnboundedSender<ServerMessage>>>,
     pub player_channels: RwLock<HashMap<PlayerId, mpsc::UnboundedSender<ServerMessage>>>,
     pub session_secrets: RwLock<HashMap<PlayerId, SessionSecret>>,
     pub removed_pieces: RwLock<Vec<PieceId>>,
     pub removed_players: RwLock<Vec<PlayerId>>,
     pub color_manager: RwLock<ColorManager>,
-    pub last_viewed_at: RwLock<i64>,
-    pub death_timestamps: RwLock<HashMap<PlayerId, i64>>,
+    pub last_viewed_at: RwLock<TimestampMs>,
+    pub death_timestamps: RwLock<HashMap<PlayerId, TimestampMs>>,
 }
 
 impl GameInstance {
@@ -36,19 +40,21 @@ impl GameInstance {
                 mode_id: mode_config.id.clone(),
                 ..Default::default()
             }),
+            connection_channels: RwLock::new(HashMap::new()),
             player_channels: RwLock::new(HashMap::new()),
             session_secrets: RwLock::new(HashMap::new()),
             removed_pieces: RwLock::new(Vec::new()),
             removed_players: RwLock::new(Vec::new()),
             color_manager: RwLock::new(ColorManager::new()),
-            last_viewed_at: RwLock::new(chrono::Utc::now().timestamp_millis()),
+            last_viewed_at: RwLock::new(now_ms()),
             death_timestamps: RwLock::new(HashMap::new()),
         }
     }
 
     pub async fn broadcast(&self, msg: ServerMessage) {
-        let channels = self.player_channels.read().await;
-        for tx in channels.values() {
+        let player_channels = self.player_channels.read().await;
+        let connection_channels = self.connection_channels.read().await;
+        for tx in player_channels.values().chain(connection_channels.values()) {
             let _ = tx.send(msg.clone());
         }
     }

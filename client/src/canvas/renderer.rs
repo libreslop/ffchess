@@ -1,5 +1,5 @@
 use super::color::hex_to_rgba;
-use super::types::{PieceDrawParams, RenderParams, Renderer};
+use super::types::{PieceDrawParams, PieceNameDrawParams, RenderParams, Renderer};
 use common::logic::{evaluate_expression, is_valid_move, is_within_board};
 use common::models::{PieceConfig, ShopConfig};
 use common::types::{PieceTypeId, PlayerId, ShopId};
@@ -22,10 +22,6 @@ impl Renderer {
             .unwrap();
         Self {
             ctx,
-            width: canvas.width() as f64,
-            height: canvas.height() as f64,
-            tile_size: 40.0,
-            zoom: 1.0,
             piece_configs,
             shop_configs,
         }
@@ -43,10 +39,11 @@ impl Renderer {
             width,
             height,
             zoom,
+            tile_size_px,
             mode,
             shop_configs,
         } = params;
-        let tile_size = 40.0 * zoom;
+        let tile_size = tile_size_px * zoom;
         let player_king = state
             .players
             .get(&player_id)
@@ -84,13 +81,13 @@ impl Renderer {
         let offset_x = width / 2.0 - camera_pos.0;
         let offset_y = height / 2.0 - camera_pos.1;
 
-        let half = state.board_size / 2;
-        let limit_pos = (state.board_size + 1) / 2;
+        let half = state.board_size.half();
+        let limit_pos = state.board_size.limit_pos();
 
         // Board Pixel Boundaries
         let board_left = -(half as f64) * tile_size + offset_x;
         let board_top = -(half as f64) * tile_size + offset_y;
-        let board_dim = state.board_size as f64 * tile_size;
+        let board_dim = state.board_size.as_i32() as f64 * tile_size;
 
         // Draw Board Background
         self.ctx.set_fill_style_str("#ffffff");
@@ -198,15 +195,15 @@ impl Renderer {
                     }
 
                     let is_capture = target_piece.is_some();
-                    if is_valid_move(
-                        config,
-                        piece.position,
-                        t,
+                    if is_valid_move(common::logic::MoveValidationParams {
+                        piece_config: config,
+                        start: piece.position,
+                        end: t,
                         is_capture,
-                        state.board_size,
-                        ghost_pieces,
-                        piece.owner_id,
-                    ) {
+                        board_size: state.board_size,
+                        pieces: ghost_pieces,
+                        moving_owner: piece.owner_id,
+                    }) {
                         self.ctx.fill_rect(
                             x as f64 * tile_size + offset_x + 2.0,
                             y as f64 * tile_size + offset_y + 2.0,
@@ -274,6 +271,7 @@ impl Renderer {
                                 draw_name: false,
                                 is_ghost: true,
                                 pos_override: None,
+                                tile_size_px,
                             },
                             zoom,
                         );
@@ -290,6 +288,7 @@ impl Renderer {
                                 draw_name: false,
                                 is_ghost: false,
                                 pos_override,
+                                tile_size_px,
                             },
                             zoom,
                         );
@@ -306,6 +305,7 @@ impl Renderer {
                                 draw_name: false,
                                 is_ghost: false,
                                 pos_override,
+                                tile_size_px,
                             },
                             zoom,
                         );
@@ -317,11 +317,20 @@ impl Renderer {
         // Second pass: Draw player names on top of everything
         for (id, ghost_piece) in ghost_pieces {
             let piece = state.pieces.get(id).unwrap_or(ghost_piece);
-            if piece.piece_type.as_ref() == "king"
+            if piece.piece_type.is_king()
                 && (piece.position - king_pos).abs().max_element() <= view_radius_squares + 2
             {
                 let pos_override = animated_positions.get(id).copied();
-                self.draw_piece_name(piece, offset_x, offset_y, 1.0, state, zoom, pos_override);
+                self.draw_piece_name(PieceNameDrawParams {
+                    piece,
+                    offset_x,
+                    offset_y,
+                    alpha: 1.0,
+                    state,
+                    zoom,
+                    tile_size_px,
+                    pos_override,
+                });
             }
         }
 

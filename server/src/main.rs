@@ -39,7 +39,7 @@ async fn main() {
                 .route("/modes", get(server::handlers::list_modes)),
         )
         .route("/", get(server::handlers::index_html))
-        .fallback_service(ServeDir::new("client/dist"))
+        .fallback_service(ServeDir::new(server::paths::client_dist_dir()))
         .with_state(state)
         .layer(TraceLayer::new_for_http())
         .layer(CorsLayer::permissive());

@@ -1,6 +1,7 @@
 use gloo_timers::callback::Timeout;
 use yew::prelude::*;
 
+/// Properties for fatal error notifications.
 #[derive(Properties, PartialEq)]
 pub struct FatalNotificationProps {
     pub show: bool,
