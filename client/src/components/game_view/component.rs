@@ -36,6 +36,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
     let piece_prev_positions = use_mut_ref(HashMap::<PieceId, IVec2>::new);
     let piece_anims = use_mut_ref(HashMap::<PieceId, PieceAnim>::new);
     let last_tap = use_mut_ref(|| None::<(f64, f64, f64)>);
+    let touch_gesture_active = use_mut_ref(|| false);
 
     let cam_state = use_state(|| (0.0, 0.0));
     let zoom_state = use_state(|| 1.0f64);
@@ -748,6 +749,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
                 let drag_start = drag_start.clone();
                 let latest_state = latest_state.clone();
                 let is_dead = props.reducer.is_dead;
+                let touch_gesture_active = touch_gesture_active.clone();
                 Callback::from(move |e: TouchEvent| {
                     if is_shop_ui_target(e.target()) {
                         return;
@@ -757,6 +759,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
                         return;
                     }
                     if e.touches().length() == 2 {
+                        *touch_gesture_active.borrow_mut() = true;
                         // Begin pinch zoom
                         let t0 = e.touches().get(0).unwrap();
                         let t1 = e.touches().get(1).unwrap();
@@ -775,6 +778,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
                             s.1 = false;
                         }
                     } else if let Some(touch) = e.touches().get(0) {
+                        *touch_gesture_active.borrow_mut() = false;
                         handle_input_start.emit((touch.client_x() as f64, touch.client_y() as f64, false));
                         let mut mgr = manager_ref.borrow_mut();
                         mgr.last_touch_dist = None;
@@ -791,6 +795,8 @@ pub fn game_view(props: &GameViewProps) -> Html {
                 let latest_state = latest_state.clone();
                 let zoom_min = props.globals.camera_zoom_min;
                 let zoom_max = props.globals.camera_zoom_max;
+                let drag_start = drag_start.clone();
+                let touch_gesture_active = touch_gesture_active.clone();
                 Callback::from(move |e: TouchEvent| {
                     if is_shop_ui_target(e.target()) {
                         return;
@@ -800,6 +806,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
                         return;
                     }
                     if e.touches().length() == 2 {
+                        *touch_gesture_active.borrow_mut() = true;
                         let t0 = e.touches().get(0).unwrap();
                         let t1 = e.touches().get(1).unwrap();
                         let dx = t1.client_x() as f64 - t0.client_x() as f64;
@@ -836,6 +843,14 @@ pub fn game_view(props: &GameViewProps) -> Html {
                             s.1 = false;
                         }
                     } else if let Some(touch) = e.touches().get(0) {
+                        if let Some((sx, sy, allow_panning)) = *drag_start {
+                            let dx = touch.client_x() as f64 - sx;
+                            let dy = touch.client_y() as f64 - sy;
+                            let dist = (dx * dx + dy * dy).sqrt();
+                            if allow_panning && dist > 10.0 {
+                                *touch_gesture_active.borrow_mut() = true;
+                            }
+                        }
                         {
                             let mut mgr = manager_ref.borrow_mut();
                             mgr.last_touch_dist = None;
@@ -851,6 +866,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
                 let drag_start = drag_start.clone();
                 let latest_state = latest_state.clone();
                 let last_tap = last_tap.clone();
+                let touch_gesture_active = touch_gesture_active.clone();
                 Callback::from(move |e: TouchEvent| {
                     if is_shop_ui_target(e.target()) {
                         return;
@@ -864,6 +880,15 @@ pub fn game_view(props: &GameViewProps) -> Html {
                     drag_start.set(None);
                     if let Ok(mut s) = latest_state.try_borrow_mut() {
                         s.1 = false;
+                    }
+                    {
+                        let mut gesture = touch_gesture_active.borrow_mut();
+                        if *gesture {
+                            if e.touches().length() == 0 {
+                                *gesture = false;
+                            }
+                            return;
+                        }
                     }
                     if let Some(touch) = e.changed_touches().get(0) {
                         if e.touches().length() == 0 {
