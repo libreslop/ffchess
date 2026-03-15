@@ -51,24 +51,35 @@ fn apply_visible_ghosts(
     now_ms: i64,
 ) {
     for pm in pm_queue {
-        let is_on_cooldown = state
-            .pieces
-            .get(&pm.piece_id)
-            .map(|piece| {
-                let ready_at = piece
-                    .last_move_time
-                    .saturating_add(piece.cooldown_ms)
-                    .saturating_add(50);
-                now_ms < ready_at
-            })
-            .unwrap_or(false);
+        if !pm_on_cooldown(pm, state, now_ms) {
+            continue;
+        }
 
-        if is_on_cooldown {
-            if let Some(p) = ghosts.get_mut(&pm.piece_id) {
-                p.position = pm.target;
-            }
+        if let Some(p) = ghosts.get_mut(&pm.piece_id) {
+            p.position = pm.target;
         }
     }
+}
+
+fn pm_on_cooldown(pm: &Pmove, state: &GameState, now_ms: i64) -> bool {
+    if pm.pending {
+        // Already submitted; treat as invisible to avoid flicker
+        return false;
+    }
+
+    state
+        .pieces
+        .get(&pm.piece_id)
+        .map(|piece| {
+            if piece.cooldown_ms <= 0 {
+                return false;
+            }
+            let ready_at = piece
+                .last_move_time
+                .saturating_add(piece.cooldown_ms);
+            now_ms < ready_at
+        })
+        .unwrap_or(false)
 }
 
 const MOVE_ANIM_MS: f64 = 200.0;
@@ -310,6 +321,11 @@ pub fn game_view(props: &GameViewProps) -> Html {
                     let now_epoch_ms = now_epoch_ms();
 
                     apply_visible_ghosts(&mut ghosts, pm_queue, state, now_epoch_ms);
+                    let visible_pm: Vec<_> = pm_queue
+                        .iter()
+                        .cloned()
+                        .filter(|pm| pm_on_cooldown(pm, state, now_epoch_ms))
+                        .collect();
 
                     let now = web_sys::window().unwrap().performance().unwrap().now();
                     let mut anims = piece_anims.borrow_mut();
@@ -335,7 +351,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
                         state,
                         player_id.unwrap_or_else(Uuid::nil),
                         *sid,
-                        pm_queue,
+                        &visible_pm,
                         &ghosts,
                         &animated_positions,
                         **cam,
