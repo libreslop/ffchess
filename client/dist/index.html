@@ -29,15 +29,22 @@
                 background-color: #f0f2f5; 
                 font-family: 'Arbutus', serif;
             }
+            * {
+                -webkit-touch-callout: none;
+                -webkit-user-select: none;
+                -moz-user-select: none;
+                -ms-user-select: none;
+                user-select: none;
+            }
             input, button, select, textarea {
                 font-family: inherit;
             }
         </style>
-    <link rel="modulepreload" href="/client-a141f7b94031c491.js" crossorigin="anonymous" integrity="sha384-QmA3NmK+CJneMfZEBFvK/+6zsW2Vuf8h2XessGvH6xSP5q+MGdFPzpq8yVf5Eg1f"><link rel="preload" href="/client-a141f7b94031c491_bg.wasm" crossorigin="anonymous" integrity="sha384-PHnHR9iq3DzFO2qjQVWXQq1+bLsm8eJNoMYQf6ATnb5KnvVVx8UFX4LN/VEYAo6S" as="fetch" type="application/wasm"></head>
+    <link rel="modulepreload" href="/client-95a6b75e38e80c54.js" crossorigin="anonymous" integrity="sha384-QmA3NmK+CJneMfZEBFvK/+6zsW2Vuf8h2XessGvH6xSP5q+MGdFPzpq8yVf5Eg1f"><link rel="preload" href="/client-95a6b75e38e80c54_bg.wasm" crossorigin="anonymous" integrity="sha384-1QIcMgjDJaJRS6LSO9rdlFG/IBldorYJIGAi5ZUrKfD+2buOas3WHnLr8P1aTrXB" as="fetch" type="application/wasm"></head>
     <body>
 <script type="module">
-import init, * as bindings from '/client-a141f7b94031c491.js';
-const wasm = await init({ module_or_path: '/client-a141f7b94031c491_bg.wasm' });
+import init, * as bindings from '/client-95a6b75e38e80c54.js';
+const wasm = await init({ module_or_path: '/client-95a6b75e38e80c54_bg.wasm' });
 
 
 window.wasmBindings = bindings;
