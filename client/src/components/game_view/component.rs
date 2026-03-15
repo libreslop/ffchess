@@ -13,7 +13,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 use wasm_bindgen::JsCast;
-use web_sys::HtmlCanvasElement;
+use web_sys::{Element, HtmlCanvasElement};
 use yew::prelude::*;
 
 /// Properties for the main game viewport.
@@ -64,6 +64,19 @@ pub fn game_view(props: &GameViewProps) -> Html {
                 .unwrap(),
         )
     });
+
+    /// Returns true when a pointer/touch event originates from the shop UI overlay.
+    fn is_shop_ui_target(target: Option<web_sys::EventTarget>) -> bool {
+        let Some(target) = target else { return false; };
+        let Ok(element) = target.dyn_into::<Element>() else {
+            return false;
+        };
+        element
+            .closest("[data-shop-ui]")
+            .ok()
+            .flatten()
+            .is_some()
+    }
 
     // Drive a steady render heartbeat with requestAnimationFrame so visual elements (e.g., cooldown bars) update every frame
     {
@@ -709,6 +722,9 @@ pub fn game_view(props: &GameViewProps) -> Html {
                 let latest_state = latest_state.clone();
                 let is_dead = props.reducer.is_dead;
                 Callback::from(move |e: TouchEvent| {
+                    if is_shop_ui_target(e.target()) {
+                        return;
+                    }
                     e.prevent_default();
                     if is_dead {
                         return;
@@ -749,6 +765,9 @@ pub fn game_view(props: &GameViewProps) -> Html {
                 let zoom_min = props.globals.camera_zoom_min;
                 let zoom_max = props.globals.camera_zoom_max;
                 Callback::from(move |e: TouchEvent| {
+                    if is_shop_ui_target(e.target()) {
+                        return;
+                    }
                     e.prevent_default();
                     if is_dead {
                         return;
@@ -805,6 +824,9 @@ pub fn game_view(props: &GameViewProps) -> Html {
                 let drag_start = drag_start.clone();
                 let latest_state = latest_state.clone();
                 Callback::from(move |e: TouchEvent| {
+                    if is_shop_ui_target(e.target()) {
+                        return;
+                    }
                     e.prevent_default();
                     {
                         let mut mgr = manager_ref.borrow_mut();

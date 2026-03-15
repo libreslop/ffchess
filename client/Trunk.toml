@@ -1,7 +1,6 @@
 [build]
 target = "index.html"
 inject_scripts = true
-cargo_profile = "minified"
 
 [serve]
 port = 8081
