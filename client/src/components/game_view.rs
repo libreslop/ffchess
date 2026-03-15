@@ -524,10 +524,15 @@ pub fn game_view(props: &GameViewProps) -> Html {
         let drag_start = drag_start.clone();
         let manager_ref = manager_ref.clone();
         Callback::from(move |_| {
+            let prev = *drag_start;
             drag_start.set(None);
-            let mut mgr = manager_ref.borrow_mut();
-            // Treat like a mouse release: keep current velocity for inertia but lock target to current position
-            mgr.target_camera = mgr.camera;
+            if let Some((_, _, allow_panning)) = prev {
+                if allow_panning {
+                    // Treat like a mouse release: keep current velocity for inertia but lock target to current position
+                    let mut mgr = manager_ref.borrow_mut();
+                    mgr.target_camera = mgr.camera;
+                }
+            }
         })
     };
 
