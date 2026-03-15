@@ -319,11 +319,12 @@ impl Renderer {
         }
 
         // Second pass: Draw player names on top of everything
-        for piece in ghost_pieces.values() {
+        for (id, ghost_piece) in ghost_pieces {
+            let piece = state.pieces.get(id).unwrap_or(ghost_piece);
             if piece.piece_type == "king"
                 && (piece.position - king_pos).abs().max_element() <= view_radius_squares + 2
             {
-                let pos_override = animated_positions.get(&piece.id).copied();
+                let pos_override = animated_positions.get(id).copied();
                 self.draw_piece_name(piece, offset_x, offset_y, 1.0, state, zoom, pos_override);
             }
         }
