@@ -1,8 +1,12 @@
+//! Spawn position helpers for pieces and shops.
+
 use common::*;
 use glam::IVec2;
 use rand::Rng;
 
 /// Check whether a board position is in-bounds and unoccupied by pieces or shops.
+///
+/// `game` provides state, `pos` is the candidate tile. Returns `true` if free.
 pub fn is_free_position(game: &GameState, pos: IVec2) -> bool {
     common::logic::is_within_board(pos, game.board_size)
         && !game.pieces.values().any(|p| p.position == pos)
@@ -10,6 +14,8 @@ pub fn is_free_position(game: &GameState, pos: IVec2) -> bool {
 }
 
 /// Find a nearby open position using a fixed list of offsets.
+///
+/// `game` provides state and `origin` is the center tile. Returns a free position if found.
 pub fn find_adjacent_free_pos(game: &GameState, origin: IVec2) -> Option<IVec2> {
     const OFFSETS: [IVec2; 8] = [
         IVec2::new(1, 0),
@@ -28,6 +34,10 @@ pub fn find_adjacent_free_pos(game: &GameState, origin: IVec2) -> Option<IVec2> 
 }
 
 /// Find a random nearby open position within the provided offset bounds.
+///
+/// `game` provides state, `origin` is the center tile, `rng` is the RNG to use,
+/// `offset_range` bounds random offsets, and `attempts` is the max tries.
+/// Returns a free position if found.
 pub fn find_random_nearby_free_pos(
     game: &GameState,
     origin: IVec2,
@@ -48,6 +58,9 @@ pub fn find_random_nearby_free_pos(
     None
 }
 
+/// Finds a suitable spawn position with distance-based heuristics.
+///
+/// `game` provides the current board state. Returns a spawnable tile.
 pub fn find_spawn_pos(game: &GameState) -> IVec2 {
     let mut rng = rand::thread_rng();
     let board_size = game.board_size;

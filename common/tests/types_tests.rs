@@ -1,6 +1,9 @@
+//! Tests for typed domain primitives.
+
 use common::types::{BoardSize, DurationMs, Score, TimestampMs};
 
 #[test]
+/// Verifies score subtraction saturates at zero.
 fn score_saturates_on_sub() {
     let mut score = Score::from(10);
     score -= Score::from(25);
@@ -8,6 +11,7 @@ fn score_saturates_on_sub() {
 }
 
 #[test]
+/// Verifies score addition saturates at the max value.
 fn score_saturates_on_add() {
     let mut score = Score::from(u64::MAX - 1);
     score += Score::from(10);
@@ -15,6 +19,7 @@ fn score_saturates_on_add() {
 }
 
 #[test]
+/// Verifies board size helper calculations for odd sizes.
 fn board_size_helpers_handle_odd_sizes() {
     let size = BoardSize::from(41);
     assert_eq!(size.half(), 20);
@@ -22,12 +27,14 @@ fn board_size_helpers_handle_odd_sizes() {
 }
 
 #[test]
+/// Verifies board size clamps to a minimum of 1.
 fn board_size_clamps_to_minimum() {
     let size = BoardSize::from(0);
     assert_eq!(size.as_i32(), 1);
 }
 
 #[test]
+/// Verifies timestamp and duration arithmetic round-trips correctly.
 fn duration_and_timestamp_math_roundtrip() {
     let start = TimestampMs::from_millis(1_000);
     let end = TimestampMs::from_millis(2_500);

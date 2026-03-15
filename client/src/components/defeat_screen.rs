@@ -1,3 +1,5 @@
+//! Defeat overlay component displayed after player death.
+
 use crate::utils::is_mobile;
 use common::types::Score;
 use yew::prelude::*;
@@ -14,6 +16,9 @@ pub struct DefeatScreenProps {
 }
 
 #[function_component(DefeatScreen)]
+/// Renders the defeat summary and rejoin button.
+///
+/// `props` supplies score stats and callbacks. Returns rendered HTML.
 pub fn defeat_screen(props: &DefeatScreenProps) -> Html {
     let mobile = is_mobile();
     let title_size = if mobile { "3em" } else { "4em" };

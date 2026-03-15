@@ -1,7 +1,10 @@
+//! Color assignment and reuse logic for player identities.
+
 use common::types::{ColorHex, PlayerId};
 use rand::Rng;
 use std::collections::HashMap;
 
+/// Ordered list of preferred color hex values for player assignment.
 pub const PREFERRED_COLORS: &[&str] = &[
     "#dc2626", // Red
     "#2563eb", // Blue
@@ -26,6 +29,7 @@ pub struct ColorManager {
 }
 
 impl ColorManager {
+    /// Creates a new empty color manager.
     pub fn new() -> Self {
         Self {
             player_colors: HashMap::new(),
@@ -34,6 +38,10 @@ impl ColorManager {
         }
     }
 
+    /// Returns the player's color, assigning one if needed.
+    ///
+    /// `player_id` identifies the player, `active_player_ids` lists currently active players.
+    /// Returns the assigned `ColorHex`.
     pub fn get_or_assign_color(
         &mut self,
         player_id: PlayerId,
@@ -124,6 +132,9 @@ impl ColorManager {
         color
     }
 
+    /// Marks a player (and their color) as recently active.
+    ///
+    /// `player_id` identifies the active player. Returns nothing.
     pub fn update_activity(&mut self, player_id: PlayerId) {
         let now = chrono::Utc::now().timestamp();
         if let Some(color) = self.player_colors.get(&player_id).cloned() {
@@ -132,6 +143,9 @@ impl ColorManager {
         self.player_last_active.insert(player_id, now);
     }
 
+    /// Removes inactive players and color claims older than `max_age_secs`.
+    ///
+    /// `now` is the current timestamp in seconds. Returns nothing.
     pub fn cleanup(&mut self, now: i64, max_age_secs: i64) {
         self.player_last_active.retain(|id, last_active| {
             if now - *last_active > max_age_secs {
@@ -148,6 +162,7 @@ impl ColorManager {
 }
 
 impl Default for ColorManager {
+    /// Provides a new empty color manager.
     fn default() -> Self {
         Self::new()
     }

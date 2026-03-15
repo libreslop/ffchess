@@ -1,3 +1,5 @@
+//! Camera update logic for panning, zooming, and follow behavior.
+
 use common::logic::evaluate_expression;
 use common::*;
 use yew::prelude::*;
@@ -18,6 +20,7 @@ pub struct CameraManager {
 }
 
 impl CameraManager {
+    /// Creates a camera manager with default pan/zoom state.
     pub fn new() -> Self {
         Self {
             camera: (0.0, 0.0),
@@ -55,6 +58,10 @@ pub struct CameraUpdateParams<'a> {
     pub death_zoom: f64,
 }
 
+/// Advances the camera state by one tick using inputs and game state.
+///
+/// `manager` is the mutable camera state, `params` contains context and settings.
+/// Returns `true` if the camera state changed and requires a re-render.
 pub fn update_camera(manager: &mut CameraManager, params: CameraUpdateParams<'_>) -> bool {
     let mut changed = false;
     let player_id_val = params.player_id.unwrap_or_else(PlayerId::nil);

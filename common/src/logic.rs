@@ -1,8 +1,14 @@
+//! Shared rule helpers for move validation, board sizing, and shop pricing.
+
 use crate::models::{GameModeConfig, Piece, PieceConfig, ShopConfig, ShopGroupConfig};
 use crate::types::{BoardSize, DurationMs, ExprString, PieceId, PieceTypeId, PlayerId};
 use glam::IVec2;
 use std::collections::HashMap;
 
+/// Evaluates a numeric expression string with runtime variables.
+///
+/// `expr` is the expression to evaluate, `vars` provides variable bindings.
+/// Returns the computed value or `0.0` on evaluation errors.
 pub fn evaluate_expression(expr: &ExprString, vars: &HashMap<String, f64>) -> f64 {
     let mut context = meval::Context::new();
     for (name, val) in vars {
@@ -11,6 +17,10 @@ pub fn evaluate_expression(expr: &ExprString, vars: &HashMap<String, f64>) -> f6
     meval::eval_str_with_context(expr.as_ref(), &context).unwrap_or(0.0)
 }
 
+/// Computes the board size for a mode given the current player count.
+///
+/// `mode` supplies the expression, `player_count` is the active player total.
+/// Returns a clamped `BoardSize`.
 pub fn calculate_board_size(mode: &GameModeConfig, player_count: usize) -> BoardSize {
     let mut vars = HashMap::new();
     vars.insert("player_count".to_string(), player_count as f64);
@@ -18,6 +28,10 @@ pub fn calculate_board_size(mode: &GameModeConfig, player_count: usize) -> Board
     BoardSize::from(size)
 }
 
+/// Checks if a board position is inside the bounds of a square board.
+///
+/// `pos` is the tile coordinate, `board_size` is the board dimension.
+/// Returns `true` when the position is within the valid board range.
 pub fn is_within_board(pos: IVec2, board_size: BoardSize) -> bool {
     let half = board_size.half();
     let limit_pos = board_size.limit_pos();
@@ -35,6 +49,10 @@ pub struct MoveValidationParams<'a> {
     pub moving_owner: Option<PlayerId>,
 }
 
+/// Validates a move using piece paths, occupancy, and board bounds.
+///
+/// `params` carries the move details and board state to validate.
+/// Returns `true` if the move is legal under the piece rules.
 pub fn is_valid_move(params: MoveValidationParams<'_>) -> bool {
     if params.start == params.end || !is_within_board(params.end, params.board_size) {
         return false;
@@ -79,11 +97,18 @@ pub fn is_valid_move(params: MoveValidationParams<'_>) -> bool {
     false
 }
 
+/// Calculates the movement cooldown for a piece.
+///
+/// `piece_config` provides the cooldown; `_start` and `_end` are the move bounds.
+/// Returns the cooldown duration in milliseconds.
 pub fn calculate_cooldown(piece_config: &PieceConfig, _start: IVec2, _end: IVec2) -> DurationMs {
     piece_config.cooldown_ms
 }
 
 /// Resolve the shop group for a piece standing on the shop.
+///
+/// `shop_config` is the full shop config and `piece_on_shop` is the piece present.
+/// Returns the matching group or the default group when none applies.
 pub fn select_shop_group<'a>(
     shop_config: &'a ShopConfig,
     piece_on_shop: Option<&Piece>,
@@ -100,6 +125,9 @@ pub fn select_shop_group<'a>(
 }
 
 /// Build expression variables for pricing formulas.
+///
+/// `player_piece_count` is the player's piece count and `piece_counts` yields per-type counts.
+/// Returns a map of variables for evaluation.
 pub fn build_price_vars<'a, I>(player_piece_count: usize, piece_counts: I) -> HashMap<String, f64>
 where
     I: IntoIterator<Item = (&'a PieceTypeId, usize)>,
@@ -112,6 +140,10 @@ where
     vars
 }
 
+/// Finds the piece located at a specific board position.
+///
+/// `pieces` is the active piece map and `pos` is the tile coordinate.
+/// Returns the piece reference when present.
 fn piece_at(pieces: &HashMap<PieceId, Piece>, pos: IVec2) -> Option<&Piece> {
     pieces.values().find(|p| p.position == pos)
 }

@@ -1,3 +1,5 @@
+//! Shop purchase and spawn logic for a game instance.
+
 use super::GameInstance;
 use common::models::Shop;
 use common::protocol::GameError;
@@ -5,6 +7,10 @@ use common::types::{DurationMs, PieceId, PlayerId, Score, TimestampMs};
 use glam::IVec2;
 
 impl GameInstance {
+    /// Processes a purchase at a shop and applies its effects.
+    ///
+    /// `player_id` is the buyer, `shop_pos` is the shop tile, `item_index` selects the item.
+    /// Returns `Ok(())` on success or a `GameError` on failure.
     pub async fn handle_shop_buy(
         &self,
         player_id: PlayerId,
@@ -120,6 +126,9 @@ impl GameInstance {
         Ok(())
     }
 
+    /// Spawns the initial set of shops defined by the mode configuration.
+    ///
+    /// Returns nothing; shops are inserted into the game state.
     pub async fn spawn_initial_shops(&self) {
         let mut game = self.game.write().await;
         for shop_count in &self.mode_config.shop_counts {

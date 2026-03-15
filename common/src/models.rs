@@ -1,3 +1,5 @@
+//! Core domain models shared between server logic and client rendering.
+
 use crate::types::{
     BoardSize, ColorHex, DurationMs, ExprString, KitId, ModeId, PieceId, PieceTypeId, PlayerId,
     Score, ShopId, TimestampMs,
@@ -153,6 +155,7 @@ pub struct GameState {
 }
 
 impl Default for GameState {
+    /// Creates an empty game state using the default board and mode.
     fn default() -> Self {
         Self {
             players: HashMap::new(),
@@ -175,6 +178,9 @@ pub struct ModeSummary {
 }
 
 impl GameModeConfig {
+    /// Builds a client-safe projection of this mode configuration.
+    ///
+    /// Returns a `GameModeClientConfig` with server-only fields stripped.
     pub fn to_client_config(&self) -> GameModeClientConfig {
         GameModeClientConfig {
             id: self.id.clone(),

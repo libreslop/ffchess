@@ -1,3 +1,5 @@
+//! Reusable Yew components for the client UI.
+
 pub mod defeat_screen;
 pub mod disconnected_screen;
 pub mod error_toast;

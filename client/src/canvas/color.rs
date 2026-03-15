@@ -1,3 +1,9 @@
+//! Color conversion helpers for canvas drawing.
+
+/// Converts a hex color string into an rgba() CSS string.
+///
+/// `hex` is a `#rgb` or `#rrggbb` string, `alpha` is the opacity.
+/// Returns an `rgba(r, g, b, a)` CSS color string.
 pub fn hex_to_rgba(hex: &str, alpha: f64) -> String {
     let hex = hex.trim_start_matches('#');
     if hex.len() == 6 {

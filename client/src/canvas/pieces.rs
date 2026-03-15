@@ -1,6 +1,12 @@
+//! Piece drawing routines for the canvas renderer.
+
 use crate::canvas::types::{PieceDrawParams, PieceNameDrawParams, Renderer};
 
 impl Renderer {
+    /// Draws a piece glyph, cooldown bar, and optional nameplate.
+    ///
+    /// `params` describes the piece and draw state, `zoom` is the current zoom factor.
+    /// Returns nothing.
     pub fn draw_piece(&self, params: PieceDrawParams, zoom: f64) {
         let tile_size = params.tile_size_px * zoom;
         let is_self = params.piece.owner_id == Some(params.player_id);
@@ -97,6 +103,9 @@ impl Renderer {
         }
     }
 
+    /// Draws a king nameplate above the piece if applicable.
+    ///
+    /// `params` describes the piece and draw state. Returns nothing.
     pub fn draw_piece_name(&self, params: PieceNameDrawParams<'_>) {
         let tile_size = params.tile_size_px * params.zoom;
         let pos = params.pos_override.unwrap_or((

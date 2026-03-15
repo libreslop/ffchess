@@ -1,3 +1,5 @@
+//! Join flow UI for selecting mode, name, and kit.
+
 use crate::utils::is_mobile;
 use common::models::{GameModeClientConfig, ModeSummary};
 use common::types::{KitId, ModeId};
@@ -21,6 +23,9 @@ pub struct JoinScreenProps {
 }
 
 #[function_component(JoinScreen)]
+/// Renders the join screen form and kit selection UI.
+///
+/// `props` supplies the join state and callbacks. Returns rendered HTML.
 pub fn join_screen(props: &JoinScreenProps) -> Html {
     let mobile = is_mobile();
     let is_disabled = props.is_loading || props.error.is_some();

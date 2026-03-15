@@ -1,37 +1,34 @@
-# Data-Driven Game Engine Refactor Design
+# Data-Driven Game Engine Refactor
 
 ## Overview
-This document outlines the architectural changes required to transition `ffchess-server` from a hardcoded chess variant to a generic, data-driven tile-based game engine.
+This document captures the current data-driven architecture of `ffchess-server`. The project has completed the refactor from hardcoded rules to JSONC-driven configuration with shared, typed Rust models.
 
 ## 1. Configuration System
-The system will rely on JSONC configuration files located in a root `config/` directory. Mode IDs are derived from filenames.
+The game is configured via JSONC files under `config/`. Mode IDs are derived from filenames.
 
 ### 1.1 Directory Structure
 ```
 config/
+├── global/
+│   ├── client.jsonc
+│   └── server.jsonc
 ├── pieces/
-│   ├── pawn.jsonc
-│   ├── knight.jsonc
-│   └── ...
 ├── shops/
-│   ├── spawn_shop.jsonc
-│   └── upgrade_shop.jsonc
 └── modes/
-    └── standard.jsonc
 ```
 
-### 1.2 Schemas
+### 1.2 Schemas (Implemented)
 
 #### Piece Configuration (`config/pieces/*.jsonc`)
 ```json
 {
   "id": "string",
   "display_name": "string",
-  "char": "char", // Single character for board representation
+  "char": "char",
   "score_value": "u64",
   "cooldown_ms": "u64",
-  "move_paths": [ [[x, y], [x, y]], ... ], // List of paths. Each path is a list of steps.
-  "capture_paths": [ [[x, y], [x, y]], ... ] // Separate paths for capturing.
+  "move_paths": [ [[x, y], [x, y]], ... ],
+  "capture_paths": [ [[x, y], [x, y]], ... ]
 }
 ```
 
@@ -40,14 +37,15 @@ config/
 {
   "id": "string",
   "display_name": "string",
-  "default_uses": "u32", // -1 for infinite
+  "default_uses": "u32",
+  "color": "#RRGGBB | null",
   "groups": [
     {
       "applies_to": ["piece_id", ...],
       "items": [
         {
           "display_name": "string",
-          "price_expr": "string", // Evaluated expression (e.g. "10 + pawn_count * 2")
+          "price_expr": "string",
           "replace_with": "piece_id" | null,
           "add_pieces": ["piece_id", ...]
         }
@@ -55,7 +53,8 @@ config/
     }
   ],
   "default_group": {
-    "items": [...]
+    "applies_to": [],
+    "items": [ ... ]
   }
 }
 ```
@@ -66,16 +65,18 @@ config/
   "id": "string",
   "display_name": "string",
   "max_players": "u32",
-  "board_size": "string", // e.g. "max(40, 25 + sqrt(player_count) * 17.5)"
+  "board_size": "string",
+  "camera_pan_limit": "string",
+  "fog_of_war_radius": "string",
+  "respawn_cooldown_ms": "u64",
   "npc_limits": [
-
     { "piece_id": "string", "max_expr": "string" }
   ],
   "shop_counts": [
     { "shop_id": "string", "count": "u32" }
   ],
   "kits": [
-    { "name": "string", "pieces": ["piece_id", ...] }
+    { "name": "string", "description": "string", "pieces": ["piece_id", ...] }
   ],
   "hooks": [
     { "trigger": "OnCapture", "target_piece_id": "string", "action": "EliminateOwner" }
@@ -84,43 +85,21 @@ config/
 ```
 
 ## 2. Server Architecture
-
-### 2.1 Config Manager
-A singleton or shared resource `ConfigManager` will load and validate all JSON files at startup. It will panic if any references (e.g., a mode referencing a missing piece) are invalid.
-
-### 2.2 Multi-Tenancy
-The `ServerState` will no longer hold a single `GameState`. Instead, it will manage a collection of `GameInstance`s.
-- `games: RwLock<HashMap<String, Arc<RwLock<GameInstance>>>>`
-- Keys are `mode_id` (or `instance_id` if we scale later).
-- `ws_handler` will extract the mode from the URL path (e.g., `/ws/{mode_id}`) and connect the player to the appropriate instance.
-
-### 2.3 Game Logic Refactor
-- **Movement**: The `is_valid_chess_move` function will be replaced by a path-checking algorithm that iterates through the `move_paths` or `capture_paths` defined in the piece config.
-- **Spawning**: NPC spawning logic will evaluate `npc_limits` expressions.
-- **Shop**: Shop interactions will evaluate `price_expr` using `meval`.
+- `ConfigManager` loads and validates config at startup.
+- `ServerState` owns a map of `GameInstance`s, one per mode.
+- WebSocket routing uses `/api/ws/:mode_id` and provides an initial `Init` payload.
+- Mode list data (`ModeSummary`) is served at `/api/modes` and embedded in `index.html`.
 
 ## 3. Client Architecture
+- The client consumes `GameModeClientConfig`, piece configs, and shop configs from `Init`.
+- Global client config is injected into the HTML at boot and hydrated by the app.
+- The reducer maintains premoves and reconciles with server updates.
 
-### 3.1 Dynamic Initialization
-The `Init` message from the server will now include the `GameModeConfig`, `PieceConfig`s (for all pieces used in that mode), and `ShopConfig`s.
-The client will use this data to:
-- Render the correct character/SVG for pieces.
-- Validate moves locally (for UI feedback).
-- Render the Shop UI dynamically.
+## 4. Shared Logic
+- Movement validation and expression evaluation live in `common::logic`.
+- Types like `Score`, `BoardSize`, `DurationMs`, `TimestampMs`, and `ExprString` enforce semantics.
 
-### 3.2 Asset Mapping
-The client will map piece IDs to assets. For the MVP, we will stick to the existing mapping where possible (e.g., "pawn" -> pawn SVG) or fallback to the character defined in JSON.
-
-## 4. Dependencies
-- `meval`: For expression evaluation.
-- `serde`, `serde_json`: For config parsing.
-- `walkdir` (optional): For convenient directory traversal.
-
-## 5. Migration Strategy
-1. Add dependencies.
-2. Define new Config structs in `common`.
-3. Create the configuration files for the "Standard" mode (replicating current behavior).
-4. Implement `ConfigManager` in `server`.
-5. Refactor `GameState` and Logic in `server` to use Configs.
-6. Refactor `Client` to consume Configs.
-7. Update Tests.
+## 5. Dependencies
+- `meval` for expression evaluation.
+- `serde` and `serde_json` for config parsing.
+- `walkdir` for config discovery.

@@ -1,3 +1,5 @@
+//! Player join/leave logic for a game instance.
+
 use super::GameInstance;
 use crate::time::now_ms;
 use common::models::{GameState, Piece, Player};
@@ -6,6 +8,11 @@ use common::types::{DurationMs, KitId, PieceId, PlayerId, Score, SessionSecret, 
 use tokio::sync::mpsc;
 
 impl GameInstance {
+    /// Adds a player to the game, spawning their kit pieces.
+    ///
+    /// `name` is the display name, `kit_name` selects the kit, `tx` is the outbound channel,
+    /// `pid` and `provided_secret` allow rejoining an existing player.
+    /// Returns the assigned player id and session secret.
     pub async fn add_player(
         &self,
         name: String,
@@ -164,6 +171,9 @@ impl GameInstance {
         Ok((player_id, session_secret))
     }
 
+    /// Removes a player from the game and emits a final score message.
+    ///
+    /// `player_id` identifies the player to remove. Returns nothing.
     pub async fn remove_player(&self, player_id: PlayerId) {
         let stats = {
             let game = self.game.read().await;
@@ -193,6 +203,10 @@ impl GameInstance {
         }
     }
 
+    /// Records player removal and cleans up owned pieces.
+    ///
+    /// `player_id` identifies the removed player, `game` is the mutable state to update.
+    /// Returns nothing.
     pub async fn record_player_removal(&self, player_id: PlayerId, game: &mut GameState) {
         self.removed_players.write().await.push(player_id);
         self.death_timestamps

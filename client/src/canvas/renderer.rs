@@ -1,3 +1,5 @@
+//! Canvas rendering implementation for the board and pieces.
+
 use super::color::hex_to_rgba;
 use super::types::{PieceDrawParams, PieceNameDrawParams, RenderParams, Renderer};
 use common::logic::{evaluate_expression, is_valid_move, is_within_board};
@@ -9,6 +11,10 @@ use wasm_bindgen::JsCast;
 use web_sys::HtmlCanvasElement;
 
 impl Renderer {
+    /// Creates a new renderer for a given canvas and config sets.
+    ///
+    /// `canvas` is the HTML canvas element, `piece_configs` and `shop_configs` define assets.
+    /// Returns a ready-to-use `Renderer`.
     pub fn new(
         canvas: HtmlCanvasElement,
         piece_configs: HashMap<PieceTypeId, PieceConfig>,
@@ -27,6 +33,9 @@ impl Renderer {
         }
     }
 
+    /// Renders a full frame including board, shops, pieces, and fog of war.
+    ///
+    /// `params` bundles render inputs for the frame. Returns nothing.
     pub fn draw_with_ghosts(&self, params: RenderParams<'_>) {
         let RenderParams {
             state,

@@ -1,3 +1,5 @@
+//! Shop overlay component for purchases.
+
 use crate::reducer::MsgSender;
 use common::models::{Piece, PieceConfig, ShopConfig};
 use common::protocol::ClientMessage;
@@ -19,6 +21,9 @@ pub struct ShopUIProps {
 }
 
 #[function_component(ShopUI)]
+/// Renders shop items and buy actions for the player.
+///
+/// `props` provides shop context, piece configs, and send channel. Returns rendered HTML.
 pub fn shop_ui(props: &ShopUIProps) -> Html {
     let group = common::logic::select_shop_group(&props.shop_config, props.piece_on_shop.as_ref());
 

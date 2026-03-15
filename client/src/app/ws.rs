@@ -1,3 +1,5 @@
+//! WebSocket connection loop for the client app.
+
 use crate::reducer::{GameAction, GameStateReducer, InitPayload, UpdateStatePayload};
 use crate::utils::{clear_stored_session, set_stored_id, set_stored_secret};
 use common::protocol::{GameError, ServerMessage};
@@ -10,6 +12,11 @@ use tokio::sync::mpsc;
 use wasm_bindgen_futures::spawn_local;
 use yew::prelude::UseReducerHandle;
 
+/// Connects to the server WebSocket and dispatches incoming messages.
+///
+/// `ws_url` is the endpoint URL, `mode_id` is the selected mode,
+/// `listener_reducer_ref` is the state reducer handle, and `current_ws_tx` stores a sender.
+/// Returns nothing; reconnects in a loop until the app exits.
 pub async fn connect_ws(
     ws_url: String,
     mode_id: ModeId,

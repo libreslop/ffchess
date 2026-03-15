@@ -1,3 +1,5 @@
+//! Tests for core game logic helpers.
+
 use common::logic::{MoveValidationParams, is_valid_move, is_within_board};
 use common::models::{Piece, PieceConfig, ShopConfig, ShopGroupConfig, ShopItemConfig};
 use common::types::{
@@ -6,6 +8,9 @@ use common::types::{
 use glam::IVec2;
 use std::collections::HashMap;
 
+/// Builds a pawn-like piece config for move validation tests.
+///
+/// Returns a `PieceConfig` with simple orthogonal moves and diagonal captures.
 fn mock_pawn_config() -> PieceConfig {
     PieceConfig {
         id: PieceTypeId::from("pawn"),
@@ -29,6 +34,7 @@ fn mock_pawn_config() -> PieceConfig {
 }
 
 #[test]
+/// Verifies board boundary checks accept and reject expected positions.
 fn test_is_within_board() {
     let size = BoardSize::from(100);
     // Range is -50 to 49
@@ -40,6 +46,7 @@ fn test_is_within_board() {
 }
 
 #[test]
+/// Verifies basic pawn-like movement and capture rules.
 fn test_pawn_movement() {
     let size = BoardSize::from(100);
     let start = IVec2::new(0, 0);
@@ -170,6 +177,7 @@ fn test_pawn_movement() {
 }
 
 #[test]
+/// Verifies move validation respects blocking pieces along a path.
 fn test_path_blocking() {
     let size = BoardSize::from(100);
     let start = IVec2::new(0, 0);
@@ -220,6 +228,7 @@ fn test_path_blocking() {
 }
 
 #[test]
+/// Verifies shop group selection matches piece type or defaults.
 fn test_select_shop_group_by_piece_type() {
     let pawn_id = PieceTypeId::from("pawn");
     let default_group = ShopGroupConfig {
@@ -262,6 +271,7 @@ fn test_select_shop_group_by_piece_type() {
 }
 
 #[test]
+/// Verifies pricing variables include counts for player and piece types.
 fn test_build_price_vars() {
     let pawn_id = PieceTypeId::from("pawn");
     let rook_id = PieceTypeId::from("rook");
@@ -273,6 +283,7 @@ fn test_build_price_vars() {
 }
 
 #[test]
+/// Verifies cooldown calculation returns the config-defined value.
 fn test_calculate_cooldown_returns_config_value() {
     let config = PieceConfig {
         id: PieceTypeId::from("pawn"),

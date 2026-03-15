@@ -1,3 +1,5 @@
+//! Server-side game logic, state management, and networking.
+
 pub mod colors;
 pub mod config;
 pub mod handlers;

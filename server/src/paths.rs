@@ -1,6 +1,10 @@
+//! Filesystem path helpers for locating client assets.
+
 use std::path::PathBuf;
 
 /// Resolve the built client asset directory from common run locations.
+///
+/// Returns a `PathBuf` pointing to the client build output directory.
 pub fn client_dist_dir() -> PathBuf {
     let candidates = [
         PathBuf::from("client/dist"),

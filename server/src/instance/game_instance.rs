@@ -1,3 +1,5 @@
+//! Shared per-mode state container for live game instances.
+
 use crate::colors::ColorManager;
 use crate::time::now_ms;
 use crate::types::ConnectionId;
@@ -25,6 +27,10 @@ pub struct GameInstance {
 }
 
 impl GameInstance {
+    /// Creates a new game instance for a given mode.
+    ///
+    /// `mode_config` defines the rules, `piece_configs` and `shop_configs` provide assets.
+    /// Returns a fully initialized `GameInstance`.
     pub fn new(
         mode_config: GameModeConfig,
         piece_configs: Arc<HashMap<PieceTypeId, PieceConfig>>,
@@ -51,6 +57,9 @@ impl GameInstance {
         }
     }
 
+    /// Broadcasts a server message to all active players and connections.
+    ///
+    /// `msg` is cloned per recipient. Returns nothing.
     pub async fn broadcast(&self, msg: ServerMessage) {
         let player_channels = self.player_channels.read().await;
         let connection_channels = self.connection_channels.read().await;
@@ -59,10 +68,16 @@ impl GameInstance {
         }
     }
 
+    /// Records a piece identifier for removal in the next update.
+    ///
+    /// `piece_id` is the piece to remove. Returns nothing.
     pub async fn record_piece_removal(&self, piece_id: PieceId) {
         self.removed_pieces.write().await.push(piece_id);
     }
 
+    /// Removes pieces and shops that drift outside the current board bounds.
+    ///
+    /// `game` is the mutable game state to prune. Returns nothing.
     pub async fn prune_out_of_bounds(&self, game: &mut GameState) {
         let board_size = game.board_size;
         let mut rp = self.removed_pieces.write().await;

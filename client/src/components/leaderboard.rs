@@ -1,3 +1,5 @@
+//! Leaderboard overlay component.
+
 use common::models::Player;
 use common::types::PlayerId;
 use yew::prelude::*;
@@ -10,6 +12,9 @@ pub struct LeaderboardProps {
 }
 
 #[function_component(Leaderboard)]
+/// Renders the leaderboard with the top player scores.
+///
+/// `props` provides the player list and current player id. Returns rendered HTML.
 pub fn leaderboard(props: &LeaderboardProps) -> Html {
     let mut players = props.players.clone();
     players.sort_by(|a, b| {

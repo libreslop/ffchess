@@ -1,3 +1,5 @@
+//! Tests for shop purchase behavior in server instances.
+
 use common::logic::evaluate_expression;
 use common::models::{
     GameModeConfig, KitConfig, NpcLimitConfig, PieceConfig, Shop, ShopConfig, ShopCountConfig,
@@ -12,6 +14,10 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
+/// Builds a minimal piece config for testing.
+///
+/// `id` is the piece id, `ch` is the display char, `score` is the reward value.
+/// Returns a `PieceConfig`.
 fn make_piece_config(id: &str, ch: char, score: u64) -> PieceConfig {
     PieceConfig {
         id: PieceTypeId::from(id),
@@ -25,6 +31,7 @@ fn make_piece_config(id: &str, ch: char, score: u64) -> PieceConfig {
 }
 
 #[tokio::test]
+/// Verifies shop purchases deduct score and spawn pieces.
 async fn shop_purchase_deducts_score_and_adds_piece() {
     let mut piece_configs = HashMap::new();
     piece_configs.insert(

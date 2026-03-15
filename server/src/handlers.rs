@@ -1,3 +1,5 @@
+//! Axum handlers for HTTP endpoints and WebSocket sessions.
+
 use crate::state::ServerState;
 use crate::types::ConnectionId;
 use axum::{
@@ -16,6 +18,9 @@ use rand::seq::SliceRandom;
 use std::{fs, sync::Arc};
 use tokio::sync::mpsc;
 
+/// Builds a snapshot of current mode status for list endpoints.
+///
+/// `state` is the shared server state. Returns a vector of `ModeSummary`.
 async fn mode_list_snapshot(state: &Arc<ServerState>) -> Vec<ModeSummary> {
     let mut list = Vec::new();
     let games = state.games.read().await;
@@ -32,6 +37,9 @@ async fn mode_list_snapshot(state: &Arc<ServerState>) -> Vec<ModeSummary> {
     list
 }
 
+/// Serves the index HTML with injected mode/global JSON.
+///
+/// `state` is extracted from Axum. Returns an HTML response.
 pub async fn index_html(State(state): State<Arc<ServerState>>) -> impl IntoResponse {
     let html_path = crate::paths::client_dist_dir().join("index.html");
     let html = fs::read_to_string(html_path)
@@ -57,6 +65,10 @@ pub async fn index_html(State(state): State<Arc<ServerState>>) -> impl IntoRespo
     )
 }
 
+/// Upgrades an HTTP connection to a game WebSocket session.
+///
+/// `mode_id` selects the game mode, `state` provides server state.
+/// Returns an Axum response that completes the upgrade.
 pub async fn ws_handler(
     ws: WebSocketUpgrade,
     Path(mode_id): Path<String>,
@@ -65,10 +77,16 @@ pub async fn ws_handler(
     ws.on_upgrade(|socket| handle_socket(socket, ModeId::from(mode_id), state))
 }
 
+/// Lists current game modes and player counts.
+///
+/// `state` is extracted from Axum. Returns a JSON response.
 pub async fn list_modes(State(state): State<Arc<ServerState>>) -> impl IntoResponse {
     axum::Json(mode_list_snapshot(&state).await)
 }
 
+/// Generates a human-friendly fallback player name.
+///
+/// `state` provides the name pool. Returns a generated display name.
 fn generate_name(state: &ServerState) -> String {
     let pool = &state.config_manager.name_pool;
     let mut rng = rand::thread_rng();
@@ -90,6 +108,10 @@ fn generate_name(state: &ServerState) -> String {
     format!("{adj} {noun}")
 }
 
+/// Handles the lifecycle of a single WebSocket client session.
+///
+/// `socket` is the upgraded WebSocket, `mode_id` selects the mode, and `state` is shared.
+/// Returns nothing; this runs until the socket closes.
 async fn handle_socket(socket: WebSocket, mode_id: ModeId, state: Arc<ServerState>) {
     let instance = match state.get_game(&mode_id).await {
         Some(i) => i,

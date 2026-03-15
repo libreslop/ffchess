@@ -1,3 +1,5 @@
+//! Shared types and helpers used by both server and client crates.
+
 pub mod logic;
 pub mod models;
 pub mod protocol;

@@ -1,3 +1,5 @@
+//! Tests for server state and gameplay interactions.
+
 #[cfg(test)]
 mod tests {
     use common::models::Piece;
@@ -7,6 +9,7 @@ mod tests {
     use tokio::sync::mpsc;
 
     #[tokio::test]
+    /// Verifies players spawn with correct kit piece counts.
     async fn test_player_spawn_and_kits() {
         let state = ServerState::new();
         let instance = state
@@ -57,6 +60,7 @@ mod tests {
     }
 
     #[tokio::test]
+    /// Verifies capturing a king eliminates the owning player.
     async fn test_king_capture_elimination() {
         let state = ServerState::new();
         let instance = state

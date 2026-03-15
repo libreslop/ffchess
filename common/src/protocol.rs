@@ -1,3 +1,5 @@
+//! Wire protocol types shared between server and client.
+
 use crate::models::{
     GameModeClientConfig, GameState, Piece, PieceConfig, Player, Shop, ShopConfig,
 };
@@ -10,6 +12,7 @@ use std::collections::HashMap;
 use std::fmt;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// Enumerates gameplay errors sent from the server to clients.
 pub enum GameError {
     PieceNotFound,
     NotYourPiece,
@@ -29,6 +32,7 @@ pub enum GameError {
 }
 
 impl fmt::Display for GameError {
+    /// Formats a user-facing error message.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::PieceNotFound => write!(f, "Piece not found"),
@@ -53,6 +57,7 @@ impl fmt::Display for GameError {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Messages sent from the client to the server.
 pub enum ClientMessage {
     Join {
         name: String,
@@ -72,6 +77,7 @@ pub enum ClientMessage {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Messages sent from the server to the client.
 pub enum ServerMessage {
     Init {
         player_id: PlayerId,

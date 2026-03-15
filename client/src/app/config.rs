@@ -1,3 +1,5 @@
+//! Client configuration loading and ordering helpers.
+
 use common::models::ModeSummary;
 use common::types::ModeId;
 use gloo_utils::document;
@@ -25,6 +27,9 @@ pub struct GlobalClientConfig {
     pub scroll_zoom_base: f64,
 }
 
+/// Loads the global client config from the server-injected DOM payload.
+///
+/// Returns the parsed `GlobalClientConfig`, falling back to defaults on error.
 pub fn load_global_config() -> GlobalClientConfig {
     let doc = document();
     if let Some(el) = doc.get_element_by_id("initial-global")
@@ -54,6 +59,10 @@ pub fn load_global_config() -> GlobalClientConfig {
     }
 }
 
+/// Sorts mode summaries using a preferred order list.
+///
+/// `list` is the modes to sort, `order` is the preferred id sequence.
+/// Returns the sorted mode list.
 pub fn order_modes(mut list: Vec<ModeSummary>, order: &[ModeId]) -> Vec<ModeSummary> {
     list.sort_by_key(|m| {
         order

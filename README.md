@@ -1,32 +1,28 @@
 # FFchess (MMO battle chess)
 
-Command your army in a real-time, multiplayer chess world. Scale your board, capture territories, and outfox your opponents in a dynamic, expanding battlefield.
+Command your army in a real-time, multiplayer chess world. Scale the board, capture territory, and outmaneuver opponents in a data-driven battlefield.
 
-## 🚀 Features
-- **Dynamic Board:** Board size is defined per mode using expressions (often scaling with `player_count`).
-- **Independent Cooldowns:** Every piece has its own cooldown timer based on its type and travel distance.
-- **Physics-Based Camera:** Smooth panning with momentum, exponential zoom smoothing, and a mode-configured pan limit.
-- **King-Centric Strategy:** Lose your King, lose your entire army.
-- **Dynamic Viewport:** Fog-of-war radius is mode-configured and can scale with your army.
-- **Recruitment & Upgrades:** 
-    - **Recruit:** Buy a Pawn to spawn a new unit in the nearest free square.
-    - **Upgrade:** Use a shop square to transform an existing piece into a Knight, Bishop, Rook, or Queen.
-    - **Note:** The King cannot be upgraded, but it can use shop squares to recruit new Pawns!
-- **Starting Kits:** Choose between Standard, Scout, or Tank starting sets (per mode config).
-- **Unique Pawn Movement:** Pawns move in 4 adjacent directions and capture in 4 diagonal directions.
-- **Resource Optimized:** Server automatically suspends NPC logic when no players are active to minimize CPU load.
-- **Persistent NPCs:** Automated pieces populate the board, hunting players or roaming based on proximity.
+## Features
+- Dynamic board sizing per mode using expressions (typically keyed off `player_count`).
+- Config-driven pieces, shops, and kits (JSONC in `config/`).
+- Per-piece cooldowns defined by piece config; client predicts cooldown locally and server validates.
+- King-centric elimination: lose your King, lose your army.
+- Fog-of-war radius and camera limits driven by mode config (client-side rendering today).
+- Shop economy for recruiting and upgrading pieces, with per-piece shop groups.
+- Mode list and mode switching without a page reload (hash-based mode selection).
+- NPCs with expression-based spawn limits; server pauses NPC ticks when no players are viewing for ~5 seconds.
+- Session secrets to prevent player ID hijacking on rejoin.
 
-## 🛠️ Tech Stack
-- **Backend:** Rust, Axum, WebSockets, Tokio.
-- **Frontend:** Rust, Yew, WebAssembly, HTML5 Canvas.
-- **Shared:** `common` crate for types and game logic verification.
+## Tech Stack
+- Backend: Rust, Axum, WebSockets, Tokio.
+- Frontend: Rust, Yew, WebAssembly, HTML5 Canvas.
+- Shared: `common` crate with types, protocol, and gameplay logic.
 
-## 📦 How to Run
+## How to Run
 
 ### Prerequisites
-- [Rust](https://rustup.rs/) (latest stable)
-- [Trunk](https://trunkrs.dev/) (for the frontend)
+- Rust (latest stable)
+- Trunk (for the frontend)
 - `wasm32-unknown-unknown` target: `rustup target add wasm32-unknown-unknown`
 
 ### 1. Build the Client
@@ -40,30 +36,35 @@ cd ..
 ```bash
 cargo run -p server
 ```
-The server will start on `0.0.0.0:8080` by default. It serves the frontend assets from `client/dist`.
+The server starts on `0.0.0.0:8080` by default and serves `client/dist` (resolved via a small path helper).
 
-**Configuration:**
-- You can override the default port using the `PORT` environment variable:
-  ```bash
-  PORT=3000 cargo run -p server
-  ```
+Override the port:
+```bash
+PORT=3000 cargo run -p server
+```
 
-### 3. Alternative (Development)
-For hot-reloading on the frontend:
+### 3. Development Mode (Hot Reload)
 ```bash
 cd client
 trunk serve
 ```
-Then run the server in a separate terminal. Note that the client will be on `localhost:8081` and proxy API requests to `localhost:8080`.
+Then run the server in a separate terminal. The client runs on `localhost:8081` and proxies API requests to `localhost:8080`.
 
-## ⚙️ Configuration Overview
-- **Global (server):** `config/global/server.jsonc` holds server-side defaults such as the adjective/noun name pool that is used when a player does not provide a name.
-- **Global (client):** `config/global/client.jsonc` tunes render/heartbeat intervals, reconnect timing, camera limits, and scroll/drag smoothing. Values are injected into the HTML `<script>` tag so the client boots without an extra request.
-- **Modes:** `config/modes/*.jsonc` define each game mode (board sizing formulas, fog-of-war radius, respawn cooldown, shops, kits, hooks). Mode IDs are derived from the filename. The home screen dropdown is built from these definitions and switching modes does **not** refresh the page.
-- **Pieces & Shops:** `config/pieces/*.jsonc` describe movement, capture, cooldowns, and glyphs. `config/shops/*.jsonc` drive spawn/upgrade prices and options using expressions.
+## Configuration Overview
+- Global server config: `config/global/server.jsonc` (default name pool).
+- Global client config: `config/global/client.jsonc` (render/heartbeat intervals, camera tuning, UI timings).
+- Modes: `config/modes/*.jsonc` (board size, fog radius, respawn cooldown, kits, shop counts, NPC limits).
+- Pieces: `config/pieces/*.jsonc` (move/capture paths, cooldowns, score values, glyphs).
+- Shops: `config/shops/*.jsonc` (item groups, price expressions, add/replace pieces).
 
-## 🧪 Testing
-Run the test suite for shared logic, server state, and piece removal:
-```bash
-cargo test
-```
+## Testing
+- Full workspace tests:
+  ```bash
+  cargo test --workspace
+  ```
+- Linting:
+  ```bash
+  cargo check --workspace
+  cargo clippy -p server
+  cargo clippy -p client
+  ```

@@ -1,7 +1,13 @@
+//! Reducer helper functions for applying server updates.
+
 use super::actions::UpdateStatePayload;
 use crate::reducer::types::GameStateReducer;
 use common::*;
 
+/// Applies a server update payload to the client reducer state.
+///
+/// `next` is the mutable reducer state, `params` is the update payload.
+/// Returns nothing.
 pub fn handle_update_state(next: &mut GameStateReducer, params: UpdateStatePayload) {
     next.error = None;
     next.disconnected = false;

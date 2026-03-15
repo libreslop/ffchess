@@ -1,3 +1,5 @@
+//! Reducer actions and payloads for client state updates.
+
 use crate::reducer::types::{MsgSender, Pmove};
 use common::models::{
     GameModeClientConfig, GameState, Piece, PieceConfig, Player, Shop, ShopConfig,
@@ -26,6 +28,7 @@ pub struct UpdateStatePayload {
     pub board_size: BoardSize,
 }
 
+/// Actions that drive the client reducer state machine.
 pub enum GameAction {
     SetInit(Box<InitPayload>),
     UpdateState(Box<UpdateStatePayload>),

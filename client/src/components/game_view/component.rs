@@ -1,3 +1,5 @@
+//! Main in-game canvas view and input handling.
+
 use super::helpers::{MOVE_ANIM_MS, PieceAnim, apply_visible_ghosts, pm_visible};
 use crate::camera::{CameraManager, update_camera};
 use crate::canvas::Renderer;
@@ -24,6 +26,9 @@ pub struct GameViewProps {
 }
 
 #[function_component(GameView)]
+/// Renders the main game view, canvas, and interaction handlers.
+///
+/// `props` provides reducer state, message sender, and render config. Returns rendered HTML.
 pub fn game_view(props: &GameViewProps) -> Html {
     let canvas_ref = use_node_ref();
     let selected_piece_id = use_state(|| None::<PieceId>);
@@ -68,6 +73,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
             let start_cell = handle_cell.clone();
             let start_frame = frame_id.clone();
 
+            /// Schedules the next animation frame and updates the frame counter.
             fn schedule(cell: Rc<RefCell<Option<AnimationFrame>>>, frame: UseStateHandle<u64>) {
                 let inner_cell = cell.clone();
                 let inner_frame = frame.clone();

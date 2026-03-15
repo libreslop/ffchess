@@ -1,3 +1,5 @@
+//! Reducer implementation for applying actions to client state.
+
 use super::actions::{GameAction, InitPayload};
 use super::handlers::handle_update_state;
 use super::types::GameStateReducer;
@@ -10,6 +12,9 @@ use yew::prelude::*;
 impl Reducible for GameStateReducer {
     type Action = GameAction;
 
+    /// Applies a reducer action and returns the next state.
+    ///
+    /// `action` is the incoming `GameAction`. Returns a new `GameStateReducer` in an `Rc`.
     fn reduce(self: Rc<Self>, action: Self::Action) -> Rc<Self> {
         let mut next = (*self).clone();
         match action {

@@ -1,3 +1,5 @@
+//! Reducer state types used by the client UI.
+
 use common::models::{GameModeClientConfig, GameState, PieceConfig, ShopConfig};
 use common::protocol::{ClientMessage, GameError};
 use common::types::{
@@ -45,6 +47,7 @@ pub struct GameStateReducer {
 pub struct MsgSender(pub tokio::sync::mpsc::UnboundedSender<ClientMessage>);
 
 impl PartialEq for MsgSender {
+    /// Treats all message senders as equal for Yew props diffing.
     fn eq(&self, _other: &Self) -> bool {
         true
     }

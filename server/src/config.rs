@@ -1,3 +1,5 @@
+//! Loads JSON/JSONC configuration for pieces, shops, and modes.
+
 use common::models::{GameModeConfig, PieceConfig, ShopConfig};
 use common::types::{ModeId, PieceTypeId, ShopId};
 use jsonc_parser::parse_to_serde_value;
@@ -22,6 +24,9 @@ pub struct ConfigManager {
 }
 
 impl ConfigManager {
+    /// Loads configuration from the given root directory.
+    ///
+    /// `root_path` points to the config folder. Returns a populated `ConfigManager`.
     pub fn load(root_path: &Path) -> Self {
         let mut pieces = HashMap::new();
         let mut shops = HashMap::new();
@@ -114,6 +119,10 @@ impl ConfigManager {
     }
 }
 
+/// Parses a JSONC file and injects the `id` field before deserializing.
+///
+/// `content` is the file contents, `path` is used for error context, and `id` is injected.
+/// Returns the deserialized config type `T`.
 fn parse_jsonc_with_id<T: DeserializeOwned>(content: &str, path: &Path, id: &str) -> T {
     let mut value = parse_to_serde_value(content, &Default::default())
         .map_err(|e| format!("Failed to parse config {:?}: {}", path, e))
@@ -131,6 +140,10 @@ fn parse_jsonc_with_id<T: DeserializeOwned>(content: &str, path: &Path, id: &str
         .unwrap()
 }
 
+/// Parses a shop config JSONC file and normalizes the default group.
+///
+/// `content` is the file contents, `path` is used for error context, and `id` is injected.
+/// Returns the deserialized `ShopConfig`.
 fn parse_shop_jsonc_with_id(content: &str, path: &Path, id: &str) -> ShopConfig {
     let mut value = parse_to_serde_value(content, &Default::default())
         .map_err(|e| format!("Failed to parse config {:?}: {}", path, e))
@@ -153,6 +166,9 @@ fn parse_shop_jsonc_with_id(content: &str, path: &Path, id: &str) -> ShopConfig 
         .unwrap()
 }
 
+/// Extracts the filename stem (without extension) as a string.
+///
+/// `path` is the file path to inspect. Returns the stem or an empty string.
 fn file_stem(path: &Path) -> String {
     path.file_stem()
         .unwrap_or_default()

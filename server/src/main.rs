@@ -1,9 +1,12 @@
+//! Server entrypoint wiring routes, state, and game loop.
+
 use axum::{Router, routing::get};
 use server::state::ServerState;
 use std::sync::Arc;
 use tower_http::{cors::CorsLayer, services::ServeDir, trace::TraceLayer};
 
 #[tokio::main]
+/// Boots the HTTP/WebSocket server and the periodic game tick loop.
 async fn main() {
     tracing_subscriber::fmt::init();
 

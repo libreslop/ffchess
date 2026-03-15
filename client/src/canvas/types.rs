@@ -1,3 +1,5 @@
+//! Data structures used by the canvas renderer.
+
 use crate::reducer::Pmove;
 use common::models::{GameModeClientConfig, GameState, Piece, PieceConfig, ShopConfig};
 use common::types::{PieceId, PieceTypeId, PlayerId, ShopId};

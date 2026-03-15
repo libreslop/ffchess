@@ -1,3 +1,5 @@
+//! Tests for spawn position helpers.
+
 use common::models::{GameState, Piece, Shop};
 use common::types::{BoardSize, DurationMs, PieceId, PieceTypeId, PlayerId, ShopId, TimestampMs};
 use glam::IVec2;
@@ -5,6 +7,9 @@ use rand::SeedableRng;
 use rand::rngs::StdRng;
 use server::spawning::{find_adjacent_free_pos, find_random_nearby_free_pos, is_free_position};
 
+/// Builds an empty game state with a specific board size.
+///
+/// `board_size` sets the board dimension. Returns a `GameState`.
 fn empty_state(board_size: i32) -> GameState {
     GameState {
         board_size: BoardSize::from(board_size),
@@ -13,6 +18,7 @@ fn empty_state(board_size: i32) -> GameState {
 }
 
 #[test]
+/// Verifies free-position checks consider bounds and occupancy.
 fn test_is_free_position_checks_bounds_and_occupancy() {
     let mut state = empty_state(10);
     let pos = IVec2::new(1, 1);
@@ -44,6 +50,7 @@ fn test_is_free_position_checks_bounds_and_occupancy() {
 }
 
 #[test]
+/// Verifies adjacent free position lookup returns the first open offset.
 fn test_find_adjacent_free_pos_returns_first_open_slot() {
     let mut state = empty_state(10);
     let origin = IVec2::new(0, 0);
@@ -79,6 +86,7 @@ fn test_find_adjacent_free_pos_returns_first_open_slot() {
 }
 
 #[test]
+/// Verifies random nearby position selection works with fixed offsets.
 fn test_find_random_nearby_free_pos_handles_fixed_offset() {
     let state = empty_state(10);
     let origin = IVec2::new(0, 0);
@@ -89,6 +97,7 @@ fn test_find_random_nearby_free_pos_handles_fixed_offset() {
 }
 
 #[test]
+/// Verifies random nearby position returns none when no valid offsets exist.
 fn test_find_random_nearby_free_pos_returns_none_when_no_offsets() {
     let state = empty_state(10);
     let origin = IVec2::new(0, 0);

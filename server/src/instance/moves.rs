@@ -1,3 +1,5 @@
+//! Move execution logic for a game instance.
+
 use super::GameInstance;
 use crate::time::now_ms;
 use common::protocol::GameError;
@@ -5,6 +7,10 @@ use common::types::{PieceId, PlayerId, Score};
 use glam::IVec2;
 
 impl GameInstance {
+    /// Validates and applies a move for a player's piece.
+    ///
+    /// `player_id` is the moving player, `piece_id` selects the piece, and `target` is the tile.
+    /// Returns `Ok(())` on success or a `GameError` on failure.
     pub async fn handle_move(
         &self,
         player_id: PlayerId,

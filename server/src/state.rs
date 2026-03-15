@@ -1,3 +1,5 @@
+//! Shared server state and mode instance registry.
+
 use crate::config::ConfigManager;
 use crate::instance::GameInstance;
 use common::*;
@@ -12,6 +14,9 @@ pub struct ServerState {
 }
 
 impl ServerState {
+    /// Builds the global server state and loads configuration.
+    ///
+    /// Returns a `ServerState` with one `GameInstance` per configured mode.
     pub fn new() -> Self {
         let config_manager = Arc::new(ConfigManager::load(std::path::Path::new("config")));
         let mut games = HashMap::new();
@@ -34,12 +39,16 @@ impl ServerState {
         }
     }
 
+    /// Returns the game instance for a given mode id if present.
+    ///
+    /// `mode_id` identifies the desired game mode. Returns an `Arc<GameInstance>` if found.
     pub async fn get_game(&self, mode_id: &ModeId) -> Option<Arc<GameInstance>> {
         self.games.read().await.get(mode_id).cloned()
     }
 }
 
 impl Default for ServerState {
+    /// Provides a default server state by loading configuration.
     fn default() -> Self {
         Self::new()
     }

@@ -1,54 +1,35 @@
-# FFchess (MMO battle chess) Design Document
+# FFchess Design Document
 
 ## 1. Technical Stack
-- **Language:** Rust (Full-stack)
-- **Backend:** Axum (Web server & WebSocket handling)
-- **Frontend:** Yew (WebAssembly-based UI)
-- **Communication:** WebSockets for real-time, event-driven updates.
-- **Project Structure:** Cargo Workspace with a `common` crate for shared types and logic.
-- **State Management:** In-memory board state (no persistent DB for now).
+- Language: Rust (full stack).
+- Backend: Axum + WebSockets + Tokio.
+- Frontend: Yew + WebAssembly.
+- Shared: Cargo workspace with `common` crate for types, protocol, and logic.
+- State: In-memory board state (no persistence yet).
 
 ## 2. Gameplay Mechanics
-- **World:** A dynamic grid sized per mode configuration (often scales with player count; cap depends on the mode).
-- **Multiplayer:** Many players coexist on the same board simultaneously.
-- **Move Interference:** First-come-first-served. Pieces block movement (except Knights).
-- **Pieces:** 
-    - Each piece has an independent cooldown (Type-based + Distance-based).
-    - **Pawn Movement:** Pawns can move and capture in 4 cardinal directions (standard chess style adapted for 4-way FFA).
-    - **King Mobility:** Standard chess movement (1 square in any direction). Cooldown is relatively slow.
-- **Capture Logic:**
-    - **Immediate Delete:** Capturing a piece immediately removes it from the board.
-- **Elimination:**
-    - **King Capture:** A player is eliminated when their King is captured. All owned pieces are removed.
-- **Economy & Upgrades:**
-    - **Score:** Gained immediately upon capturing an enemy or NPC piece.
-    - **Shop Areas:** Pieces on shop squares can be used to spawn new pieces by spending Score.
-    - **Shop Movement:** Shop squares are single-use and reappear at a random location after being used.
-- **Kits:** Players choose a specialized starting set (Standard, Scout, Tank) defined by the active mode.
-- **NPCs:** Roaming pieces that can be captured for score.
+- World: Dynamic grid sized per mode configuration.
+- Multiplayer: Many players on the same board at once.
+- Movement: Path-based rules per piece config; pieces block multi-step paths.
+- Cooldowns: Per-piece cooldown values from config; predicted on client.
+- Capture: Immediate removal of the captured piece.
+- Elimination: Capturing a King eliminates the owner and all their pieces.
+- Economy: Score earned on captures, spent at shops.
+- Shops: Single-use squares that can upgrade or spawn pieces, then respawn elsewhere.
+- Kits: Starting armies defined per mode.
+- NPCs: Roaming pieces with expression-driven spawn caps.
 
 ## 3. Visuals & UI
-- **Style:** Minimalist 2D ".io game" aesthetic with SVG chess pieces.
-- **Viewport (Dynamic):**
-    - **Focus:** The camera follows the King on spawn/death, with free panning inside a mode-configured radius.
-    - **Smooth Zoom:** Continuous zooming centered on the cursor position with exponential smoothing.
-- **Overlay:**
-    - **Stats Bar:** A semi-transparent top bar showing FPS, Ping, Coordinates, and Player count.
-    - **Leaderboard:** Top 10 players by score shown in the top-right corner.
-- **Interaction:**
-    - **Pmoves (Pre-moves):** Players can queue multiple moves. These are executed sequentially as cooldowns expire.
-    - **Move Highlighting:** Valid moves for the selected piece are shown.
-    - **Cooldown Indicators:** Visual progress on each piece.
+- Style: Minimalist canvas-based rendering with per-piece glyphs from config.
+- Viewport: Smooth pan and zoom with momentum and mode-configured pan limits.
+- Overlay: Leaderboard, ping, FPS, and board size in lightweight HUD elements.
+- Interaction: Premoves (queued moves) with local move highlighting and cooldown bars.
 
-## 4. Technical Implementation
-- **Concurrency:** The server uses `tokio::sync::RwLock` for `GameState` inside per-mode `GameInstance`s.
-- **WASM Client:** The client utilizes `web-sys` for high-performance Canvas rendering.
-- **Protocol:** JSON-serialized messages over WebSockets.
-- **Scalability:** 
-    - Dynamic board resizing manages player density.
-    - Aggressive cleanup of pre-move queues ensures client-server synchronization.
-- **Shared Logic:** The `common` crate contains the source of truth for movement rules and cooldowns.
+## 4. Technical Implementation Notes
+- Server runs per-mode `GameInstance`s and broadcasts snapshots.
+- Client uses a reducer to reconcile server snapshots with predicted state.
+- Shared logic in `common` is the authoritative source for move validation.
 
 ## 5. Running the Project
-- **Server:** `cargo run -p server` (runs on port 8080)
-- **Client:** `cd client && trunk serve`
+- Server: `cargo run -p server`
+- Client: `cd client && trunk serve`

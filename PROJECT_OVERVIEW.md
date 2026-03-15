@@ -1,70 +1,62 @@
 # FFchess (MMO battle chess) Project Overview
 
-This document provides a comprehensive overview of the `ffchess-server` project, its current state, architecture, and core mechanics to assist future development.
+This document summarizes the current architecture, core mechanics, and implementation details for the `ffchess-server` workspace.
 
 ## 1. Project Structure
-The project is organized as a Cargo Workspace:
-- `common/`: Shared data models (`models.rs`), game logic (`logic.rs`), typed IDs (`types.rs`), and network protocol definitions (`protocol.rs`).
-- `server/`: Axum-based WebSocket server. Manages game instances, NPC behavior, and player connections.
-- `client/`: Yew-based WebAssembly frontend. Handles rendering (Canvas), user input, and state synchronization.
-- `config/`: JSONC configuration for modes, pieces, shops, and global defaults.
+- `common/`: Shared data models, protocol messages, typed identifiers, and core logic.
+- `server/`: Axum WebSocket server with per-mode `GameInstance`s, NPC logic, and configuration loading.
+- `client/`: Yew WebAssembly frontend that renders the canvas, handles input, and runs the reducer.
+- `config/`: JSONC configuration for pieces, shops, modes, and global defaults.
+- `docs/`: Design and refactor notes.
 
 ## 2. Core Mechanics
-- **Board:** A dynamic grid sized per mode using expressions (often scales with player count).
-- **Movement:** Standard chess moves (King, Queen, Rook, Bishop, Knight). Pawns move/capture in 4 directions (adjacent/diagonal).
-- **Cooldowns:** Every move triggers a cooldown based on piece type and distance moved.
-- **Combat:** Capturing a piece immediately removes it. Capturing a King eliminates the player and all their pieces.
-- **Economy:** Players gain score by capturing pieces. Score can be spent at **Shops** to upgrade pieces or spawn new ones. Shops are single-use and reappear at a random location after being used.
-- **Kits:** Players choose a starting kit (Standard, Scout, Tank) which determines their initial pieces.
-- **NPCs:** Non-player pieces that roam the board and can be captured for score.
+- Board size is computed per mode using `ExprString` expressions (typically based on `player_count`).
+- Movement and capture rules are defined as path lists in piece configs and validated via shared logic.
+- Cooldowns are per-piece values from config; the client predicts cooldown locally and the server validates.
+- Capturing removes pieces immediately. Capturing a King eliminates the owning player and all their pieces.
+- Shops allow recruiting or upgrading based on per-piece shop groups and expression-based pricing.
+- Kits define starting armies per mode.
+- NPC spawn caps are expression-driven; NPC spawning and movement are paused if no players are viewing for ~5 seconds.
+- Board contraction happens only when player pieces are inside the new bounds; otherwise size reduction is deferred.
 
 ## 3. Technical Implementation
+
+### Shared (`common/`)
+- **Typed semantics:** `Score`, `BoardSize`, `DurationMs`, `TimestampMs`, `ExprString`, and strongly typed IDs (`ModeId`, `PieceId`, `ShopId`, etc.).
+- **Models:** `GameModeConfig` (server), `GameModeClientConfig` (client-safe), and `ModeSummary` (lobby list).
+- **Logic:** `evaluate_expression`, `calculate_board_size`, `is_valid_move` (with `MoveValidationParams`), `calculate_cooldown`, and shop helpers (`select_shop_group`, `build_price_vars`).
+- **Protocol:** `ClientMessage` and `ServerMessage` with typed fields for score and board size.
+
 ### Server (`server/`)
-- **State Management:** `ServerState` holds a map of `GameInstance`s (one per mode). Each instance owns its `GameState`, configs, and player channels.
-- **Concurrency:** Uses `tokio` for asynchronous tasks (game loop, NPC logic, WebSocket handling).
-- **Networking:** `axum` for HTTP and WebSocket routing. Messages are JSON-serialized `ClientMessage` and `ServerMessage`.
+- **State:** `ServerState` owns `GameInstance`s keyed by `ModeId`.
+- **Game instances:** Each `GameInstance` holds its `GameState`, config snapshots, channels, and utility managers.
+- **Channels:** `player_channels` for bound sessions plus `connection_channels` for unbound viewers.
+- **Spawning:** Dedicated helpers in `server/src/spawning.rs` (adjacent and random nearby placement).
+- **Client assets:** `server/src/paths.rs` resolves `client/dist` for static serving.
+- **Global config injection:** `index.html` is served with `ModeSummary` and global client config JSON embedded.
 
 ### Client (`client/`)
-- **Framework:** `Yew` with a `GameStateReducer` for state management.
-- **Rendering:** `web-sys` Canvas API for drawing the board and pieces.
-### Synchronization & Security
-- **Pmoves (Pre-moves):** The client supports queuing multiple moves. These are executed sequentially as cooldowns expire.
-- **Session Security:** Implemented a `session_secret` (UUID) system. When a player joins, they receive a secret token stored in local storage. Subsequent re-joins must provide this secret to prevent UUID hijacking.
-- **Synchronization:** The client receives periodic `UpdateState` messages and performs "aggressive cleanup" of the pre-move queue when the server confirms a piece's position.
+- **App module:** `client/src/app` splits global config loading, WebSocket connection, and the main `App` component.
+- **Reducer:** Centralized `GameStateReducer` handles init, updates, premoves, and UI state.
+- **Canvas:** Renderer structs with typed parameter objects for drawing; GameView split into `component.rs` and `helpers.rs`.
+- **Premoves:** Client queues pending moves and reconciles with server updates.
 
-## 4. Security & Performance Evaluation (March 2026)
-A comprehensive security audit identified several key areas for improvement:
-- **Session Integrity:** (Fixed) Added session secrets to prevent impersonation.
-- **Information Leakage:** The server currently broadcasts the entire game state to all players. A server-side "Fog of War" (spatial partitioning) is planned to limit data sent to the player's immediate vicinity.
-- **Protocol Robustness:** Potential vulnerabilities to JSON-based DoS and message spamming have been identified. Future work includes implementing message size limits and per-connection rate limiting.
-- **Memory Safety:** Transitioning from `unbounded_channel` to bounded channels is recommended to prevent memory exhaustion from slow/malicious clients.
+## 4. Security & Performance
+- Session secrets prevent player ID hijacking on rejoin.
+- Server trims player names and validates moves/cooldowns.
+- Full-board state is still broadcast to all clients (server-side fog-of-war is a planned improvement).
+- Channels are currently unbounded; switching to bounded channels is recommended for backpressure safety.
 
-## 5. Current Status & Handoff (March 2026)
-### Build & Test Status
-- Run `cargo test --workspace` for coverage.
-- Run `cargo check --workspace` and `cargo clippy -p server`, `cargo clippy -p client` for linting.
-- Optional: `cargo check -p client --target wasm32-unknown-unknown` for WASM-only validation.
+## 5. Build & Test
+- `cargo test --workspace`
+- `cargo check --workspace`
+- `cargo clippy -p server`
+- `cargo clippy -p client`
 
-### Recent Progress
-- Implemented robust session secret validation to prevent player ID hijacking.
-- Updated server test suites to support the secure join protocol.
-- Performed a security audit and architectural evaluation.
-- Implemented robust pre-move queue handling with aggressive cleanup on server confirmation.
-
-### Known Issues / Future Work
-- **UI (Pre-move):** Ghost path/highlights can briefly flicker during repeated premoves.
-- **NPC Intelligence:** NPCs currently move with a simple hunt/roam heuristic. Future work could include richer tactics.
-- **UI Polish:** The Canvas rendering is functional but basic.
-- **Fog of War:** While planned in the design, server-side validation of viewport visibility is still in progress.
-
-## 6. Development Workflow
-- **Run Server:** `cargo run -p server` (Port 8080)
-- **Run Client:** `cd client && trunk serve`
-- **Run Tests:** `cargo test --workspace`
-- **WASM Check:** `cargo check -p client --target wasm32-unknown-unknown`
-
-## 7. Key Files for Agents
-- `common/src/logic.rs`: The "source of truth" for move validation and cooldown rules.
-- `server/src/instance/`: Core per-mode game loop, move handling, and NPC logic.
-- `client/src/reducer/reducer_impl.rs`: Client-side state and pre-move queue management.
-- `common/src/protocol.rs`: Communication interface between client and server.
+## 6. Key Files
+- `common/src/logic.rs`: Move validation, expression evaluation, and shop helpers.
+- `common/src/types.rs`: Typed wrappers and identifiers.
+- `server/src/instance/`: Core game loop, move handling, and NPC ticks.
+- `server/src/handlers.rs`: WebSocket entry and mode list endpoints.
+- `client/src/reducer/reducer_impl.rs`: Client-side state transitions.
+- `common/src/protocol.rs`: Message schema between client and server.

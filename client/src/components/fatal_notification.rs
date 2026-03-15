@@ -1,3 +1,5 @@
+//! Fatal notification banner component.
+
 use gloo_timers::callback::Timeout;
 use yew::prelude::*;
 
@@ -10,6 +12,9 @@ pub struct FatalNotificationProps {
 }
 
 #[function_component(FatalNotification)]
+/// Renders a sticky banner for fatal errors.
+///
+/// `props` controls visibility and message content. Returns rendered HTML.
 pub fn fatal_notification(props: &FatalNotificationProps) -> Html {
     let is_visible = use_state(|| props.show);
     let is_animating_out = use_state(|| false);

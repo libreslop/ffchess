@@ -1,3 +1,5 @@
+//! Root Yew component orchestrating UI state and network connections.
+
 use crate::app::config::{load_global_config, order_modes};
 use crate::app::ws::connect_ws;
 use crate::components::{
@@ -21,6 +23,7 @@ use wasm_bindgen_futures::spawn_local;
 use yew::prelude::*;
 
 #[function_component(App)]
+/// Renders the application shell and routes UI state to child components.
 pub fn app() -> Html {
     let global_cfg = use_state(load_global_config);
     let reducer = use_reducer(GameStateReducer::default);

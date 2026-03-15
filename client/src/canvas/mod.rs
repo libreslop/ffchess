@@ -1,3 +1,5 @@
+//! Canvas rendering utilities for the game board and pieces.
+
 mod color;
 pub mod pieces;
 mod renderer;

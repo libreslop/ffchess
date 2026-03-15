@@ -1,6 +1,11 @@
+//! Browser storage and environment helpers for the client.
+
 use common::types::{DurationMs, ModeId, PlayerId, SessionSecret, TimestampMs};
 use uuid::Uuid;
 
+/// Reads the stored player name from local storage.
+///
+/// Returns the stored name or an empty string if missing.
 pub fn get_stored_name() -> String {
     let window = web_sys::window().unwrap();
     if let Ok(Some(storage)) = window.local_storage() {
@@ -12,6 +17,9 @@ pub fn get_stored_name() -> String {
     String::new()
 }
 
+/// Stores the player name in local storage.
+///
+/// `name` is the display name to persist. Returns nothing.
 pub fn set_stored_name(name: &str) {
     let window = web_sys::window().unwrap();
     if let Ok(Some(storage)) = window.local_storage() {
@@ -19,10 +27,17 @@ pub fn set_stored_name(name: &str) {
     }
 }
 
+/// Builds a namespaced local storage key for a mode.
+///
+/// `base` is the key prefix and `mode_id` is the mode identifier.
+/// Returns the composed storage key string.
 fn storage_key(base: &str, mode_id: &ModeId) -> String {
     format!("{base}_{}", mode_id.as_ref())
 }
 
+/// Reads a stored player id for the given mode.
+///
+/// `mode_id` selects the mode. Returns the stored `PlayerId` if present.
 pub fn get_stored_id(mode_id: &ModeId) -> Option<PlayerId> {
     let window = web_sys::window().unwrap();
     if let Ok(Some(storage)) = window.local_storage() {
@@ -36,6 +51,10 @@ pub fn get_stored_id(mode_id: &ModeId) -> Option<PlayerId> {
     None
 }
 
+/// Stores a player id for the given mode.
+///
+/// `mode_id` selects the mode and `id` is the player id to persist.
+/// Returns nothing.
 pub fn set_stored_id(mode_id: &ModeId, id: PlayerId) {
     let window = web_sys::window().unwrap();
     if let Ok(Some(storage)) = window.local_storage() {
@@ -45,6 +64,9 @@ pub fn set_stored_id(mode_id: &ModeId, id: PlayerId) {
     }
 }
 
+/// Reads a stored session secret for the given mode.
+///
+/// `mode_id` selects the mode. Returns the stored secret if present.
 pub fn get_stored_secret(mode_id: &ModeId) -> Option<SessionSecret> {
     let window = web_sys::window().unwrap();
     if let Ok(Some(storage)) = window.local_storage() {
@@ -58,6 +80,10 @@ pub fn get_stored_secret(mode_id: &ModeId) -> Option<SessionSecret> {
     None
 }
 
+/// Stores a session secret for the given mode.
+///
+/// `mode_id` selects the mode and `secret` is the session token to persist.
+/// Returns nothing.
 pub fn set_stored_secret(mode_id: &ModeId, secret: SessionSecret) {
     let window = web_sys::window().unwrap();
     if let Ok(Some(storage)) = window.local_storage() {
@@ -67,6 +93,9 @@ pub fn set_stored_secret(mode_id: &ModeId, secret: SessionSecret) {
     }
 }
 
+/// Clears stored player id and session secret for the given mode.
+///
+/// `mode_id` selects the mode. Returns nothing.
 pub fn clear_stored_session(mode_id: &ModeId) {
     if let Ok(Some(storage)) = web_sys::window()
         .expect("no global `window` exists")
@@ -77,6 +106,9 @@ pub fn clear_stored_session(mode_id: &ModeId) {
     }
 }
 
+/// Reads the last death timestamp and cooldown for a mode.
+///
+/// `mode_id` selects the mode. Returns a tuple of `(TimestampMs, DurationMs)`.
 pub fn get_death_info(mode_id: &ModeId) -> (TimestampMs, DurationMs) {
     let window = web_sys::window().unwrap();
     if let Ok(Some(storage)) = window.local_storage() {
@@ -95,6 +127,10 @@ pub fn get_death_info(mode_id: &ModeId) -> (TimestampMs, DurationMs) {
     (TimestampMs::from_millis(0), DurationMs::from_millis(5000))
 }
 
+/// Stores the latest death timestamp and respawn cooldown.
+///
+/// `mode_id` selects the mode, `ts` is the death time, `cooldown_ms` is the cooldown.
+/// Returns nothing.
 pub fn set_death_timestamp(mode_id: &ModeId, ts: TimestampMs, cooldown_ms: DurationMs) {
     let window = web_sys::window().unwrap();
     if let Ok(Some(storage)) = window.local_storage() {
@@ -109,6 +145,9 @@ pub fn set_death_timestamp(mode_id: &ModeId, ts: TimestampMs, cooldown_ms: Durat
     }
 }
 
+/// Detects whether the current user agent is a mobile device.
+///
+/// Returns `true` for mobile-like user agents.
 pub fn is_mobile() -> bool {
     let window = web_sys::window().expect("no global `window` exists");
     let navigator = window.navigator();
@@ -120,6 +159,9 @@ pub fn is_mobile() -> bool {
         || user_agent.contains("ipad")
 }
 
+/// Requests the document to enter fullscreen mode if supported.
+///
+/// Returns nothing.
 pub fn request_fullscreen() {
     let window = web_sys::window().expect("no global `window` exists");
     let document = window.document().expect("should have a document on window");

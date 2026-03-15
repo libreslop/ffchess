@@ -1,3 +1,5 @@
+//! Game instance submodules split by responsibility.
+
 mod game_instance;
 mod moves;
 mod players;

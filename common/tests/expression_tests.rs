@@ -1,8 +1,11 @@
+//! Tests for expression evaluation and board sizing helpers.
+
 use common::logic::{calculate_board_size, evaluate_expression};
 use common::models::{GameModeConfig, KitConfig, NpcLimitConfig, ShopCountConfig};
 use common::types::{BoardSize, DurationMs, ExprString, KitId, ModeId};
 
 #[test]
+/// Verifies expressions use provided variables when evaluating.
 fn evaluate_expression_uses_variables() {
     let expr = ExprString::from("player_count * 2 + 3");
     let mut vars = std::collections::HashMap::new();
@@ -12,6 +15,7 @@ fn evaluate_expression_uses_variables() {
 }
 
 #[test]
+/// Verifies expression evaluation returns zero on missing variables.
 fn evaluate_expression_unknown_vars_returns_zero() {
     let expr = ExprString::from("missing_var + 2");
     let vars = std::collections::HashMap::new();
@@ -20,6 +24,7 @@ fn evaluate_expression_unknown_vars_returns_zero() {
 }
 
 #[test]
+/// Verifies board size calculations clamp to at least 1 tile.
 fn calculate_board_size_clamps_minimum() {
     let mode = GameModeConfig {
         id: ModeId::from("test"),

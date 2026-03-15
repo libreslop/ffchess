@@ -1,3 +1,5 @@
+//! Disconnected overlay component.
+
 use yew::prelude::*;
 
 /// Properties for the disconnected overlay.
@@ -10,6 +12,9 @@ pub struct DisconnectedScreenProps {
 }
 
 #[function_component(DisconnectedScreen)]
+/// Renders a full-screen disconnected overlay.
+///
+/// `props` controls visibility and message content. Returns rendered HTML.
 pub fn disconnected_screen(props: &DisconnectedScreenProps) -> Html {
     if !props.show {
         return html! {};

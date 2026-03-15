@@ -1,3 +1,5 @@
+//! Periodic tick processing for game instances.
+
 use super::GameInstance;
 use crate::time::now_ms;
 use common::protocol::ServerMessage;
@@ -5,6 +7,9 @@ use common::types::{DurationMs, PieceId};
 use rand::Rng;
 
 impl GameInstance {
+    /// Runs a single server tick: updates timers, broadcasts state, and cleans up.
+    ///
+    /// Returns nothing; this mutates game state and sends updates.
     pub async fn handle_tick(&self) {
         let now = now_ms();
         let players_viewing = !self.player_channels.read().await.is_empty()
@@ -78,6 +83,9 @@ impl GameInstance {
         .await;
     }
 
+    /// Advances NPC spawning and movement logic for the current tick.
+    ///
+    /// Returns nothing; this mutates game state.
     pub async fn tick_npcs(&self) {
         let mut game = self.game.write().await;
         let board_size = game.board_size;
