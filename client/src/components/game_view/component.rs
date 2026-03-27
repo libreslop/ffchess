@@ -1023,7 +1023,8 @@ pub fn game_view(props: &GameViewProps) -> Html {
             />
 
             <div class="absolute top-4 left-4 flex flex-col gap-2 pointer-events-none">
-                <div class="bg-white/90 backdrop-blur px-3 py-1.5 rounded-lg shadow-sm border border-slate-200">
+                <div class="bg-white/90 backdrop-blur px-3 py-1.5 rounded-lg border border-slate-200"
+                     style="box-shadow: 4px 4px 0 rgba(15, 23, 42, 0.2);">
                     <span class="text-xs font-bold text-slate-500 uppercase tracking-wider block">{"Score"}</span>
                     <span class="text-xl font-black text-slate-800 tabular-nums">{player_score.to_string()}</span>
                 </div>

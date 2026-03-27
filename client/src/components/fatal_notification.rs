@@ -70,7 +70,7 @@ pub fn fatal_notification(props: &FatalNotificationProps) -> Html {
 
     // Pointer events are disabled so the banner never blocks UI interactions (e.g., kit selection buttons).
     html! {
-        <div style={format!("position: absolute; top: 20px; left: 50%; transform: translateX(-50%); width: 90%; max-width: 500px; background: #ef4444; color: white; padding: 20px; border-radius: 0; border: 3px solid #7f1d1d; box-shadow: 0 10px 25px rgba(0,0,0,0.3); z-index: 1000; animation: {} 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; pointer-events: none;", animation_name)}>
+        <div style={format!("position: absolute; top: 20px; left: 50%; transform: translateX(-50%); width: 90%; max-width: 500px; background: #ef4444; color: white; padding: 20px; border-radius: 0; border: 3px solid #7f1d1d; box-shadow: 6px 6px 0 rgba(0,0,0,0.35); z-index: 1000; animation: {} 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; pointer-events: none;", animation_name)}>
             <style>{"
                 @keyframes fadeInDown {
                     from { opacity: 0; transform: translate(-50%, -20px); }

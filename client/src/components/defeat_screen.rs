@@ -29,7 +29,7 @@ pub fn defeat_screen(props: &DefeatScreenProps) -> Html {
             <div style="position: absolute; inset: 0; background: rgba(0,0,0,0.6); z-index: 90; animation: simpleFadeIn 0.3s ease-out;"></div>
             <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 100; text-align: center; width: 90%; max-width: 400px; color: #fff;">
                 <div style="animation: fadeIn 0.3s ease-out;">
-                    <h1 style={format!("color: #ef4444; margin-top: 0; font-size: {}; letter-spacing: 4px; text-shadow: 0 4px 8px rgba(0,0,0,0.5);", title_size)}>{"DEFEAT"}</h1>
+                    <h1 style={format!("color: #ef4444; margin-top: 0; font-size: {}; letter-spacing: 4px; text-shadow: 3px 3px 0 rgba(0,0,0,0.6);", title_size)}>{"DEFEAT"}</h1>
 
                     <div style="margin: 30px 0; display: flex; flex-direction: column; gap: 15px;">
                         <div style="padding: 15px;">

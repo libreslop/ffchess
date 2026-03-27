@@ -32,7 +32,7 @@ pub fn disconnected_screen(props: &DisconnectedScreenProps) -> Html {
             if props.disconnected { "all" } else { "none" }
         )}>
             <div style="text-align: center; color: #fff; padding: 20px;">
-                <h1 style="color: #fff; margin: 0; font-size: 4em; letter-spacing: 4px; text-shadow: 0 4px 8px rgba(0,0,0,0.5);">{title}</h1>
+                <h1 style="color: #fff; margin: 0; font-size: 4em; letter-spacing: 4px; text-shadow: 3px 3px 0 rgba(0,0,0,0.6);">{title}</h1>
                 <p style="margin: 20px 0 0; font-size: 1.2em; color: #fff; letter-spacing: 1px;">{msg}</p>
             </div>
         </div>

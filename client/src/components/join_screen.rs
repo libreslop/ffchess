@@ -35,7 +35,7 @@ pub fn join_screen(props: &JoinScreenProps) -> Html {
             <div style="position: absolute; inset: 0; background: rgba(0,0,0,0.6); z-index: 90;"></div>
             <div style={format!("position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 100; text-align: center; width: 90%; max-width: 400px; padding: {};", if mobile { "20px 10px" } else { "30px" })}>
                 if props.join_step == 0 {
-                    <h1 style={format!("margin-top: 0; color: #fff; font-size: {}; letter-spacing: 4px; text-shadow: 0 4px 8px rgba(0,0,0,0.5);", if mobile { "3em" } else { "4em" })}>{"FFCHESS"}</h1>
+                    <h1 style={format!("margin-top: 0; color: #fff; font-size: {}; letter-spacing: 4px; text-shadow: 3px 3px 0 rgba(0,0,0,0.6);", if mobile { "3em" } else { "4em" })}>{"FFCHESS"}</h1>
                     <div style="margin-bottom: 16px; max-height: 220px; overflow-y: auto; border: 2px solid #cbd5e1; background: transparent;">
                         { for props.mode_options.iter().map(|m| {
                             let on_select = props.on_select_mode.clone();
@@ -75,7 +75,7 @@ pub fn join_screen(props: &JoinScreenProps) -> Html {
                     </form>
                 } else {
                     <div style="animation: fadeIn 0.3s ease-out; display: flex; flex-direction: column; align-items: center;">
-                        <h3 style="color: #fff; margin-bottom: 25px; text-transform: uppercase; letter-spacing: 2px; text-shadow: 0 2px 4px rgba(0,0,0,0.3);">{"CHOOSE YOUR ARMY"}</h3>
+                        <h3 style="color: #fff; margin-bottom: 25px; text-transform: uppercase; letter-spacing: 2px; text-shadow: 2px 2px 0 rgba(0,0,0,0.5);">{"CHOOSE YOUR ARMY"}</h3>
 
                         if let Some(error) = &props.error {
                             <div style="margin-bottom: 20px; color: #ef4444; background: rgba(255,255,255,0.9); padding: 10px 20px; border-radius: 4px; font-weight: bold;">
