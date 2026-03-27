@@ -2,6 +2,7 @@
 
 use common::logic::evaluate_expression;
 use common::*;
+use crate::reducer::ClientPhase;
 use yew::prelude::*;
 
 /// Mutable camera state for smooth panning and zoom transitions.
@@ -46,7 +47,7 @@ pub struct CameraUpdateParams<'a> {
     pub is_dragging: bool,
     pub mode: Option<&'a common::models::GameModeClientConfig>,
     pub piece_count: usize,
-    pub is_dead: bool,
+    pub phase: ClientPhase,
     pub zoom_min: f64,
     pub zoom_max: f64,
     pub zoom_lerp: f64,
@@ -66,7 +67,7 @@ pub fn update_camera(manager: &mut CameraManager, params: CameraUpdateParams<'_>
     let mut changed = false;
     let player_id_val = params.player_id.unwrap_or_else(PlayerId::nil);
     let player = params.state.players.get(&player_id_val);
-    let is_alive = player.is_some() && player_id_val != PlayerId::nil() && !params.is_dead;
+    let is_alive = params.phase == ClientPhase::Alive;
 
     manager.target_zoom = manager.target_zoom.clamp(params.zoom_min, params.zoom_max);
     manager.zoom = manager.zoom.clamp(params.zoom_min, params.zoom_max);
@@ -83,7 +84,7 @@ pub fn update_camera(manager: &mut CameraManager, params: CameraUpdateParams<'_>
 
             // Mouse position relative to canvas center
             // When dead, anchor zoom to canvas center so the death focus stays accurate.
-            let (mx, my) = if params.is_dead {
+            let (mx, my) = if params.phase == ClientPhase::Dead {
                 (0.0, 0.0)
             } else {
                 (
@@ -103,7 +104,7 @@ pub fn update_camera(manager: &mut CameraManager, params: CameraUpdateParams<'_>
             // CameraPos' = (Zoom' / Zoom) * (Zoom * W) - (M - CanvasWidth/2)
             // CameraPos' = Ratio * (CameraPos + M - CanvasWidth/2) - (M - CanvasWidth/2)
 
-            if !params.is_dead {
+            if params.phase != ClientPhase::Dead {
                 manager.camera.0 = ratio * (manager.camera.0 + mx) - mx;
                 manager.camera.1 = ratio * (manager.camera.1 + my) - my;
                 manager.target_camera.0 = ratio * (manager.target_camera.0 + mx) - mx;
@@ -180,7 +181,7 @@ pub fn update_camera(manager: &mut CameraManager, params: CameraUpdateParams<'_>
                 }
             }
         }
-    } else if params.is_dead {
+    } else if params.phase == ClientPhase::Dead {
         if manager.was_alive {
             // Just died, focus on last position
             let grid_pos = manager.last_king_grid_pos;
@@ -195,7 +196,7 @@ pub fn update_camera(manager: &mut CameraManager, params: CameraUpdateParams<'_>
             manager.input_locked = false;
             changed = true;
         }
-    } else {
+    } else if params.phase == ClientPhase::Menu {
         // Menu / Choose Army screen
         // In this coordinate system, (0,0) is the center of the board
         manager.target_camera = (0.0, 0.0);
@@ -203,6 +204,9 @@ pub fn update_camera(manager: &mut CameraManager, params: CameraUpdateParams<'_>
         manager.was_alive = false;
         manager.input_locked = false;
         changed = true;
+    } else {
+        manager.was_alive = false;
+        manager.input_locked = false;
     }
 
     // 5. Final interpolation for target_camera

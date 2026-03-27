@@ -196,7 +196,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
                             is_dragging,
                             mode: reducer_state.mode.as_ref(),
                             piece_count,
-                            is_dead: reducer_state.is_dead,
+                            phase: reducer_state.phase,
                             zoom_min: globals.camera_zoom_min,
                             zoom_max: globals.camera_zoom_max,
                             zoom_lerp: globals.zoom_lerp,

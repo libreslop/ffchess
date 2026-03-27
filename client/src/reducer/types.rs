@@ -18,6 +18,16 @@ pub struct Pmove {
     pub old_cooldown_ms: DurationMs,
 }
 
+/// High-level client session phase used for UI and camera behavior.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum ClientPhase {
+    #[default]
+    Menu,
+    Joining,
+    Alive,
+    Dead,
+}
+
 /// Aggregated client game state and UI state.
 #[derive(Clone, PartialEq, Default)]
 pub struct GameStateReducer {
@@ -38,6 +48,7 @@ pub struct GameStateReducer {
     pub disconnected: bool,
     pub fatal_error: bool,
     pub is_dead: bool,
+    pub phase: ClientPhase,
     pub disconnected_title: Option<String>,
     pub disconnected_msg: Option<String>,
 }

@@ -1,5 +1,5 @@
 To maintain quality code, strictly follow:
-- Encapsulation: keep each file small do not make structs, fields or functions public when not needed.
+- Encapsulation: keep each file small do not make structs, fields or functions public when not needed, avoid if the function is related to a particular struct/enum, it should be a function of the struct/enum instead of a free standing function
 - Use functional programming style code whenever possible, use idiomatic Rust
 - Fix antipatterns from cargo clippy
 - Do not use meaningless types e.g. i32, u64 to represent meaningful things, e.g. Score and Distance should be wrapped with different structs

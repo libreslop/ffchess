@@ -2,7 +2,7 @@
 
 use super::actions::{GameAction, InitPayload};
 use super::handlers::handle_update_state;
-use super::types::GameStateReducer;
+use super::types::{ClientPhase, GameStateReducer};
 use common::logic::calculate_cooldown;
 use common::protocol::{ClientMessage, GameError};
 use common::types::{DurationMs, PieceId, PlayerId, TimestampMs};
@@ -196,6 +196,25 @@ impl Reducible for GameStateReducer {
                 // Keep mode and configs so the kit list can render while reconnecting
             }
         }
+        next.phase = compute_phase(&next);
         next.into()
     }
+}
+
+fn compute_phase(state: &GameStateReducer) -> ClientPhase {
+    let Some(player_id) = state.player_id else {
+        return ClientPhase::Menu;
+    };
+    if player_id == PlayerId::nil() {
+        return ClientPhase::Menu;
+    }
+    if state.is_dead {
+        return ClientPhase::Dead;
+    }
+    if let Some(player) = state.state.players.get(&player_id)
+        && state.state.pieces.contains_key(&player.king_id)
+    {
+        return ClientPhase::Alive;
+    }
+    ClientPhase::Joining
 }
