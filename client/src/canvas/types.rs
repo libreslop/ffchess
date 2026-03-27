@@ -1,5 +1,6 @@
 //! Data structures used by the canvas renderer.
 
+use crate::math::Vec2;
 use crate::reducer::Pmove;
 use common::models::{GameModeClientConfig, GameState, Piece, PieceConfig, ShopConfig};
 use common::types::{PieceId, PieceTypeId, PlayerId, ShopId};
@@ -51,7 +52,7 @@ pub struct PieceDrawParams<'a> {
     pub state: &'a GameState,
     pub draw_name: bool,
     pub is_ghost: bool,
-    pub pos_override: Option<(f64, f64)>,
+    pub pos_override: Option<Vec2>,
     pub tile_size_px: f64,
 }
 
@@ -65,7 +66,7 @@ pub struct PieceNameDrawParams<'a> {
     pub state: &'a GameState,
     pub zoom: f64,
     pub tile_size_px: f64,
-    pub pos_override: Option<(f64, f64)>,
+    pub pos_override: Option<Vec2>,
 }
 
 /// Parameters for a single render pass.
@@ -76,10 +77,9 @@ pub struct RenderParams<'a> {
     pub selected_piece_id: Option<PieceId>,
     pub pm_queue: &'a [Pmove],
     pub ghost_pieces: &'a HashMap<PieceId, Piece>,
-    pub animated_positions: &'a HashMap<PieceId, (f64, f64)>,
-    pub camera_pos: (f64, f64),
-    pub width: f64,
-    pub height: f64,
+    pub animated_positions: &'a HashMap<PieceId, Vec2>,
+    pub camera_pos: Vec2,
+    pub canvas_size: Vec2,
     pub zoom: f64,
     pub tile_size_px: f64,
     pub mode: Option<&'a GameModeClientConfig>,

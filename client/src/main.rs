@@ -4,6 +4,7 @@ mod app;
 mod camera;
 mod canvas;
 mod components;
+mod math;
 mod reducer;
 mod utils;
 

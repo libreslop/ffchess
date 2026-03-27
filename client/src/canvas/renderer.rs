@@ -46,13 +46,14 @@ impl Renderer {
             ghost_pieces,
             animated_positions,
             camera_pos,
-            width,
-            height,
+            canvas_size,
             zoom,
             tile_size_px,
             mode,
             shop_configs,
         } = params;
+        let width = canvas_size.x;
+        let height = canvas_size.y;
         let tile_size = tile_size_px * zoom;
         let player_king = state
             .players
@@ -88,8 +89,10 @@ impl Renderer {
         self.ctx.fill_rect(0.0, 0.0, width, height);
 
         // Offset mapping world -> screen
-        let offset_x = width / 2.0 - camera_pos.0;
-        let offset_y = height / 2.0 - camera_pos.1;
+        let canvas_center = canvas_size * 0.5;
+        let offset = canvas_center - camera_pos;
+        let offset_x = offset.x;
+        let offset_y = offset.y;
 
         let half = state.board_size.half();
         let limit_pos = state.board_size.limit_pos();

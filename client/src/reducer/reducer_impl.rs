@@ -202,6 +202,7 @@ impl Reducible for GameStateReducer {
 }
 
 fn compute_phase(state: &GameStateReducer) -> ClientPhase {
+    // Phase is derived from authoritative server state plus the local death flag.
     let Some(player_id) = state.player_id else {
         return ClientPhase::Menu;
     };

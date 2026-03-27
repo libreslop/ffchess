@@ -2,6 +2,8 @@
 
 use crate::canvas::color::{PieceIconColors, piece_icon_colors};
 use crate::canvas::types::{PieceDrawParams, PieceNameDrawParams, PieceSvgKey, Renderer};
+use crate::math::{Vec2, vec2};
+use common::models::PieceConfig;
 use common::types::PieceTypeId;
 use gloo_net::http::Request;
 use js_sys;
@@ -15,98 +17,27 @@ impl Renderer {
     /// Returns nothing.
     pub fn draw_piece(&self, params: PieceDrawParams, zoom: f64) {
         let tile_size = params.tile_size_px * zoom;
-        let is_self = params.piece.owner_id == Some(params.player_id);
-        let pos = params.pos_override.unwrap_or((
-            params.piece.position.x as f64,
-            params.piece.position.y as f64,
-        ));
-
-        let color_str = if let Some(owner_id) = params.piece.owner_id {
-            if let Some(player) = params.state.players.get(&owner_id) {
-                player.color.as_ref().to_string()
-            } else {
-                "#555555".to_string()
-            }
-        } else {
-            "#555555".to_string()
-        };
-
-        let colors = piece_icon_colors(&color_str);
-        let mut drew_svg = false;
+        let base_color = self.owner_color(&params);
+        let colors = piece_icon_colors(&base_color);
         let config = self.piece_configs.get(&params.piece.piece_type);
-        if let Some(config) = config {
-            if let Some(image) =
-                self.resolve_piece_icon(&params.piece.piece_type, &config.svg_path, &colors)
-            {
-                if image.complete() && image.natural_width() > 0 {
-                    self.draw_piece_icon(&image, params, tile_size);
-                    drew_svg = true;
-                }
-            }
+
+        let svg_image = config.and_then(|cfg| {
+            self.resolve_piece_icon(&params.piece.piece_type, &cfg.svg_path, &colors)
+        });
+        let svg_ready = svg_image
+            .as_ref()
+            .filter(|img| img.complete() && img.natural_width() > 0);
+
+        // Prefer SVGs when available; fall back to the circle + chess letter when missing.
+        if let Some(image) = svg_ready {
+            self.draw_piece_icon(image, params, tile_size);
+        } else {
+            self.draw_piece_fallback(&base_color, config, params, zoom, tile_size);
         }
 
-        if !drew_svg {
-            self.ctx.set_fill_style_str(&color_str);
-            self.ctx.set_global_alpha(params.alpha);
-
-            self.ctx.begin_path();
-            let _ = self.ctx.arc(
-                pos.0 * tile_size + params.offset_x + tile_size / 2.0,
-                pos.1 * tile_size + params.offset_y + tile_size / 2.0,
-                tile_size / 3.0,
-                0.0,
-                std::f64::consts::TAU,
-            );
-            self.ctx.fill();
-
-            self.ctx.set_global_alpha(1.0);
-
-            self.ctx
-                .set_fill_style_str(&format!("rgba(255, 255, 255, {})", params.alpha));
-            let font_size = 16.0 * zoom;
-            self.ctx.set_font(&format!("bold {}px Arbutus", font_size));
-
-            let label = config
-                .map(|c| fallback_piece_label(&params.piece.piece_type, &c.display_name))
-                .unwrap_or_else(|| "?".to_string());
-
-            let _ = self.ctx.fill_text(
-                &label,
-                pos.0 * tile_size + params.offset_x + tile_size / 2.0 - (5.0 * zoom),
-                pos.1 * tile_size + params.offset_y + tile_size / 2.0 + (6.0 * zoom),
-            );
-        }
-
-        // Only draw cooldown on the real (non-ghost) piece for the owner
-        if is_self && !params.is_ghost {
-            #[cfg(target_arch = "wasm32")]
-            let now = common::types::TimestampMs::from_millis(js_sys::Date::now() as i64);
-            #[cfg(not(target_arch = "wasm32"))]
-            let now =
-                common::types::TimestampMs::from_millis(chrono::Utc::now().timestamp_millis());
-
-            let elapsed = now - params.piece.last_move_time;
-            if elapsed < params.piece.cooldown_ms {
-                let progress = elapsed.as_i64() as f64 / params.piece.cooldown_ms.as_i64() as f64;
-                self.ctx.set_fill_style_str("#000");
-                let bar_h = 4.0 * zoom;
-                let bar_margin = 5.0 * zoom;
-                let bar_y_offset = tile_size - (8.0 * zoom);
-
-                self.ctx.fill_rect(
-                    pos.0 * tile_size + params.offset_x + bar_margin,
-                    pos.1 * tile_size + params.offset_y + bar_y_offset,
-                    tile_size - (bar_margin * 2.0),
-                    bar_h,
-                );
-                self.ctx.set_fill_style_str("#0f0");
-                self.ctx.fill_rect(
-                    pos.0 * tile_size + params.offset_x + bar_margin,
-                    pos.1 * tile_size + params.offset_y + bar_y_offset,
-                    (tile_size - (bar_margin * 2.0)) * progress,
-                    bar_h,
-                );
-            }
+        // Only draw cooldown on the real (non-ghost) piece for the owner.
+        if self.should_draw_cooldown(&params) {
+            self.draw_cooldown_bar(params, tile_size, zoom);
         }
 
         if params.alpha >= 1.0 && params.draw_name {
@@ -123,14 +54,102 @@ impl Renderer {
         }
     }
 
+    fn owner_color(&self, params: &PieceDrawParams<'_>) -> String {
+        params
+            .piece
+            .owner_id
+            .and_then(|owner_id| {
+                params
+                    .state
+                    .players
+                    .get(&owner_id)
+                    .map(|player| player.color.as_ref().to_string())
+            })
+            .unwrap_or_else(|| "#555555".to_string())
+    }
+
+    fn draw_piece_fallback(
+        &self,
+        base_color: &str,
+        config: Option<&PieceConfig>,
+        params: PieceDrawParams<'_>,
+        zoom: f64,
+        tile_size: f64,
+    ) {
+        let pos = piece_pos(params);
+        self.ctx.set_fill_style_str(base_color);
+        self.ctx.set_global_alpha(params.alpha);
+
+        self.ctx.begin_path();
+        let _ = self.ctx.arc(
+            pos.x * tile_size + params.offset_x + tile_size / 2.0,
+            pos.y * tile_size + params.offset_y + tile_size / 2.0,
+            tile_size / 3.0,
+            0.0,
+            std::f64::consts::TAU,
+        );
+        self.ctx.fill();
+
+        self.ctx.set_global_alpha(1.0);
+
+        self.ctx
+            .set_fill_style_str(&format!("rgba(255, 255, 255, {})", params.alpha));
+        let font_size = 16.0 * zoom;
+        self.ctx.set_font(&format!("bold {}px Arbutus", font_size));
+
+        let label = config
+            .map(|c| fallback_piece_label(&params.piece.piece_type, &c.display_name))
+            .unwrap_or_else(|| "?".to_string());
+
+        let _ = self.ctx.fill_text(
+            &label,
+            pos.x * tile_size + params.offset_x + tile_size / 2.0 - (5.0 * zoom),
+            pos.y * tile_size + params.offset_y + tile_size / 2.0 + (6.0 * zoom),
+        );
+    }
+
+    fn should_draw_cooldown(&self, params: &PieceDrawParams<'_>) -> bool {
+        params.piece.owner_id == Some(params.player_id) && !params.is_ghost
+    }
+
+    fn draw_cooldown_bar(&self, params: PieceDrawParams<'_>, tile_size: f64, zoom: f64) {
+        let pos = piece_pos(params);
+        #[cfg(target_arch = "wasm32")]
+        let now = common::types::TimestampMs::from_millis(js_sys::Date::now() as i64);
+        #[cfg(not(target_arch = "wasm32"))]
+        let now = common::types::TimestampMs::from_millis(chrono::Utc::now().timestamp_millis());
+
+        let elapsed = now - params.piece.last_move_time;
+        if elapsed >= params.piece.cooldown_ms {
+            return;
+        }
+
+        let progress = elapsed.as_i64() as f64 / params.piece.cooldown_ms.as_i64() as f64;
+        self.ctx.set_fill_style_str("#000");
+        let bar_h = 4.0 * zoom;
+        let bar_margin = 5.0 * zoom;
+        let bar_y_offset = tile_size - (8.0 * zoom);
+
+        self.ctx.fill_rect(
+            pos.x * tile_size + params.offset_x + bar_margin,
+            pos.y * tile_size + params.offset_y + bar_y_offset,
+            tile_size - (bar_margin * 2.0),
+            bar_h,
+        );
+        self.ctx.set_fill_style_str("#0f0");
+        self.ctx.fill_rect(
+            pos.x * tile_size + params.offset_x + bar_margin,
+            pos.y * tile_size + params.offset_y + bar_y_offset,
+            (tile_size - (bar_margin * 2.0)) * progress,
+            bar_h,
+        );
+    }
+
     fn draw_piece_icon(&self, image: &HtmlImageElement, params: PieceDrawParams, tile_size: f64) {
         let icon_size = tile_size * 0.85;
-        let pos = params.pos_override.unwrap_or((
-            params.piece.position.x as f64,
-            params.piece.position.y as f64,
-        ));
-        let draw_x = pos.0 * tile_size + params.offset_x + (tile_size - icon_size) / 2.0;
-        let draw_y = pos.1 * tile_size + params.offset_y + (tile_size - icon_size) / 2.0;
+        let pos = piece_pos(params);
+        let draw_x = pos.x * tile_size + params.offset_x + (tile_size - icon_size) / 2.0;
+        let draw_y = pos.y * tile_size + params.offset_y + (tile_size - icon_size) / 2.0;
 
         self.ctx.set_global_alpha(params.alpha);
         self.ctx.set_image_smoothing_enabled(false);
@@ -157,6 +176,7 @@ impl Renderer {
             tertiary: colors.tertiary.clone(),
         };
 
+        // Cache is keyed by piece type + derived team colors to avoid regenerating SVGs.
         let mut cache = self.svg_cache.borrow_mut();
         if let Some(image) = cache.images.get(&key) {
             return Some(image.clone());
@@ -215,10 +235,9 @@ impl Renderer {
     /// `params` describes the piece and draw state. Returns nothing.
     pub fn draw_piece_name(&self, params: PieceNameDrawParams<'_>) {
         let tile_size = params.tile_size_px * params.zoom;
-        let pos = params.pos_override.unwrap_or((
-            params.piece.position.x as f64,
-            params.piece.position.y as f64,
-        ));
+        let pos = params.pos_override.unwrap_or_else(|| {
+            vec2(params.piece.position.x as f64, params.piece.position.y as f64)
+        });
         if params.piece.piece_type.is_king()
             && let Some(owner_id) = params.piece.owner_id
             && let Some(player) = params.state.players.get(&owner_id)
@@ -234,8 +253,8 @@ impl Renderer {
 
             if let Ok(text_metrics) = self.ctx.measure_text(name) {
                 let text_width = text_metrics.width();
-                let x = pos.0 * tile_size + params.offset_x + tile_size / 2.0 - text_width / 2.0;
-                let y = pos.1 * tile_size + params.offset_y - (5.0 * params.zoom);
+                let x = pos.x * tile_size + params.offset_x + tile_size / 2.0 - text_width / 2.0;
+                let y = pos.y * tile_size + params.offset_y - (5.0 * params.zoom);
 
                 // Draw outline
                 self.ctx
@@ -257,6 +276,12 @@ fn svg_data_url(svg: &str) -> String {
     let encoded = js_sys::encode_uri_component(svg);
     let encoded = encoded.as_string().unwrap_or_default();
     format!("data:image/svg+xml;utf8,{encoded}")
+}
+
+fn piece_pos(params: PieceDrawParams<'_>) -> Vec2 {
+    params.pos_override.unwrap_or_else(|| {
+        vec2(params.piece.position.x as f64, params.piece.position.y as f64)
+    })
 }
 
 fn fallback_piece_label(piece_type: &PieceTypeId, display_name: &str) -> String {

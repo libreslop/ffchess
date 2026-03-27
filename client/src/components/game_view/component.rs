@@ -2,6 +2,7 @@
 
 use super::helpers::{MOVE_ANIM_MS, PieceAnim, apply_visible_ghosts, pm_visible};
 use crate::camera::{CameraManager, update_camera};
+use crate::math::{Vec2, vec2};
 use crate::canvas::Renderer;
 use crate::reducer::{GameAction, GameStateReducer, MsgSender, Pmove};
 use common::logic::is_within_board;
@@ -13,7 +14,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 use wasm_bindgen::JsCast;
-use web_sys::{Element, HtmlCanvasElement};
+use web_sys::{DomRect, Element, HtmlCanvasElement};
 use yew::prelude::*;
 
 /// Properties for the main game viewport.
@@ -23,6 +24,111 @@ pub struct GameViewProps {
     pub tx: MsgSender,
     pub render_interval_ms: u32,
     pub globals: crate::app::GlobalClientConfig,
+}
+
+/// Pointer-down state for distinguishing taps from pans.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct DragStart {
+    pos: Vec2,
+    allow_panning: bool,
+}
+
+/// Tracks the last tap to detect double-tap gestures.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct LastTap {
+    time_ms: f64,
+    pos: Vec2,
+}
+
+/// Pointer-down input payload.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct InputStart {
+    pos: Vec2,
+    is_right_click: bool,
+}
+
+/// Pointer-move input payload.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct InputMove {
+    pos: Vec2,
+}
+
+/// Pointer-up input payload.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct InputEnd {
+    pos: Vec2,
+    is_right_click: bool,
+}
+
+/// Snapshot of reducer state used by background callbacks.
+#[derive(Clone)]
+struct LatestStateSnapshot {
+    reducer: UseReducerHandle<GameStateReducer>,
+    is_dragging: bool,
+}
+
+impl LatestStateSnapshot {
+    /// Creates a snapshot for timer-driven renders.
+    fn new(reducer: UseReducerHandle<GameStateReducer>, is_dragging: bool) -> Self {
+        Self {
+            reducer,
+            is_dragging,
+        }
+    }
+
+    /// Updates the cached reducer handle and dragging flag.
+    fn update(&mut self, reducer: UseReducerHandle<GameStateReducer>, is_dragging: bool) {
+        self.reducer = reducer;
+        self.is_dragging = is_dragging;
+    }
+}
+
+/// Tracks frame timing to compute FPS values.
+struct FpsCounter {
+    frames: u32,
+    last_ms: f64,
+}
+
+impl FpsCounter {
+    /// Initializes the FPS counter with the current timestamp.
+    fn new() -> Self {
+        let now = web_sys::window()
+            .and_then(|w| w.performance())
+            .map(|p| p.now())
+            .unwrap_or(0.0);
+        Self { frames: 0, last_ms: now }
+    }
+}
+
+/// Reads the current browser window size in CSS pixels.
+fn read_window_size() -> Vec2 {
+    let window = web_sys::window().expect("window available");
+    let width = window
+        .inner_width()
+        .expect("window width")
+        .as_f64()
+        .expect("window width as f64");
+    let height = window
+        .inner_height()
+        .expect("window height")
+        .as_f64()
+        .expect("window height as f64");
+    vec2(width, height)
+}
+
+/// Converts a screen-space pointer position into a grid coordinate.
+fn screen_to_grid(
+    pos: Vec2,
+    rect: &DomRect,
+    canvas: &HtmlCanvasElement,
+    camera: Vec2,
+    tile_size: f64,
+) -> IVec2 {
+    let screen_pos = pos - vec2(rect.left(), rect.top());
+    let canvas_center = vec2(canvas.width() as f64 / 2.0, canvas.height() as f64 / 2.0);
+    let world_pos = screen_pos + camera - canvas_center;
+    let grid = (world_pos / tile_size).floor();
+    IVec2::new(grid.x as i32, grid.y as i32)
 }
 
 #[function_component(GameView)]
@@ -35,38 +141,18 @@ pub fn game_view(props: &GameViewProps) -> Html {
     let manager_ref = use_mut_ref(CameraManager::new);
     let piece_prev_positions = use_mut_ref(HashMap::<PieceId, IVec2>::new);
     let piece_anims = use_mut_ref(HashMap::<PieceId, PieceAnim>::new);
-    let last_tap = use_mut_ref(|| None::<(f64, f64, f64)>);
+    let last_tap = use_mut_ref(|| None::<LastTap>);
     let touch_gesture_active = use_mut_ref(|| false);
 
-    let cam_state = use_state(|| (0.0, 0.0));
+    let cam_state = use_state(|| Vec2::ZERO);
     let zoom_state = use_state(|| 1.0f64);
     let frame_id = use_state(|| 0u64);
-    let drag_start = use_state(|| None::<(f64, f64, bool)>);
+    let drag_start = use_state(|| None::<DragStart>);
     let did_pan = use_mut_ref(|| false);
     let renderer_state = use_state(|| None::<Renderer>);
-    let fps_counter = use_mut_ref(|| {
-        (
-            0u32,
-            web_sys::window().unwrap().performance().unwrap().now(),
-        )
-    });
+    let fps_counter = use_mut_ref(FpsCounter::new);
 
-    let window_size = use_state(|| {
-        (
-            web_sys::window()
-                .unwrap()
-                .inner_width()
-                .unwrap()
-                .as_f64()
-                .unwrap(),
-            web_sys::window()
-                .unwrap()
-                .inner_height()
-                .unwrap()
-                .as_f64()
-                .unwrap(),
-        )
-    });
+    let window_size = use_state(read_window_size);
 
     /// Returns true when a pointer/touch event originates from the shop UI overlay.
     fn is_shop_ui_target(target: Option<web_sys::EventTarget>) -> bool {
@@ -139,11 +225,12 @@ pub fn game_view(props: &GameViewProps) -> Html {
     }
 
     // We use a ref to track the latest state for the interval to avoid stale captures
-    let latest_state = use_mut_ref(|| (props.reducer.clone(), (*drag_start).is_some()));
+    let latest_state = use_mut_ref(|| {
+        LatestStateSnapshot::new(props.reducer.clone(), (*drag_start).is_some())
+    });
     {
         let mut s = latest_state.borrow_mut();
-        s.0 = props.reducer.clone();
-        s.1 = (*drag_start).is_some();
+        s.update(props.reducer.clone(), (*drag_start).is_some());
     }
 
     {
@@ -161,18 +248,19 @@ pub fn game_view(props: &GameViewProps) -> Html {
             let interval = gloo_timers::callback::Interval::new(render_ms, move || {
                 let (reducer_state, is_dragging) = {
                     let s = latest_state.borrow();
-                    (s.0.clone(), s.1)
+                    (s.reducer.clone(), s.is_dragging)
                 };
 
                 {
                     let mut fc = fps_counter.borrow_mut();
-                    fc.0 += 1;
+                    fc.frames += 1;
                     let now = web_sys::window().unwrap().performance().unwrap().now();
-                    if now - fc.1 >= 1000.0 {
-                        let fps = ((fc.0 as f64) * 1000.0 / (now - fc.1)).round() as u32;
+                    if now - fc.last_ms >= 1000.0 {
+                        let fps =
+                            ((fc.frames as f64) * 1000.0 / (now - fc.last_ms)).round() as u32;
                         reducer.dispatch(GameAction::SetFPS(fps));
-                        fc.0 = 0;
-                        fc.1 = now;
+                        fc.frames = 0;
+                        fc.last_ms = now;
                     }
                 }
 
@@ -245,7 +333,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
                         if manager.input_locked {
                             return;
                         }
-                        manager.mouse_pos = (e.client_x() as f64, e.client_y() as f64);
+                        manager.mouse_pos = vec2(e.client_x() as f64, e.client_y() as f64);
                         manager.target_zoom =
                             (manager.target_zoom * factor).clamp(zoom_min, zoom_max);
                     });
@@ -309,11 +397,11 @@ pub fn game_view(props: &GameViewProps) -> Html {
 
                         let progress = ((now - anim.started_at) / MOVE_ANIM_MS).clamp(0.0, 1.0);
                         if progress < 1.0 {
-                            let x =
-                                anim.start.x as f64 + (anim.end.x - anim.start.x) as f64 * progress;
-                            let y =
-                                anim.start.y as f64 + (anim.end.y - anim.start.y) as f64 * progress;
-                            animated_positions.insert(*id, (x, y));
+                            let x = anim.start.x as f64
+                                + (anim.end.x - anim.start.x) as f64 * progress;
+                            let y = anim.start.y as f64
+                                + (anim.end.y - anim.start.y) as f64 * progress;
+                            animated_positions.insert(*id, vec2(x, y));
                             true
                         } else {
                             false
@@ -327,8 +415,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
                         ghost_pieces: &ghosts,
                         animated_positions: &animated_positions,
                         camera_pos: **cam,
-                        width: window_size.0,
-                        height: window_size.1,
+                        canvas_size: **window_size,
                         zoom: **zoom,
                         tile_size_px: globals.tile_size_px,
                         mode: mode.as_ref(),
@@ -344,20 +431,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
         let window_size = window_size.clone();
         use_effect_with((), move |_| {
             let listener = EventListener::new(&web_sys::window().unwrap(), "resize", move |_| {
-                window_size.set((
-                    web_sys::window()
-                        .unwrap()
-                        .inner_width()
-                        .unwrap()
-                        .as_f64()
-                        .unwrap(),
-                    web_sys::window()
-                        .unwrap()
-                        .inner_height()
-                        .unwrap()
-                        .as_f64()
-                        .unwrap(),
-                ));
+                window_size.set(read_window_size());
             });
             || drop(listener)
         });
@@ -427,7 +501,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
         let canvas_ref = canvas_ref.clone();
         let reducer = props.reducer.clone();
         let tile_size_px = props.globals.tile_size_px;
-        Callback::from(move |(cx, cy, is_right_click): (f64, f64, bool)| {
+        Callback::from(move |input: InputStart| {
             if reducer.is_dead {
                 return;
             }
@@ -440,20 +514,12 @@ pub fn game_view(props: &GameViewProps) -> Html {
             let rect = canvas.get_bounding_client_rect();
             let zoom = manager.zoom;
             let tile_size = tile_size_px * zoom;
-            let x = cx - rect.left();
-            let y = cy - rect.top();
-
-            let world_x = x + manager.camera.0 - (canvas.width() as f64 / 2.0);
-            let world_y = y + manager.camera.1 - (canvas.height() as f64 / 2.0);
-
-            let grid_x = (world_x / tile_size).floor() as i32;
-            let grid_y = (world_y / tile_size).floor() as i32;
-            let target = IVec2::new(grid_x, grid_y);
+            let target = screen_to_grid(input.pos, &rect, &canvas, manager.camera, tile_size);
 
             let board_size = reducer.state.board_size;
             let mut is_interactive = false;
 
-            if !is_right_click && is_within_board(target, board_size) {
+            if !input.is_right_click && is_within_board(target, board_size) {
                 let mut ghosts = reducer.state.pieces.clone();
                 apply_visible_ghosts(&mut ghosts, &reducer.pm_queue, &reducer.state);
 
@@ -475,8 +541,11 @@ pub fn game_view(props: &GameViewProps) -> Html {
                     is_interactive = true;
                 }
             }
-            drag_start.set(Some((cx, cy, !is_interactive)));
-            manager.velocity = (0.0, 0.0);
+            drag_start.set(Some(DragStart {
+                pos: input.pos,
+                allow_panning: !is_interactive,
+            }));
+            manager.velocity = Vec2::ZERO;
         })
     };
 
@@ -486,7 +555,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
         let manager_ref = manager_ref.clone();
         let did_pan = did_pan.clone();
         let reducer = props.reducer.clone();
-        Callback::from(move |(cx, cy): (f64, f64)| {
+        Callback::from(move |input: InputMove| {
             if reducer.is_dead {
                 return;
             }
@@ -494,17 +563,15 @@ pub fn game_view(props: &GameViewProps) -> Html {
             if manager.input_locked {
                 return;
             }
-            manager.mouse_pos = (cx, cy);
-            if let Some((start_x, start_y, allow_panning)) = *drag_start {
-                if !allow_panning {
+            manager.mouse_pos = input.pos;
+            if let Some(start) = *drag_start {
+                if !start.allow_panning {
                     return;
                 }
-                let dx = cx - start_x;
-                let dy = cy - start_y;
-                if dx.abs() > 0.1 || dy.abs() > 0.1 {
+                let delta = input.pos - start.pos;
+                if delta.x.abs().max(delta.y.abs()) > 0.1 {
                     *did_pan.borrow_mut() = true;
-                    manager.camera.0 -= dx;
-                    manager.camera.1 -= dy;
+                    manager.camera -= delta;
 
                     let player_id_val = reducer.player_id.unwrap_or_else(PlayerId::nil);
                     let is_alive = reducer.state.players.contains_key(&player_id_val)
@@ -514,8 +581,11 @@ pub fn game_view(props: &GameViewProps) -> Html {
                         manager.target_camera = manager.camera;
                     }
                     cam_state.set(manager.camera);
-                    manager.velocity = (-dx, -dy);
-                    drag_start.set(Some((cx, cy, true)));
+                    manager.velocity = -delta;
+                    drag_start.set(Some(DragStart {
+                        pos: input.pos,
+                        allow_panning: true,
+                    }));
                 }
             }
         })
@@ -530,16 +600,16 @@ pub fn game_view(props: &GameViewProps) -> Html {
         let did_pan = did_pan.clone();
         let tile_size_px = props.globals.tile_size_px;
 
-        Callback::from(move |(cx, cy, is_right_click): (f64, f64, bool)| {
+        Callback::from(move |input: InputEnd| {
             if reducer.is_dead {
                 drag_start.set(None);
-                manager_ref.borrow_mut().velocity = (0.0, 0.0);
+                manager_ref.borrow_mut().velocity = Vec2::ZERO;
                 *did_pan.borrow_mut() = false;
                 return;
             }
             if manager_ref.borrow().input_locked {
                 drag_start.set(None);
-                manager_ref.borrow_mut().velocity = (0.0, 0.0);
+                manager_ref.borrow_mut().velocity = Vec2::ZERO;
                 *did_pan.borrow_mut() = false;
                 return;
             }
@@ -547,21 +617,20 @@ pub fn game_view(props: &GameViewProps) -> Html {
             drag_start.set(None);
 
             let mut is_tap = true;
-            if let Some((sx, sy, allow_panning)) = start {
-                let dx = cx - sx;
-                let dy = cy - sy;
-                let dist = (dx * dx + dy * dy).sqrt();
+            if let Some(start) = start {
+                let delta = input.pos - start.pos;
+                let dist = delta.length();
                 if *did_pan.borrow() {
                     is_tap = false;
                 }
-                if allow_panning && dist > 10.0 {
+                if start.allow_panning && dist > 10.0 {
                     is_tap = false;
                 }
-                if !allow_panning {
-                    manager_ref.borrow_mut().velocity = (0.0, 0.0);
+                if !start.allow_panning {
+                    manager_ref.borrow_mut().velocity = Vec2::ZERO;
                 }
             } else {
-                manager_ref.borrow_mut().velocity = (0.0, 0.0);
+                manager_ref.borrow_mut().velocity = Vec2::ZERO;
             }
             *did_pan.borrow_mut() = false;
 
@@ -574,18 +643,10 @@ pub fn game_view(props: &GameViewProps) -> Html {
             let manager = manager_ref.borrow_mut();
             let zoom = manager.zoom;
             let tile_size = tile_size_px * zoom;
-            let x = cx - rect.left();
-            let y = cy - rect.top();
-
-            let world_x = x + manager.camera.0 - (canvas.width() as f64 / 2.0);
-            let world_y = y + manager.camera.1 - (canvas.height() as f64 / 2.0);
-
-            let grid_x = (world_x / tile_size).floor() as i32;
-            let grid_y = (world_y / tile_size).floor() as i32;
-            let target = IVec2::new(grid_x, grid_y);
+            let target = screen_to_grid(input.pos, &rect, &canvas, manager.camera, tile_size);
             let player_id = reducer.player_id.unwrap_or_else(PlayerId::nil);
 
-            if is_right_click {
+            if input.is_right_click {
                 selected_piece_id.set(None);
                 reducer.dispatch(GameAction::ClearPmQueue(PieceId::nil()));
                 return;
@@ -663,8 +724,8 @@ pub fn game_view(props: &GameViewProps) -> Html {
             let prev = *drag_start;
             drag_start.set(None);
             *did_pan.borrow_mut() = false;
-            if let Some((_, _, allow_panning)) = prev
-                && allow_panning
+            if let Some(prev) = prev
+                && prev.allow_panning
             {
                 // Treat like a mouse release: keep current velocity for inertia but lock target to current position
                 let mut mgr = manager_ref.borrow_mut();
@@ -681,14 +742,16 @@ pub fn game_view(props: &GameViewProps) -> Html {
         use_effect_with(props.reducer.is_dead, move |is_dead| {
             if *is_dead {
                 drag_start.set(None);
-                manager_ref.borrow_mut().velocity = (0.0, 0.0);
+                manager_ref.borrow_mut().velocity = Vec2::ZERO;
                 *did_pan.borrow_mut() = false;
             }
             || ()
         });
     }
 
-    let (width, height) = *window_size;
+    let window_size = *window_size;
+    let width = window_size.x;
+    let height = window_size.y;
 
     let player_id = props.reducer.player_id.unwrap_or_else(PlayerId::nil);
     let player_score = props
@@ -713,15 +776,16 @@ pub fn game_view(props: &GameViewProps) -> Html {
         .filter(|p| p.owner_id == Some(player_id))
         .collect();
 
+    let cam = *cam_state;
     let mut active_shops = Vec::new();
     for shop in &props.reducer.state.shops {
         if let Some(p) = player_pieces.iter().find(|p| p.position == shop.position) {
             let tile_size = props.globals.tile_size_px;
-            let px_x = p.position.x as f64 * tile_size + tile_size / 2.0;
-            let px_y = p.position.y as f64 * tile_size + tile_size / 2.0;
-            let dx = px_x - cam_state.0;
-            let dy = px_y - cam_state.1;
-            let dist_sq = dx * dx + dy * dy;
+            let piece_pos = vec2(
+                p.position.x as f64 * tile_size + tile_size / 2.0,
+                p.position.y as f64 * tile_size + tile_size / 2.0,
+            );
+            let dist_sq = (piece_pos - cam).length_squared();
             active_shops.push((shop, (*p).clone(), dist_sq));
         }
     }
@@ -735,19 +799,27 @@ pub fn game_view(props: &GameViewProps) -> Html {
              onmousedown={
                  let handle_input_start = handle_input_start.clone();
                  Callback::from(move |e: MouseEvent| {
-                     handle_input_start.emit((e.client_x() as f64, e.client_y() as f64, e.button() == 2));
+                     handle_input_start.emit(InputStart {
+                         pos: vec2(e.client_x() as f64, e.client_y() as f64),
+                         is_right_click: e.button() == 2,
+                     });
                  })
              }
              onmousemove={
                  let handle_input_move = handle_input_move.clone();
                  Callback::from(move |e: MouseEvent| {
-                     handle_input_move.emit((e.client_x() as f64, e.client_y() as f64));
+                     handle_input_move.emit(InputMove {
+                         pos: vec2(e.client_x() as f64, e.client_y() as f64),
+                     });
                  })
              }
              onmouseup={
                  let handle_input_end = handle_input_end.clone();
                  Callback::from(move |e: MouseEvent| {
-                     handle_input_end.emit((e.client_x() as f64, e.client_y() as f64, e.button() == 2));
+                     handle_input_end.emit(InputEnd {
+                         pos: vec2(e.client_x() as f64, e.client_y() as f64),
+                         is_right_click: e.button() == 2,
+                     });
                  })
              }
              onmouseleave={handle_mouse_leave}
@@ -772,23 +844,25 @@ pub fn game_view(props: &GameViewProps) -> Html {
                         // Begin pinch zoom
                         let t0 = e.touches().get(0).unwrap();
                         let t1 = e.touches().get(1).unwrap();
-                        let dx = t1.client_x() as f64 - t0.client_x() as f64;
-                        let dy = t1.client_y() as f64 - t0.client_y() as f64;
-                        let dist = (dx * dx + dy * dy).sqrt();
-                        let cx = (t0.client_x() as f64 + t1.client_x() as f64) / 2.0;
-                        let cy = (t0.client_y() as f64 + t1.client_y() as f64) / 2.0;
+                        let p0 = vec2(t0.client_x() as f64, t0.client_y() as f64);
+                        let p1 = vec2(t1.client_x() as f64, t1.client_y() as f64);
+                        let dist = (p1 - p0).length();
+                        let center = (p0 + p1) * 0.5;
                         let mut mgr = manager_ref.borrow_mut();
                         mgr.last_touch_dist = Some(dist);
-                        mgr.last_touch_center = Some((cx, cy));
-                        mgr.velocity = (0.0, 0.0);
+                        mgr.last_touch_center = Some(center);
+                        mgr.velocity = Vec2::ZERO;
                         drop(mgr);
                         drag_start.set(None);
                         if let Ok(mut s) = latest_state.try_borrow_mut() {
-                            s.1 = false;
+                            s.is_dragging = false;
                         }
                     } else if let Some(touch) = e.touches().get(0) {
                         *touch_gesture_active.borrow_mut() = false;
-                        handle_input_start.emit((touch.client_x() as f64, touch.client_y() as f64, false));
+                        handle_input_start.emit(InputStart {
+                            pos: vec2(touch.client_x() as f64, touch.client_y() as f64),
+                            is_right_click: false,
+                        });
                         let mut mgr = manager_ref.borrow_mut();
                         mgr.last_touch_dist = None;
                         mgr.last_touch_center = None;
@@ -819,23 +893,20 @@ pub fn game_view(props: &GameViewProps) -> Html {
                         *touch_gesture_active.borrow_mut() = true;
                         let t0 = e.touches().get(0).unwrap();
                         let t1 = e.touches().get(1).unwrap();
-                        let dx = t1.client_x() as f64 - t0.client_x() as f64;
-                        let dy = t1.client_y() as f64 - t0.client_y() as f64;
-                        let dist = (dx * dx + dy * dy).sqrt();
+                        let p0 = vec2(t0.client_x() as f64, t0.client_y() as f64);
+                        let p1 = vec2(t1.client_x() as f64, t1.client_y() as f64);
+                        let dist = (p1 - p0).length();
+                        let center = (p0 + p1) * 0.5;
                         let mut mgr = manager_ref.borrow_mut();
                         if let Some(prev) = mgr.last_touch_dist {
                             let factor = (dist / prev).powf(0.8); // dampen sensitivity
-                            let cx = (t0.client_x() as f64 + t1.client_x() as f64) / 2.0;
-                            let cy = (t0.client_y() as f64 + t1.client_y() as f64) / 2.0;
-                            mgr.mouse_pos = (cx, cy);
-                            if let Some((pcx, pcy)) = mgr.last_touch_center {
-                                let pan_dx = cx - pcx;
-                                let pan_dy = cy - pcy;
-                                mgr.camera.0 -= pan_dx;
-                                mgr.camera.1 -= pan_dy;
+                            mgr.mouse_pos = center;
+                            if let Some(prev_center) = mgr.last_touch_center {
+                                let pan = center - prev_center;
+                                mgr.camera -= pan;
                                 mgr.target_camera = mgr.camera;
                             }
-                            mgr.last_touch_center = Some((cx, cy));
+                            mgr.last_touch_center = Some(center);
                             let old_zoom = mgr.zoom;
                             let new_zoom = (old_zoom * factor).clamp(zoom_min, zoom_max);
                             if (new_zoom - old_zoom).abs() > 0.000001 {
@@ -843,17 +914,18 @@ pub fn game_view(props: &GameViewProps) -> Html {
                                     canvas_ref.cast::<web_sys::HtmlCanvasElement>()
                                 {
                                     let rect = canvas.get_bounding_client_rect();
-                                    let mx = cx - rect.left() - (canvas.width() as f64 / 2.0);
-                                    let my = cy - rect.top() - (canvas.height() as f64 / 2.0);
+                                    let screen_pos = center - vec2(rect.left(), rect.top());
+                                    let canvas_center =
+                                        vec2(canvas.width() as f64 / 2.0, canvas.height() as f64 / 2.0);
+                                    let mouse_delta = screen_pos - canvas_center;
                                     let ratio = new_zoom / old_zoom;
-                                    mgr.camera.0 = ratio * (mgr.camera.0 + mx) - mx;
-                                    mgr.camera.1 = ratio * (mgr.camera.1 + my) - my;
+                                    mgr.camera = (mgr.camera + mouse_delta) * ratio - mouse_delta;
                                     mgr.target_camera = mgr.camera;
                                 }
                             }
                             mgr.target_zoom = new_zoom;
                             mgr.zoom = new_zoom; // apply immediately for smooth pinch
-                            mgr.velocity = (0.0, 0.0);
+                            mgr.velocity = Vec2::ZERO;
                             mgr.last_touch_dist = Some(dist);
                             let new_cam = mgr.camera;
                             let new_zoom = mgr.zoom;
@@ -865,14 +937,13 @@ pub fn game_view(props: &GameViewProps) -> Html {
                             drop(mgr);
                         }
                         if let Ok(mut s) = latest_state.try_borrow_mut() {
-                            s.1 = false;
+                            s.is_dragging = false;
                         }
                     } else if let Some(touch) = e.touches().get(0) {
-                        if let Some((sx, sy, allow_panning)) = *drag_start {
-                            let dx = touch.client_x() as f64 - sx;
-                            let dy = touch.client_y() as f64 - sy;
-                            let dist = (dx * dx + dy * dy).sqrt();
-                            if allow_panning && dist > 10.0 {
+                        let pos = vec2(touch.client_x() as f64, touch.client_y() as f64);
+                        if let Some(start) = *drag_start {
+                            let dist = (pos - start.pos).length();
+                            if start.allow_panning && dist > 10.0 {
                                 *touch_gesture_active.borrow_mut() = true;
                             }
                         }
@@ -881,7 +952,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
                             mgr.last_touch_dist = None;
                             mgr.last_touch_center = None;
                         }
-                        handle_input_move.emit((touch.client_x() as f64, touch.client_y() as f64));
+                        handle_input_move.emit(InputMove { pos });
                     }
                 })
             }
@@ -904,7 +975,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
                     }
                     drag_start.set(None);
                     if let Ok(mut s) = latest_state.try_borrow_mut() {
-                        s.1 = false;
+                        s.is_dragging = false;
                     }
                     {
                         let mut gesture = touch_gesture_active.borrow_mut();
@@ -921,22 +992,26 @@ pub fn game_view(props: &GameViewProps) -> Html {
                                 .and_then(|w| w.performance())
                                 .map(|p| p.now())
                                 .unwrap_or(0.0);
-                            let x = touch.client_x() as f64;
-                            let y = touch.client_y() as f64;
+                            let pos = vec2(touch.client_x() as f64, touch.client_y() as f64);
                             let mut last = last_tap.borrow_mut();
-                            if let Some((prev_time, prev_x, prev_y)) = *last {
-                                let dt = now - prev_time;
-                                let dx = x - prev_x;
-                                let dy = y - prev_y;
-                                if dt <= 300.0 && (dx * dx + dy * dy) <= 900.0 {
+                            if let Some(prev) = *last {
+                                let dt = now - prev.time_ms;
+                                let delta = pos - prev.pos;
+                                if dt <= 300.0 && delta.length_squared() <= 900.0 {
                                     *last = None;
                                     request_fullscreen();
                                     return;
                                 }
                             }
-                            *last = Some((now, x, y));
+                            *last = Some(LastTap {
+                                time_ms: now,
+                                pos,
+                            });
                         }
-                        handle_input_end.emit((touch.client_x() as f64, touch.client_y() as f64, false));
+                        handle_input_end.emit(InputEnd {
+                            pos: vec2(touch.client_x() as f64, touch.client_y() as f64),
+                            is_right_click: false,
+                        });
                     }
                 })
             }

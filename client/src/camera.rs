@@ -1,35 +1,36 @@
 //! Camera update logic for panning, zooming, and follow behavior.
 
+use crate::math::Vec2;
+use crate::reducer::ClientPhase;
 use common::logic::evaluate_expression;
 use common::*;
-use crate::reducer::ClientPhase;
 use yew::prelude::*;
 
 /// Mutable camera state for smooth panning and zoom transitions.
 pub struct CameraManager {
-    pub camera: (f64, f64),
-    pub target_camera: (f64, f64),
+    pub camera: Vec2,
+    pub target_camera: Vec2,
     pub zoom: f64,
     pub target_zoom: f64,
-    pub mouse_pos: (f64, f64),
-    pub velocity: (f64, f64),
+    pub mouse_pos: Vec2,
+    pub velocity: Vec2,
     pub input_locked: bool,
     pub was_alive: bool,
     pub last_king_grid_pos: glam::IVec2,
     pub last_touch_dist: Option<f64>,
-    pub last_touch_center: Option<(f64, f64)>,
+    pub last_touch_center: Option<Vec2>,
 }
 
 impl CameraManager {
     /// Creates a camera manager with default pan/zoom state.
     pub fn new() -> Self {
         Self {
-            camera: (0.0, 0.0),
-            target_camera: (0.0, 0.0),
+            camera: Vec2::ZERO,
+            target_camera: Vec2::ZERO,
             zoom: 1.0,
             target_zoom: 1.0,
-            mouse_pos: (0.0, 0.0),
-            velocity: (0.0, 0.0),
+            mouse_pos: Vec2::ZERO,
+            velocity: Vec2::ZERO,
             input_locked: false,
             was_alive: false,
             last_king_grid_pos: glam::IVec2::ZERO,
@@ -84,12 +85,12 @@ pub fn update_camera(manager: &mut CameraManager, params: CameraUpdateParams<'_>
 
             // Mouse position relative to canvas center
             // When dead, anchor zoom to canvas center so the death focus stays accurate.
-            let (mx, my) = if params.phase == ClientPhase::Dead {
-                (0.0, 0.0)
+            let mouse_delta = if params.phase == ClientPhase::Dead {
+                Vec2::ZERO
             } else {
-                (
-                    manager.mouse_pos.0 - rect.left() - (canvas.width() as f64 / 2.0),
-                    manager.mouse_pos.1 - rect.top() - (canvas.height() as f64 / 2.0),
+                Vec2::new(
+                    manager.mouse_pos.x - rect.left() - (canvas.width() as f64 / 2.0),
+                    manager.mouse_pos.y - rect.top() - (canvas.height() as f64 / 2.0),
                 )
             };
 
@@ -105,10 +106,8 @@ pub fn update_camera(manager: &mut CameraManager, params: CameraUpdateParams<'_>
             // CameraPos' = Ratio * (CameraPos + M - CanvasWidth/2) - (M - CanvasWidth/2)
 
             if params.phase != ClientPhase::Dead {
-                manager.camera.0 = ratio * (manager.camera.0 + mx) - mx;
-                manager.camera.1 = ratio * (manager.camera.1 + my) - my;
-                manager.target_camera.0 = ratio * (manager.target_camera.0 + mx) - mx;
-                manager.target_camera.1 = ratio * (manager.target_camera.1 + my) - my;
+                manager.camera = (manager.camera + mouse_delta) * ratio - mouse_delta;
+                manager.target_camera = (manager.target_camera + mouse_delta) * ratio - mouse_delta;
             }
             changed = true;
         }
@@ -116,17 +115,15 @@ pub fn update_camera(manager: &mut CameraManager, params: CameraUpdateParams<'_>
 
     // 2. Velocity (inertia)
     if !params.is_dragging {
-        if manager.velocity.0.abs() > params.velocity_cutoff
-            || manager.velocity.1.abs() > params.velocity_cutoff
+        if manager.velocity.x.abs() > params.velocity_cutoff
+            || manager.velocity.y.abs() > params.velocity_cutoff
         {
-            manager.camera.0 += manager.velocity.0;
-            manager.camera.1 += manager.velocity.1;
-            manager.velocity.0 *= params.inertia_decay;
-            manager.velocity.1 *= params.inertia_decay;
+            manager.camera += manager.velocity;
+            manager.velocity *= params.inertia_decay;
             manager.target_camera = manager.camera;
             changed = true;
         } else {
-            manager.velocity = (0.0, 0.0);
+            manager.velocity = Vec2::ZERO;
         }
     } else {
         manager.target_camera = manager.camera;
@@ -140,10 +137,11 @@ pub fn update_camera(manager: &mut CameraManager, params: CameraUpdateParams<'_>
             let tile_size = params.tile_size_px * manager.zoom;
             let kpx = king.position.x as f64 * tile_size + tile_size / 2.0;
             let kpy = king.position.y as f64 * tile_size + tile_size / 2.0;
+            let king_pos = Vec2::new(kpx, kpy);
 
             if !manager.was_alive {
                 // Respawn or First Join: Set target to king and start panning
-                manager.target_camera = (kpx, kpy);
+                manager.target_camera = king_pos;
                 manager.target_zoom = 1.0;
                 manager.last_king_grid_pos = king.position;
                 manager.input_locked = true;
@@ -165,19 +163,16 @@ pub fn update_camera(manager: &mut CameraManager, params: CameraUpdateParams<'_>
                 let limit_radius_tiles = evaluate_expression(&m.camera_pan_limit, &vars);
                 let limit_radius_px = limit_radius_tiles * tile_size;
 
-                let dx = manager.camera.0 - kpx;
-                let dy = manager.camera.1 - kpy;
-                let dist = (dx * dx + dy * dy).sqrt();
+                let delta = manager.camera - king_pos;
+                let dist = delta.length();
 
                 if dist > limit_radius_px && dist > 0.1 && !params.is_dragging {
                     // Not dragging: Smoothly interpolate back to the allowed region
                     let target_dist = limit_radius_px;
                     let ratio = target_dist / dist;
-                    let target_x = kpx + dx * ratio;
-                    let target_y = kpy + dy * ratio;
+                    let target = king_pos + delta * ratio;
 
-                    manager.target_camera.0 = target_x;
-                    manager.target_camera.1 = target_y;
+                    manager.target_camera = target;
                 }
             }
         }
@@ -189,17 +184,17 @@ pub fn update_camera(manager: &mut CameraManager, params: CameraUpdateParams<'_>
             let tile_size = params.tile_size_px * target_zoom;
             let desired_focus_x = grid_pos.x as f64 * tile_size + tile_size / 2.0;
             let desired_focus_y = grid_pos.y as f64 * tile_size + tile_size / 2.0;
-            manager.target_camera = (desired_focus_x, desired_focus_y);
+            manager.target_camera = Vec2::new(desired_focus_x, desired_focus_y);
             manager.target_zoom = target_zoom.clamp(params.zoom_min, params.zoom_max);
             manager.was_alive = false;
-            manager.velocity = (0.0, 0.0);
+            manager.velocity = Vec2::ZERO;
             manager.input_locked = false;
             changed = true;
         }
     } else if params.phase == ClientPhase::Menu {
         // Menu / Choose Army screen
         // In this coordinate system, (0,0) is the center of the board
-        manager.target_camera = (0.0, 0.0);
+        manager.target_camera = Vec2::ZERO;
         manager.target_zoom = 1.0;
         manager.was_alive = false;
         manager.input_locked = false;
@@ -211,23 +206,21 @@ pub fn update_camera(manager: &mut CameraManager, params: CameraUpdateParams<'_>
 
     // 5. Final interpolation for target_camera
     if !params.is_dragging
-        && ((manager.target_camera.0 - manager.camera.0).abs() > 0.1
-            || (manager.target_camera.1 - manager.camera.1).abs() > 0.1)
+        && ((manager.target_camera.x - manager.camera.x).abs() > 0.1
+            || (manager.target_camera.y - manager.camera.y).abs() > 0.1)
     {
         let factor = if is_alive {
             params.pan_lerp_alive
         } else {
             params.pan_lerp_dead
         }; // Slightly slower pan in menus
-        manager.camera.0 += (manager.target_camera.0 - manager.camera.0) * factor;
-        manager.camera.1 += (manager.target_camera.1 - manager.camera.1) * factor;
+        manager.camera += (manager.target_camera - manager.camera) * factor;
         changed = true;
     }
 
     if manager.input_locked {
-        let dx = manager.target_camera.0 - manager.camera.0;
-        let dy = manager.target_camera.1 - manager.camera.1;
-        let close_enough = dx.abs() < 1.0 && dy.abs() < 1.0;
+        let delta = manager.target_camera - manager.camera;
+        let close_enough = delta.x.abs() < 1.0 && delta.y.abs() < 1.0;
         let zoom_synced = (manager.target_zoom - manager.zoom).abs() < 0.01;
         if close_enough && zoom_synced {
             manager.input_locked = false;
