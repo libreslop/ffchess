@@ -3,7 +3,6 @@
 use crate::canvas::color::{PieceIconColors, piece_icon_colors};
 use crate::canvas::types::{PieceDrawParams, PieceNameDrawParams, PieceSvgKey, Renderer};
 use crate::math::{Vec2, vec2};
-use common::models::PieceConfig;
 use common::types::PieceTypeId;
 use gloo_net::http::Request;
 use js_sys;
@@ -28,11 +27,11 @@ impl Renderer {
             .as_ref()
             .filter(|img| img.complete() && img.natural_width() > 0);
 
-        // Prefer SVGs when available; fall back to the circle + chess letter when missing.
+        // Prefer SVGs when available; fall back to a simple circle when missing.
         if let Some(image) = svg_ready {
             self.draw_piece_icon(image, params, tile_size);
         } else {
-            self.draw_piece_fallback(&base_color, config, params, zoom, tile_size);
+            self.draw_piece_fallback(&base_color, params, zoom, tile_size);
         }
 
         // Only draw cooldown on the real (non-ghost) piece for the owner.
@@ -71,7 +70,6 @@ impl Renderer {
     fn draw_piece_fallback(
         &self,
         base_color: &str,
-        config: Option<&PieceConfig>,
         params: PieceDrawParams<'_>,
         zoom: f64,
         tile_size: f64,
@@ -96,13 +94,9 @@ impl Renderer {
             .set_fill_style_str(&format!("rgba(255, 255, 255, {})", params.alpha));
         let font_size = 16.0 * zoom;
         self.ctx.set_font(&format!("bold {}px Arbutus", font_size));
-
-        let label = config
-            .map(|c| fallback_piece_label(&params.piece.piece_type, &c.display_name))
-            .unwrap_or_else(|| "?".to_string());
-
+        let label = "?";
         let _ = self.ctx.fill_text(
-            &label,
+            label,
             pos.x * tile_size + params.offset_x + tile_size / 2.0 - (5.0 * zoom),
             pos.y * tile_size + params.offset_y + tile_size / 2.0 + (6.0 * zoom),
         );
@@ -282,20 +276,4 @@ fn piece_pos(params: PieceDrawParams<'_>) -> Vec2 {
     params.pos_override.unwrap_or_else(|| {
         vec2(params.piece.position.x as f64, params.piece.position.y as f64)
     })
-}
-
-fn fallback_piece_label(piece_type: &PieceTypeId, display_name: &str) -> String {
-    match piece_type.as_ref() {
-        "king" => "K".to_string(),
-        "queen" => "Q".to_string(),
-        "rook" => "R".to_string(),
-        "bishop" => "B".to_string(),
-        "knight" => "N".to_string(),
-        "pawn" => "P".to_string(),
-        _ => display_name
-            .chars()
-            .next()
-            .map(|c| c.to_ascii_uppercase().to_string())
-            .unwrap_or_else(|| "?".to_string()),
-    }
 }
