@@ -802,7 +802,8 @@ pub fn game_view(props: &GameViewProps) -> Html {
             }
             ontouchmove={
                 let handle_input_move = handle_input_move.clone();
-               let manager_ref = manager_ref.clone();
+                let manager_ref = manager_ref.clone();
+                let canvas_ref = canvas_ref.clone();
                 let is_dead = props.reducer.is_dead;
                 let cam_state = cam_state.clone();
                 let zoom_state = zoom_state.clone();
@@ -840,8 +841,23 @@ pub fn game_view(props: &GameViewProps) -> Html {
                                 mgr.target_camera = mgr.camera;
                             }
                             mgr.last_touch_center = Some((cx, cy));
-                            mgr.target_zoom = (mgr.target_zoom * factor).clamp(zoom_min, zoom_max);
-                            mgr.zoom = mgr.target_zoom; // apply immediately for smooth pinch
+                            let old_zoom = mgr.zoom;
+                            let new_zoom = (old_zoom * factor).clamp(zoom_min, zoom_max);
+                            if (new_zoom - old_zoom).abs() > 0.000001 {
+                                if let Some(canvas) =
+                                    canvas_ref.cast::<web_sys::HtmlCanvasElement>()
+                                {
+                                    let rect = canvas.get_bounding_client_rect();
+                                    let mx = cx - rect.left() - (canvas.width() as f64 / 2.0);
+                                    let my = cy - rect.top() - (canvas.height() as f64 / 2.0);
+                                    let ratio = new_zoom / old_zoom;
+                                    mgr.camera.0 = ratio * (mgr.camera.0 + mx) - mx;
+                                    mgr.camera.1 = ratio * (mgr.camera.1 + my) - my;
+                                    mgr.target_camera = mgr.camera;
+                                }
+                            }
+                            mgr.target_zoom = new_zoom;
+                            mgr.zoom = new_zoom; // apply immediately for smooth pinch
                             mgr.velocity = (0.0, 0.0);
                             mgr.last_touch_dist = Some(dist);
                             let new_cam = mgr.camera;
