@@ -1,6 +1,6 @@
 {
     "display_name": "Rook",
-    "char": "R",
+    "svg_path": "rook.svg",
     "score_value": 50,
     "cooldown_ms": 3000,
     "move_paths": [

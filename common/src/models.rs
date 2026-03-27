@@ -13,7 +13,7 @@ use std::collections::HashMap;
 pub struct PieceConfig {
     pub id: PieceTypeId,
     pub display_name: String,
-    pub char: char,
+    pub svg_path: String,
     pub score_value: Score,
     pub cooldown_ms: DurationMs,
     pub move_paths: Vec<Vec<IVec2>>,

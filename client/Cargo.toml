@@ -12,6 +12,7 @@ web-sys = { version = "0.3", features = [
     "CanvasRenderingContext2d", 
     "CanvasGradient",
     "HtmlCanvasElement", 
+    "HtmlImageElement",
     "Window", 
     "Document", 
     "Element", 

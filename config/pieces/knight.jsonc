@@ -1,6 +1,6 @@
 {
     "display_name": "Knight",
-    "char": "N",
+    "svg_path": "knight.svg",
     "score_value": 30,
     "cooldown_ms": 2000,
     "move_paths": [

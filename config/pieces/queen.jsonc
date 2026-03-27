@@ -1,6 +1,6 @@
 {
     "display_name": "Queen",
-    "char": "Q",
+    "svg_path": "queen.svg",
     "score_value": 90,
     "cooldown_ms": 5000,
     "move_paths": [

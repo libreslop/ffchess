@@ -1,6 +1,6 @@
 {
     "display_name": "Bishop",
-    "char": "B",
+    "svg_path": "bishop.svg",
     "score_value": 30,
     "cooldown_ms": 2500,
     "move_paths": [

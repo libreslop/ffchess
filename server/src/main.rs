@@ -35,6 +35,7 @@ async fn main() {
 
     let app = Router::new()
         .route("/ping", get(|| async { "pong" }))
+        .nest_service("/assets", ServeDir::new(server::paths::assets_dir()))
         .nest(
             "/api",
             Router::new()

@@ -1,12 +1,14 @@
 //! Canvas rendering implementation for the board and pieces.
 
 use super::color::hex_to_rgba;
-use super::types::{PieceDrawParams, PieceNameDrawParams, RenderParams, Renderer};
+use super::types::{PieceDrawParams, PieceNameDrawParams, PieceSvgCache, RenderParams, Renderer};
 use common::logic::{evaluate_expression, is_valid_move, is_within_board};
-use common::models::{PieceConfig, ShopConfig};
-use common::types::{PieceTypeId, PlayerId, ShopId};
+use common::models::PieceConfig;
+use common::types::{PieceTypeId, PlayerId};
 use glam::IVec2;
 use std::collections::HashMap;
+use std::cell::RefCell;
+use std::rc::Rc;
 use wasm_bindgen::JsCast;
 use web_sys::HtmlCanvasElement;
 
@@ -18,7 +20,6 @@ impl Renderer {
     pub fn new(
         canvas: HtmlCanvasElement,
         piece_configs: HashMap<PieceTypeId, PieceConfig>,
-        shop_configs: HashMap<ShopId, ShopConfig>,
     ) -> Self {
         let ctx = canvas
             .get_context("2d")
@@ -29,7 +30,7 @@ impl Renderer {
         Self {
             ctx,
             piece_configs,
-            shop_configs,
+            svg_cache: Rc::new(RefCell::new(PieceSvgCache::new())),
         }
     }
 
@@ -179,6 +180,29 @@ impl Renderer {
                     tile_size - 10.0 * zoom,
                 );
             }
+        }
+
+        // Selected piece highlight
+        if let Some(sid) = selected_piece_id
+            && let Some(piece) = ghost_pieces.get(&sid)
+            && (piece.position - king_pos).abs().max_element() <= view_radius_squares + 2
+        {
+            let highlight = if let Some(owner_id) = piece.owner_id {
+                if let Some(player) = state.players.get(&owner_id) {
+                    hex_to_rgba(player.color.as_ref(), 0.2)
+                } else {
+                    "rgba(59, 130, 246, 0.2)".to_string()
+                }
+            } else {
+                "rgba(59, 130, 246, 0.2)".to_string()
+            };
+            self.ctx.set_fill_style_str(&highlight);
+            self.ctx.fill_rect(
+                piece.position.x as f64 * tile_size + offset_x + 2.0,
+                piece.position.y as f64 * tile_size + offset_y + 2.0,
+                tile_size - 4.0,
+                tile_size - 4.0,
+            );
         }
 
         // Highlights for valid moves

@@ -3,15 +3,41 @@
 use crate::reducer::Pmove;
 use common::models::{GameModeClientConfig, GameState, Piece, PieceConfig, ShopConfig};
 use common::types::{PieceId, PieceTypeId, PlayerId, ShopId};
-use std::collections::HashMap;
-use web_sys::CanvasRenderingContext2d;
+use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
+use web_sys::{CanvasRenderingContext2d, HtmlImageElement};
 
 /// Canvas renderer with cached configs and drawing state.
-#[derive(Clone, PartialEq)]
+#[derive(Clone)]
 pub struct Renderer {
     pub ctx: CanvasRenderingContext2d,
     pub piece_configs: HashMap<PieceTypeId, PieceConfig>,
-    pub shop_configs: HashMap<ShopId, ShopConfig>,
+    pub(crate) svg_cache: Rc<RefCell<PieceSvgCache>>,
+}
+
+/// Cached SVG templates and colored image instances for piece icons.
+#[derive(Default)]
+pub(crate) struct PieceSvgCache {
+    pub(crate) templates: HashMap<PieceTypeId, String>,
+    pub(crate) pending: HashSet<PieceTypeId>,
+    pub(crate) images: HashMap<PieceSvgKey, HtmlImageElement>,
+}
+
+impl PieceSvgCache {
+    /// Creates an empty SVG cache.
+    pub(crate) fn new() -> Self {
+        Self::default()
+    }
+}
+
+/// Cache key for a specific piece icon tinted with team colors.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(crate) struct PieceSvgKey {
+    pub(crate) piece_type: PieceTypeId,
+    pub(crate) primary: String,
+    pub(crate) secondary: String,
+    pub(crate) tertiary: String,
 }
 
 /// Parameters for drawing a single piece.

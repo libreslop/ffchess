@@ -127,16 +127,11 @@ pub fn game_view(props: &GameViewProps) -> Html {
     {
         let renderer_state = renderer_state.clone();
         let piece_configs = props.reducer.piece_configs.clone();
-        let shop_configs = props.reducer.shop_configs.clone();
         use_effect_with(
-            (canvas_ref.clone(), piece_configs, shop_configs),
-            move |(canvas_ref, piece_configs, shop_configs)| {
+            (canvas_ref.clone(), piece_configs),
+            move |(canvas_ref, piece_configs)| {
                 if let Some(canvas) = canvas_ref.cast::<HtmlCanvasElement>() {
-                    renderer_state.set(Some(Renderer::new(
-                        canvas,
-                        piece_configs.clone(),
-                        shop_configs.clone(),
-                    )));
+                    renderer_state.set(Some(Renderer::new(canvas, piece_configs.clone())));
                 }
                 || ()
             },

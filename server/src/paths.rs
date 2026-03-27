@@ -15,3 +15,17 @@ pub fn client_dist_dir() -> PathBuf {
         .find(|path| path.is_dir())
         .unwrap_or_else(|| PathBuf::from("client/dist"))
 }
+
+/// Resolve the shared assets directory from common run locations.
+///
+/// Returns a `PathBuf` pointing to the static assets directory.
+pub fn assets_dir() -> PathBuf {
+    let candidates = [
+        PathBuf::from("assets"),
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../assets"),
+    ];
+    candidates
+        .into_iter()
+        .find(|path| path.is_dir())
+        .unwrap_or_else(|| PathBuf::from("assets"))
+}
