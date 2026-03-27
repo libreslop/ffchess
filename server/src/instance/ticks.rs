@@ -27,7 +27,7 @@ impl GameInstance {
         // Periodic cleanup (approx. every minute)
         static TICK_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let tick = TICK_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        if tick % 600 == 0 {
+        if tick.is_multiple_of(600) {
             // Cleanup death timestamps
             let mut dt = self.death_timestamps.write().await;
             dt.retain(|_, timestamp_ms| {

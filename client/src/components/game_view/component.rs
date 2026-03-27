@@ -909,19 +909,18 @@ pub fn game_view(props: &GameViewProps) -> Html {
                             mgr.last_touch_center = Some(center);
                             let old_zoom = mgr.zoom;
                             let new_zoom = (old_zoom * factor).clamp(zoom_min, zoom_max);
-                            if (new_zoom - old_zoom).abs() > 0.000001 {
-                                if let Some(canvas) =
+                            if (new_zoom - old_zoom).abs() > 0.000001
+                                && let Some(canvas) =
                                     canvas_ref.cast::<web_sys::HtmlCanvasElement>()
-                                {
-                                    let rect = canvas.get_bounding_client_rect();
-                                    let screen_pos = center - vec2(rect.left(), rect.top());
-                                    let canvas_center =
-                                        vec2(canvas.width() as f64 / 2.0, canvas.height() as f64 / 2.0);
-                                    let mouse_delta = screen_pos - canvas_center;
-                                    let ratio = new_zoom / old_zoom;
-                                    mgr.camera = (mgr.camera + mouse_delta) * ratio - mouse_delta;
-                                    mgr.target_camera = mgr.camera;
-                                }
+                            {
+                                let rect = canvas.get_bounding_client_rect();
+                                let screen_pos = center - vec2(rect.left(), rect.top());
+                                let canvas_center =
+                                    vec2(canvas.width() as f64 / 2.0, canvas.height() as f64 / 2.0);
+                                let mouse_delta = screen_pos - canvas_center;
+                                let ratio = new_zoom / old_zoom;
+                                mgr.camera = (mgr.camera + mouse_delta) * ratio - mouse_delta;
+                                mgr.target_camera = mgr.camera;
                             }
                             mgr.target_zoom = new_zoom;
                             mgr.zoom = new_zoom; // apply immediately for smooth pinch
