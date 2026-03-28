@@ -7,7 +7,7 @@ use common::types::{PieceId, PieceTypeId, PlayerId, ShopId};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
-use web_sys::{CanvasRenderingContext2d, HtmlImageElement};
+use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, HtmlImageElement};
 
 /// Canvas renderer with cached configs and drawing state.
 #[derive(Clone)]
@@ -23,6 +23,7 @@ pub(crate) struct PieceSvgCache {
     pub(crate) templates: HashMap<PieceTypeId, String>,
     pub(crate) pending: HashSet<PieceTypeId>,
     pub(crate) images: HashMap<PieceSvgKey, HtmlImageElement>,
+    pub(crate) rasters: HashMap<PieceSvgKey, HtmlCanvasElement>,
 }
 
 impl PieceSvgCache {

@@ -6,8 +6,18 @@ use crate::math::{Vec2, vec2};
 use common::types::PieceTypeId;
 use gloo_net::http::Request;
 use js_sys;
+use wasm_bindgen::JsCast;
+use wasm_bindgen::JsValue;
 use wasm_bindgen_futures::spawn_local;
-use web_sys::HtmlImageElement;
+use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, HtmlImageElement};
+
+const PIECE_RASTER_SIZE_PX: u32 = 256;
+
+/// Loaded SVG image plus its cache key.
+struct PieceSvgHandle {
+    key: PieceSvgKey,
+    image: HtmlImageElement,
+}
 
 impl Renderer {
     /// Draws a piece glyph, cooldown bar, and optional nameplate.
@@ -20,16 +30,16 @@ impl Renderer {
         let colors = piece_icon_colors(&base_color);
         let config = self.piece_configs.get(&params.piece.piece_type);
 
-        let svg_image = config.and_then(|cfg| {
+        let svg_handle = config.and_then(|cfg| {
             self.resolve_piece_icon(&params.piece.piece_type, &cfg.svg_path, &colors)
         });
-        let svg_ready = svg_image
+        let svg_ready = svg_handle
             .as_ref()
-            .filter(|img| img.complete() && img.natural_width() > 0);
+            .filter(|handle| handle.image.complete() && handle.image.natural_width() > 0);
 
         // Prefer SVGs when available; fall back to a simple circle when missing.
-        if let Some(image) = svg_ready {
-            self.draw_piece_icon(image, params, tile_size);
+        if let Some(handle) = svg_ready {
+            self.draw_piece_icon(handle, params, tile_size);
         } else {
             self.draw_piece_fallback(&base_color, params, zoom, tile_size);
         }
@@ -139,17 +149,25 @@ impl Renderer {
         );
     }
 
-    fn draw_piece_icon(&self, image: &HtmlImageElement, params: PieceDrawParams, tile_size: f64) {
+    fn draw_piece_icon(&self, handle: &PieceSvgHandle, params: PieceDrawParams, tile_size: f64) {
         let icon_size = tile_size * 0.85;
         let pos = piece_pos(params);
         let draw_x = pos.x * tile_size + params.offset_x + (tile_size - icon_size) / 2.0;
         let draw_y = pos.y * tile_size + params.offset_y + (tile_size - icon_size) / 2.0;
 
         self.ctx.set_global_alpha(params.alpha);
-        self.ctx.set_image_smoothing_enabled(false);
-        let _ = self.ctx.draw_image_with_html_image_element_and_dw_and_dh(
-            image, draw_x, draw_y, icon_size, icon_size,
-        );
+        self.ctx.set_image_smoothing_enabled(true);
+        set_image_smoothing_quality(&self.ctx, "high");
+
+        if let Some(raster) = self.ensure_piece_raster(&handle.key, &handle.image) {
+            let _ = self.ctx.draw_image_with_html_canvas_element_and_dw_and_dh(
+                &raster, draw_x, draw_y, icon_size, icon_size,
+            );
+        } else {
+            let _ = self.ctx.draw_image_with_html_image_element_and_dw_and_dh(
+                &handle.image, draw_x, draw_y, icon_size, icon_size,
+            );
+        }
         self.ctx.set_global_alpha(1.0);
     }
 
@@ -158,7 +176,7 @@ impl Renderer {
         piece_type: &PieceTypeId,
         svg_path: &str,
         colors: &PieceIconColors,
-    ) -> Option<HtmlImageElement> {
+    ) -> Option<PieceSvgHandle> {
         if svg_path.trim().is_empty() {
             return None;
         }
@@ -173,18 +191,22 @@ impl Renderer {
         // Cache is keyed by piece type + derived team colors to avoid regenerating SVGs.
         let mut cache = self.svg_cache.borrow_mut();
         if let Some(image) = cache.images.get(&key) {
-            return Some(image.clone());
+            return Some(PieceSvgHandle {
+                key,
+                image: image.clone(),
+            });
         }
 
         let tinted = template
             .replace("${primary}", &colors.primary)
             .replace("${secondary}", &colors.secondary)
             .replace("${tertiary}", &colors.tertiary);
+        let tinted = soften_svg_edges(&tinted);
         let data_url = svg_data_url(&tinted);
         let image = HtmlImageElement::new().ok()?;
         image.set_src(&data_url);
-        cache.images.insert(key, image.clone());
-        Some(image)
+        cache.images.insert(key.clone(), image.clone());
+        Some(PieceSvgHandle { key, image })
     }
 
     fn ensure_svg_template(&self, piece_type: &PieceTypeId, svg_path: &str) -> Option<String> {
@@ -264,6 +286,66 @@ impl Renderer {
             }
         }
     }
+
+    fn ensure_piece_raster(
+        &self,
+        key: &PieceSvgKey,
+        image: &HtmlImageElement,
+    ) -> Option<HtmlCanvasElement> {
+        {
+            let cache = self.svg_cache.borrow();
+            if let Some(raster) = cache.rasters.get(key) {
+                return Some(raster.clone());
+            }
+        }
+
+        let window = web_sys::window()?;
+        let document = window.document()?;
+        let canvas = document
+            .create_element("canvas")
+            .ok()?
+            .dyn_into::<HtmlCanvasElement>()
+            .ok()?;
+        canvas.set_width(PIECE_RASTER_SIZE_PX);
+        canvas.set_height(PIECE_RASTER_SIZE_PX);
+
+        let ctx = canvas
+            .get_context("2d")
+            .ok()??
+            .dyn_into::<CanvasRenderingContext2d>()
+            .ok()?;
+        ctx.set_image_smoothing_enabled(true);
+        set_image_smoothing_quality(&ctx, "high");
+        let _ = ctx.draw_image_with_html_image_element_and_dw_and_dh(
+            image,
+            0.0,
+            0.0,
+            PIECE_RASTER_SIZE_PX as f64,
+            PIECE_RASTER_SIZE_PX as f64,
+        );
+
+        let mut cache = self.svg_cache.borrow_mut();
+        cache.rasters.insert(key.clone(), canvas.clone());
+        Some(canvas)
+    }
+}
+
+fn set_image_smoothing_quality(ctx: &CanvasRenderingContext2d, quality: &str) {
+    let _ = js_sys::Reflect::set(
+        ctx.as_ref(),
+        &JsValue::from_str("imageSmoothingQuality"),
+        &JsValue::from_str(quality),
+    );
+}
+
+fn soften_svg_edges(svg: &str) -> String {
+    if svg.contains("shape-rendering=\"crispEdges\"") {
+        return svg.replace("shape-rendering=\"crispEdges\"", "shape-rendering=\"auto\"");
+    }
+    if svg.contains("shape-rendering='crispEdges'") {
+        return svg.replace("shape-rendering='crispEdges'", "shape-rendering='auto'");
+    }
+    svg.to_string()
 }
 
 fn svg_data_url(svg: &str) -> String {
