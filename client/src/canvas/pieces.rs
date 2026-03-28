@@ -142,14 +142,10 @@ impl Renderer {
         let gap = Self::cooldown_gap(tile_size);
         let inset = (gap + (line_width / 2.0)).min(tile_size / 2.0 - 1.0);
         let square_size = (tile_size - (2.0 * inset)).max(line_width + 1.0).round();
-        let square_x = Self::align_stroke_coord(
-            pos.x * tile_size + params.offset_x + inset,
-            line_width,
-        );
-        let square_y = Self::align_stroke_coord(
-            pos.y * tile_size + params.offset_y + inset,
-            line_width,
-        );
+        let square_x =
+            Self::align_stroke_coord(pos.x * tile_size + params.offset_x + inset, line_width);
+        let square_y =
+            Self::align_stroke_coord(pos.y * tile_size + params.offset_y + inset, line_width);
 
         self.ctx.set_global_alpha(params.alpha);
         self.ctx.set_line_width(line_width);
@@ -184,7 +180,11 @@ impl Renderer {
             );
         } else {
             let _ = self.ctx.draw_image_with_html_image_element_and_dw_and_dh(
-                &handle.image, draw_x, draw_y, icon_size, icon_size,
+                &handle.image,
+                draw_x,
+                draw_y,
+                icon_size,
+                icon_size,
             );
         }
         self.ctx.set_global_alpha(1.0);
@@ -271,7 +271,10 @@ impl Renderer {
     pub fn draw_piece_name(&self, params: PieceNameDrawParams<'_>) {
         let tile_size = params.tile_size_px * params.zoom;
         let pos = params.pos_override.unwrap_or_else(|| {
-            vec2(params.piece.position.x as f64, params.piece.position.y as f64)
+            vec2(
+                params.piece.position.x as f64,
+                params.piece.position.y as f64,
+            )
         });
         if params.piece.piece_type.is_king()
             && let Some(owner_id) = params.piece.owner_id
@@ -457,7 +460,10 @@ impl Renderer {
 
     fn piece_pos(params: PieceDrawParams<'_>) -> Vec2 {
         params.pos_override.unwrap_or_else(|| {
-            vec2(params.piece.position.x as f64, params.piece.position.y as f64)
+            vec2(
+                params.piece.position.x as f64,
+                params.piece.position.y as f64,
+            )
         })
     }
 }

@@ -2,8 +2,8 @@
 
 use super::helpers::{MOVE_ANIM_MS, PieceAnim, apply_visible_ghosts, pm_visible};
 use crate::camera::{CameraManager, update_camera};
-use crate::math::{Vec2, vec2};
 use crate::canvas::Renderer;
+use crate::math::{Vec2, vec2};
 use crate::reducer::{GameAction, GameStateReducer, MsgSender, Pmove};
 use common::logic::is_within_board;
 use common::types::{DurationMs, PieceId, PlayerId, Score, TimestampMs};
@@ -96,7 +96,10 @@ impl FpsCounter {
             .and_then(|w| w.performance())
             .map(|p| p.now())
             .unwrap_or(0.0);
-        Self { frames: 0, last_ms: now }
+        Self {
+            frames: 0,
+            last_ms: now,
+        }
     }
 }
 
@@ -225,9 +228,8 @@ pub fn game_view(props: &GameViewProps) -> Html {
     }
 
     // We use a ref to track the latest state for the interval to avoid stale captures
-    let latest_state = use_mut_ref(|| {
-        LatestStateSnapshot::new(props.reducer.clone(), (*drag_start).is_some())
-    });
+    let latest_state =
+        use_mut_ref(|| LatestStateSnapshot::new(props.reducer.clone(), (*drag_start).is_some()));
     {
         let mut s = latest_state.borrow_mut();
         s.update(props.reducer.clone(), (*drag_start).is_some());
@@ -256,8 +258,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
                     fc.frames += 1;
                     let now = web_sys::window().unwrap().performance().unwrap().now();
                     if now - fc.last_ms >= 1000.0 {
-                        let fps =
-                            ((fc.frames as f64) * 1000.0 / (now - fc.last_ms)).round() as u32;
+                        let fps = ((fc.frames as f64) * 1000.0 / (now - fc.last_ms)).round() as u32;
                         reducer.dispatch(GameAction::SetFPS(fps));
                         fc.frames = 0;
                         fc.last_ms = now;
@@ -397,10 +398,10 @@ pub fn game_view(props: &GameViewProps) -> Html {
 
                         let progress = ((now - anim.started_at) / MOVE_ANIM_MS).clamp(0.0, 1.0);
                         if progress < 1.0 {
-                            let x = anim.start.x as f64
-                                + (anim.end.x - anim.start.x) as f64 * progress;
-                            let y = anim.start.y as f64
-                                + (anim.end.y - anim.start.y) as f64 * progress;
+                            let x =
+                                anim.start.x as f64 + (anim.end.x - anim.start.x) as f64 * progress;
+                            let y =
+                                anim.start.y as f64 + (anim.end.y - anim.start.y) as f64 * progress;
                             animated_positions.insert(*id, vec2(x, y));
                             true
                         } else {

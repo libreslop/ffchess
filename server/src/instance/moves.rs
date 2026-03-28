@@ -29,11 +29,7 @@ impl GameInstance {
             if elapsed < piece.cooldown_ms {
                 return Err(GameError::OnCooldown);
             }
-            (
-                piece.piece_type.clone(),
-                piece.position,
-                piece.owner_id,
-            )
+            (piece.piece_type.clone(), piece.position, piece.owner_id)
         };
 
         let target_piece = game.pieces.values().find(|p| p.position == target).cloned();

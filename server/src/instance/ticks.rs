@@ -3,7 +3,7 @@
 use super::GameInstance;
 use crate::time::now_ms;
 use common::protocol::ServerMessage;
-use common::types::{DurationMs, PieceId};
+use common::types::{DurationMs, PieceId, TimestampMs};
 use rand::Rng;
 
 impl GameInstance {
@@ -89,6 +89,7 @@ impl GameInstance {
     pub async fn tick_npcs(&self) {
         let mut game = self.game.write().await;
         let board_size = game.board_size;
+        let now = now_ms();
 
         // NPC Spawning
         for limit in &self.mode_config.npc_limits {
@@ -106,6 +107,20 @@ impl GameInstance {
             if current_count < max_npcs {
                 let spawn_pos = crate::spawning::find_spawn_pos(&game);
                 let id = PieceId::new();
+                let cooldown_ms = self
+                    .piece_configs
+                    .get(&limit.piece_id)
+                    .map(|c| c.cooldown_ms)
+                    .unwrap_or_else(|| DurationMs::from_millis(2000));
+                // Start NPC cooldowns at random offsets so initial spawns are de-synced.
+                let cooldown_window = cooldown_ms.as_i64().max(0);
+                let last_move_time = if cooldown_window == 0 {
+                    now
+                } else {
+                    let mut rng = rand::thread_rng();
+                    let offset = rng.gen_range(0..cooldown_window);
+                    TimestampMs::from_millis(now.as_i64() - offset)
+                };
                 game.pieces.insert(
                     id,
                     common::models::Piece {
@@ -113,12 +128,8 @@ impl GameInstance {
                         owner_id: None,
                         piece_type: limit.piece_id.clone(),
                         position: spawn_pos,
-                        last_move_time: now_ms(),
-                        cooldown_ms: self
-                            .piece_configs
-                            .get(&limit.piece_id)
-                            .map(|c| c.cooldown_ms)
-                            .unwrap_or_else(|| DurationMs::from_millis(2000)),
+                        last_move_time,
+                        cooldown_ms,
                     },
                 );
             }
@@ -131,8 +142,6 @@ impl GameInstance {
             .filter(|(_, p)| p.owner_id.is_none())
             .map(|(id, _)| *id)
             .collect();
-        let now = now_ms();
-
         for id in npc_ids {
             let (p_type, p_pos, last_move, cooldown) = {
                 let p = match game.pieces.get(&id) {
