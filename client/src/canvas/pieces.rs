@@ -12,6 +12,8 @@ use wasm_bindgen_futures::spawn_local;
 use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, HtmlImageElement};
 
 const PIECE_RASTER_SIZE_PX: u32 = 256;
+const COOLDOWN_GAP_RATIO: f64 = 0.03;
+const COOLDOWN_LINE_WIDTH_PX: f64 = 2.0;
 
 /// Loaded SVG image plus its cache key.
 struct PieceSvgHandle {
@@ -20,7 +22,7 @@ struct PieceSvgHandle {
 }
 
 impl Renderer {
-    /// Draws a piece glyph, cooldown bar, and optional nameplate.
+    /// Draws a piece glyph, cooldown indicator, and optional nameplate.
     ///
     /// `params` describes the piece and draw state, `zoom` is the current zoom factor.
     /// Returns nothing.
@@ -39,14 +41,14 @@ impl Renderer {
 
         // Prefer SVGs when available; fall back to a simple circle when missing.
         if let Some(handle) = svg_ready {
-            self.draw_piece_icon(handle, params, tile_size);
+            self.draw_piece_icon(handle, params, tile_size, zoom);
         } else {
             self.draw_piece_fallback(&base_color, params, zoom, tile_size);
         }
 
         // Only draw cooldown on the real (non-ghost) piece for the owner.
         if self.should_draw_cooldown(&params) {
-            self.draw_cooldown_bar(params, tile_size, zoom);
+            self.draw_cooldown_bar(params, tile_size, zoom, &base_color);
         }
 
         if params.alpha >= 1.0 && params.draw_name {
@@ -84,7 +86,7 @@ impl Renderer {
         zoom: f64,
         tile_size: f64,
     ) {
-        let pos = piece_pos(params);
+        let pos = Self::piece_pos(params);
         self.ctx.set_fill_style_str(base_color);
         self.ctx.set_global_alpha(params.alpha);
 
@@ -116,8 +118,14 @@ impl Renderer {
         params.piece.owner_id == Some(params.player_id) && !params.is_ghost
     }
 
-    fn draw_cooldown_bar(&self, params: PieceDrawParams<'_>, tile_size: f64, zoom: f64) {
-        let pos = piece_pos(params);
+    fn draw_cooldown_bar(
+        &self,
+        params: PieceDrawParams<'_>,
+        tile_size: f64,
+        zoom: f64,
+        team_color: &str,
+    ) {
+        let pos = Self::piece_pos(params);
         #[cfg(target_arch = "wasm32")]
         let now = common::types::TimestampMs::from_millis(js_sys::Date::now() as i64);
         #[cfg(not(target_arch = "wasm32"))]
@@ -129,35 +137,46 @@ impl Renderer {
         }
 
         let progress = elapsed.as_i64() as f64 / params.piece.cooldown_ms.as_i64() as f64;
-        self.ctx.set_fill_style_str("#000");
-        let bar_h = 4.0 * zoom;
-        let bar_margin = 5.0 * zoom;
-        let bar_y_offset = tile_size - (8.0 * zoom);
 
-        self.ctx.fill_rect(
-            pos.x * tile_size + params.offset_x + bar_margin,
-            pos.y * tile_size + params.offset_y + bar_y_offset,
-            tile_size - (bar_margin * 2.0),
-            bar_h,
+        let line_width = Self::cooldown_line_width(zoom);
+        let gap = Self::cooldown_gap(tile_size);
+        let inset = (gap + (line_width / 2.0)).min(tile_size / 2.0 - 1.0);
+        let square_size = (tile_size - (2.0 * inset)).max(line_width + 1.0).round();
+        let square_x = Self::align_stroke_coord(
+            pos.x * tile_size + params.offset_x + inset,
+            line_width,
         );
-        self.ctx.set_fill_style_str("#0f0");
-        self.ctx.fill_rect(
-            pos.x * tile_size + params.offset_x + bar_margin,
-            pos.y * tile_size + params.offset_y + bar_y_offset,
-            (tile_size - (bar_margin * 2.0)) * progress,
-            bar_h,
+        let square_y = Self::align_stroke_coord(
+            pos.y * tile_size + params.offset_y + inset,
+            line_width,
         );
+
+        self.ctx.set_global_alpha(params.alpha);
+        self.ctx.set_line_width(line_width);
+        self.ctx.set_line_cap("butt");
+        self.ctx.set_line_join("miter");
+
+        self.ctx.set_stroke_style_str(team_color);
+        self.draw_square_progress(square_x, square_y, square_size, progress);
+
+        self.ctx.set_global_alpha(1.0);
     }
 
-    fn draw_piece_icon(&self, handle: &PieceSvgHandle, params: PieceDrawParams, tile_size: f64) {
-        let icon_size = tile_size * 0.85;
-        let pos = piece_pos(params);
+    fn draw_piece_icon(
+        &self,
+        handle: &PieceSvgHandle,
+        params: PieceDrawParams,
+        tile_size: f64,
+        zoom: f64,
+    ) {
+        let icon_size = Self::piece_icon_size(tile_size, zoom);
+        let pos = Self::piece_pos(params);
         let draw_x = pos.x * tile_size + params.offset_x + (tile_size - icon_size) / 2.0;
         let draw_y = pos.y * tile_size + params.offset_y + (tile_size - icon_size) / 2.0;
 
         self.ctx.set_global_alpha(params.alpha);
         self.ctx.set_image_smoothing_enabled(true);
-        set_image_smoothing_quality(&self.ctx, "high");
+        Self::set_image_smoothing_quality(&self.ctx, "high");
 
         if let Some(raster) = self.ensure_piece_raster(&handle.key, &handle.image) {
             let _ = self.ctx.draw_image_with_html_canvas_element_and_dw_and_dh(
@@ -201,8 +220,8 @@ impl Renderer {
             .replace("${primary}", &colors.primary)
             .replace("${secondary}", &colors.secondary)
             .replace("${tertiary}", &colors.tertiary);
-        let tinted = soften_svg_edges(&tinted);
-        let data_url = svg_data_url(&tinted);
+        let tinted = Self::soften_svg_edges(&tinted);
+        let data_url = Self::svg_data_url(&tinted);
         let image = HtmlImageElement::new().ok()?;
         image.set_src(&data_url);
         cache.images.insert(key.clone(), image.clone());
@@ -315,7 +334,7 @@ impl Renderer {
             .dyn_into::<CanvasRenderingContext2d>()
             .ok()?;
         ctx.set_image_smoothing_enabled(true);
-        set_image_smoothing_quality(&ctx, "high");
+        Self::set_image_smoothing_quality(&ctx, "high");
         let _ = ctx.draw_image_with_html_image_element_and_dw_and_dh(
             image,
             0.0,
@@ -328,34 +347,117 @@ impl Renderer {
         cache.rasters.insert(key.clone(), canvas.clone());
         Some(canvas)
     }
-}
 
-fn set_image_smoothing_quality(ctx: &CanvasRenderingContext2d, quality: &str) {
-    let _ = js_sys::Reflect::set(
-        ctx.as_ref(),
-        &JsValue::from_str("imageSmoothingQuality"),
-        &JsValue::from_str(quality),
-    );
-}
-
-fn soften_svg_edges(svg: &str) -> String {
-    if svg.contains("shape-rendering=\"crispEdges\"") {
-        return svg.replace("shape-rendering=\"crispEdges\"", "shape-rendering=\"auto\"");
+    fn set_image_smoothing_quality(ctx: &CanvasRenderingContext2d, quality: &str) {
+        let _ = js_sys::Reflect::set(
+            ctx.as_ref(),
+            &JsValue::from_str("imageSmoothingQuality"),
+            &JsValue::from_str(quality),
+        );
     }
-    if svg.contains("shape-rendering='crispEdges'") {
-        return svg.replace("shape-rendering='crispEdges'", "shape-rendering='auto'");
+
+    fn soften_svg_edges(svg: &str) -> String {
+        if svg.contains("shape-rendering=\"crispEdges\"") {
+            return svg.replace("shape-rendering=\"crispEdges\"", "shape-rendering=\"auto\"");
+        }
+        if svg.contains("shape-rendering='crispEdges'") {
+            return svg.replace("shape-rendering='crispEdges'", "shape-rendering='auto'");
+        }
+        svg.to_string()
     }
-    svg.to_string()
-}
 
-fn svg_data_url(svg: &str) -> String {
-    let encoded = js_sys::encode_uri_component(svg);
-    let encoded = encoded.as_string().unwrap_or_default();
-    format!("data:image/svg+xml;utf8,{encoded}")
-}
+    fn svg_data_url(svg: &str) -> String {
+        let encoded = js_sys::encode_uri_component(svg);
+        let encoded = encoded.as_string().unwrap_or_default();
+        format!("data:image/svg+xml;utf8,{encoded}")
+    }
 
-fn piece_pos(params: PieceDrawParams<'_>) -> Vec2 {
-    params.pos_override.unwrap_or_else(|| {
-        vec2(params.piece.position.x as f64, params.piece.position.y as f64)
-    })
+    fn draw_square_progress(&self, x: f64, y: f64, size: f64, progress: f64) {
+        let progress = progress.clamp(0.0, 1.0);
+        if progress <= 0.0 {
+            return;
+        }
+
+        let perimeter = 4.0 * size;
+        let mut remaining = perimeter * progress;
+
+        // Trace clockwise from 12 o'clock (top center) as a single path
+        // to avoid visible segment seams at the corners.
+        let half = size / 2.0;
+        let mut cursor = vec2(x + half, y);
+        self.ctx.begin_path();
+        self.ctx.move_to(cursor.x, cursor.y);
+
+        remaining = self.append_segment_path(&mut cursor, vec2(x + size, y), remaining);
+        if remaining <= 0.0 {
+            self.ctx.stroke();
+            return;
+        }
+        remaining = self.append_segment_path(&mut cursor, vec2(x + size, y + size), remaining);
+        if remaining <= 0.0 {
+            self.ctx.stroke();
+            return;
+        }
+        remaining = self.append_segment_path(&mut cursor, vec2(x, y + size), remaining);
+        if remaining <= 0.0 {
+            self.ctx.stroke();
+            return;
+        }
+        remaining = self.append_segment_path(&mut cursor, vec2(x, y), remaining);
+        if remaining <= 0.0 {
+            self.ctx.stroke();
+            return;
+        }
+        let _ = self.append_segment_path(&mut cursor, vec2(x + half, y), remaining);
+        self.ctx.stroke();
+    }
+
+    fn append_segment_path(&self, cursor: &mut Vec2, target: Vec2, remaining: f64) -> f64 {
+        if remaining <= 0.0 {
+            return 0.0;
+        }
+        let dx = target.x - cursor.x;
+        let dy = target.y - cursor.y;
+        let seg_len = (dx * dx + dy * dy).sqrt();
+        if seg_len <= 0.0 {
+            return remaining;
+        }
+        let draw_len = remaining.min(seg_len);
+        let t = draw_len / seg_len;
+        let px = cursor.x + dx * t;
+        let py = cursor.y + dy * t;
+        self.ctx.line_to(px, py);
+        *cursor = vec2(px, py);
+        remaining - draw_len
+    }
+
+    fn align_stroke_coord(value: f64, line_width: f64) -> f64 {
+        let width = line_width.round() as i64;
+        if width % 2 == 0 {
+            value.round()
+        } else {
+            value.round() + 0.5
+        }
+    }
+
+    fn cooldown_gap(tile_size: f64) -> f64 {
+        tile_size * COOLDOWN_GAP_RATIO
+    }
+
+    fn cooldown_line_width(zoom: f64) -> f64 {
+        (COOLDOWN_LINE_WIDTH_PX * zoom).round().max(1.0)
+    }
+
+    fn piece_icon_size(tile_size: f64, zoom: f64) -> f64 {
+        let gap = Self::cooldown_gap(tile_size);
+        let line_width = Self::cooldown_line_width(zoom);
+        let size = tile_size - (4.0 * gap) - (2.0 * line_width);
+        size.max(line_width + 1.0).round()
+    }
+
+    fn piece_pos(params: PieceDrawParams<'_>) -> Vec2 {
+        params.pos_override.unwrap_or_else(|| {
+            vec2(params.piece.position.x as f64, params.piece.position.y as f64)
+        })
+    }
 }
