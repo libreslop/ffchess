@@ -4,7 +4,7 @@ use crate::reducer::types::{MsgSender, Pmove, QueueStatus};
 use common::models::{
     GameModeClientConfig, GameState, Piece, PieceConfig, Player, Shop, ShopConfig,
 };
-use common::protocol::GameError;
+use common::protocol::{GameError, VictoryFocusTarget};
 use common::types::{BoardSize, PieceId, PieceTypeId, PlayerId, Score, SessionSecret, ShopId};
 use std::collections::HashMap;
 
@@ -37,6 +37,7 @@ pub enum GameAction {
     SetVictory {
         title: String,
         msg: String,
+        focus_target: VictoryFocusTarget,
     },
     GameOver {
         final_score: Score,

@@ -1,7 +1,7 @@
 //! Reducer state types used by the client UI.
 
 use common::models::{GameModeClientConfig, GameState, PieceConfig, ShopConfig};
-use common::protocol::{ClientMessage, GameError};
+use common::protocol::{ClientMessage, GameError, VictoryFocusTarget};
 use common::types::{
     DurationMs, PieceId, PieceTypeId, PlayerId, Score, SessionSecret, ShopId, TimestampMs,
 };
@@ -64,6 +64,7 @@ pub struct GameStateReducer {
     pub disconnected_msg: Option<String>,
     pub victory_title: Option<String>,
     pub victory_msg: Option<String>,
+    pub victory_focus_target: VictoryFocusTarget,
 }
 
 /// Channel sender wrapper for client messages.

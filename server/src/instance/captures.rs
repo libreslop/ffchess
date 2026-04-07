@@ -39,6 +39,7 @@ impl GameInstance {
             capturer_id,
             captured_piece.piece_type.clone(),
             captured_piece.owner_id,
+            captured_piece.position,
         )
         .await;
 

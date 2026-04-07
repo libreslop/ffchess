@@ -4,7 +4,7 @@ use super::actions::{GameAction, InitPayload};
 use super::time::now_timestamp_ms;
 use super::types::{ClientPhase, GameStateReducer};
 use common::logic::calculate_cooldown;
-use common::protocol::{ClientMessage, GameError};
+use common::protocol::{ClientMessage, GameError, VictoryFocusTarget};
 use common::types::{DurationMs, PieceId, PlayerId, TimestampMs};
 use std::rc::Rc;
 use yew::prelude::*;
@@ -117,7 +117,11 @@ impl Reducible for GameStateReducer {
                     }
                 }
             }
-            GameAction::SetVictory { title, msg } => {
+            GameAction::SetVictory {
+                title,
+                msg,
+                focus_target,
+            } => {
                 next.error = None;
                 next.clear_disconnect_ui();
                 next.fatal_error = false;
@@ -126,6 +130,7 @@ impl Reducible for GameStateReducer {
                 next.is_victory = true;
                 next.victory_title = Some(title);
                 next.victory_msg = Some(msg);
+                next.victory_focus_target = focus_target;
             }
             GameAction::GameOver {
                 final_score,
@@ -274,6 +279,7 @@ impl GameStateReducer {
     fn clear_victory_state(&mut self) {
         self.is_victory = false;
         self.clear_victory_messages();
+        self.victory_focus_target = VictoryFocusTarget::KeepCurrent;
     }
 
     /// Snapshots the current local player's live stats into end-screen fields.

@@ -286,6 +286,8 @@ pub fn game_view(props: &GameViewProps) -> Html {
                             mode: reducer_state.mode.as_ref(),
                             piece_count,
                             phase: reducer_state.phase,
+                            is_victory: reducer_state.is_victory,
+                            victory_focus_target: reducer_state.victory_focus_target,
                             zoom_min: globals.camera_zoom_min,
                             zoom_max: globals.camera_zoom_max,
                             zoom_lerp: globals.zoom_lerp,

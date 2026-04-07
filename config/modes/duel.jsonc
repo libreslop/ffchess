@@ -35,6 +35,7 @@
             "trigger": "OnCapturePieceActive",
             "target_piece_id": "king",
             "action": "WinCapturer",
+            "victory_focus": "CaptureSquare",
             "title": "VICTORY",
             "message": "You won by capturing the enemy king."
         },
@@ -42,6 +43,7 @@
             "trigger": "OnPlayerLeave",
             "players_left": 1,
             "action": "WinRemaining",
+            "victory_focus": "KeepCurrent",
             "title": "VICTORY",
             "message": "Opponent disconnected. You win."
         }

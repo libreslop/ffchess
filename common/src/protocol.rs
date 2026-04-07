@@ -11,6 +11,14 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 
+/// Camera target behavior for a victory overlay.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub enum VictoryFocusTarget {
+    #[default]
+    KeepCurrent,
+    BoardPosition(IVec2),
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 /// Enumerates gameplay errors sent from the server to clients.
 pub enum GameError {
@@ -96,6 +104,11 @@ pub enum ServerMessage {
         board_size: BoardSize,
     },
     Error(GameError),
+    Victory {
+        title: String,
+        message: String,
+        focus_target: VictoryFocusTarget,
+    },
     QueueState {
         position_in_queue: u32,
         queued_players: u32,

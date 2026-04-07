@@ -1,8 +1,10 @@
 //! Tick-batched hook event buffering and resolution.
 
 use super::GameInstance;
-use common::models::{GameState, HookConfig, SupportedHook};
+use common::models::{GameState, HookConfig, HookVictoryFocus, SupportedHook};
+use common::protocol::VictoryFocusTarget;
 use common::types::{PieceTypeId, PlayerId};
+use glam::IVec2;
 
 /// A captured piece event deferred until the end of a tick.
 #[derive(Debug, Clone)]
@@ -10,6 +12,7 @@ struct CaptureEvent {
     capturer_id: Option<PlayerId>,
     captured_piece_type: PieceTypeId,
     captured_owner_id: Option<PlayerId>,
+    captured_position: IVec2,
 }
 
 /// Gameplay events observed across one tick.
@@ -31,11 +34,13 @@ impl TickHookEvents {
         capturer_id: Option<PlayerId>,
         captured_piece_type: PieceTypeId,
         captured_owner_id: Option<PlayerId>,
+        captured_position: IVec2,
     ) {
         self.captures.push(CaptureEvent {
             capturer_id,
             captured_piece_type,
             captured_owner_id,
+            captured_position,
         });
     }
 
@@ -53,13 +58,11 @@ impl TickHookEvents {
         })
     }
 
-    /// Returns the first capturing player matching `hook`.
-    fn winning_capturer(&self, hook: &HookConfig) -> Option<PlayerId> {
-        self.captures.iter().find_map(|event| {
-            hook.targets_piece(&event.captured_piece_type)
-                .then_some(event.capturer_id)
-                .flatten()
-        })
+    /// Returns the first capture event matching `hook`.
+    fn winning_capture_event(&self, hook: &HookConfig) -> Option<&CaptureEvent> {
+        self.captures
+            .iter()
+            .find(|event| hook.targets_piece(&event.captured_piece_type))
     }
 }
 
@@ -90,9 +93,14 @@ impl HookEventBuffer {
         capturer_id: Option<PlayerId>,
         captured_piece_type: PieceTypeId,
         captured_owner_id: Option<PlayerId>,
+        captured_position: IVec2,
     ) {
-        self.target_buffer()
-            .record_capture(capturer_id, captured_piece_type, captured_owner_id);
+        self.target_buffer().record_capture(
+            capturer_id,
+            captured_piece_type,
+            captured_owner_id,
+            captured_position,
+        );
     }
 
     /// Records that a player left into the active tick or the next queued tick.
@@ -116,24 +124,41 @@ struct VictoryMessage {
     player_id: PlayerId,
     title: String,
     message: String,
+    focus_target: VictoryFocusTarget,
 }
 
 impl VictoryMessage {
     /// Builds the default capture victory message for `player_id`.
-    fn capturer(hook: &HookConfig, player_id: PlayerId) -> Self {
-        Self {
+    fn capturer(hook: &HookConfig, event: &CaptureEvent) -> Option<Self> {
+        let player_id = event.capturer_id?;
+        let focus_target =
+            match hook.victory_focus_or_default(SupportedHook::WinCapturerOnActiveCapture) {
+                HookVictoryFocus::CaptureSquare => {
+                    VictoryFocusTarget::BoardPosition(event.captured_position)
+                }
+                HookVictoryFocus::KeepCurrent => VictoryFocusTarget::KeepCurrent,
+            };
+        Some(Self {
             player_id,
             title: hook.victory_title_or("VICTORY"),
             message: hook.victory_message_or("You won by capturing the enemy king."),
-        }
+            focus_target,
+        })
     }
 
     /// Builds the default remaining-player victory message for `player_id`.
     fn remaining_player(hook: &HookConfig, player_id: PlayerId) -> Self {
+        let focus_target =
+            match hook.victory_focus_or_default(SupportedHook::WinRemainingOnPlayerLeave) {
+                HookVictoryFocus::KeepCurrent | HookVictoryFocus::CaptureSquare => {
+                    VictoryFocusTarget::KeepCurrent
+                }
+            };
         Self {
             player_id,
             title: hook.victory_title_or("VICTORY"),
             message: hook.victory_message_or("Opponent disconnected. You win."),
+            focus_target,
         }
     }
 }
@@ -145,11 +170,13 @@ impl GameInstance {
         capturer_id: Option<PlayerId>,
         captured_piece_type: PieceTypeId,
         captured_owner_id: Option<PlayerId>,
+        captured_position: IVec2,
     ) {
         self.hook_events.write().await.record_capture(
             capturer_id,
             captured_piece_type,
             captured_owner_id,
+            captured_position,
         );
     }
 
@@ -184,8 +211,13 @@ impl GameInstance {
         drop(game);
 
         if let Some(message) = victory_message {
-            self.send_custom_to_player(message.player_id, message.title, message.message)
-                .await;
+            self.send_victory_to_player(
+                message.player_id,
+                message.title,
+                message.message,
+                message.focus_target,
+            )
+            .await;
         }
     }
 
@@ -203,8 +235,8 @@ impl GameInstance {
                 None
             }
             Some(SupportedHook::WinCapturerOnActiveCapture) => hook_events
-                .winning_capturer(hook)
-                .map(|player_id| VictoryMessage::capturer(hook, player_id)),
+                .winning_capture_event(hook)
+                .and_then(|event| VictoryMessage::capturer(hook, event)),
             Some(SupportedHook::WinRemainingOnPlayerLeave) => {
                 self.find_remaining_player_victory(hook, hook_events, game)
             }

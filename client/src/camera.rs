@@ -3,6 +3,7 @@
 use crate::math::Vec2;
 use crate::reducer::ClientPhase;
 use common::logic::evaluate_expression;
+use common::protocol::VictoryFocusTarget;
 use common::*;
 use yew::prelude::*;
 
@@ -49,6 +50,8 @@ pub struct CameraUpdateParams<'a> {
     pub mode: Option<&'a common::models::GameModeClientConfig>,
     pub piece_count: usize,
     pub phase: ClientPhase,
+    pub is_victory: bool,
+    pub victory_focus_target: VictoryFocusTarget,
     pub zoom_min: f64,
     pub zoom_max: f64,
     pub zoom_lerp: f64,
@@ -178,14 +181,31 @@ pub fn update_camera(manager: &mut CameraManager, params: CameraUpdateParams<'_>
         }
     } else if params.phase == ClientPhase::Dead {
         if manager.was_alive {
-            // Just died, focus on last position
-            let grid_pos = manager.last_king_grid_pos;
-            let target_zoom = params.death_zoom;
-            let tile_size = params.tile_size_px * target_zoom;
-            let desired_focus_x = grid_pos.x as f64 * tile_size + tile_size / 2.0;
-            let desired_focus_y = grid_pos.y as f64 * tile_size + tile_size / 2.0;
-            manager.target_camera = Vec2::new(desired_focus_x, desired_focus_y);
-            manager.target_zoom = target_zoom.clamp(params.zoom_min, params.zoom_max);
+            if params.is_victory {
+                match params.victory_focus_target {
+                    VictoryFocusTarget::KeepCurrent => {
+                        manager.target_camera = manager.camera;
+                        manager.target_zoom = manager.zoom;
+                    }
+                    VictoryFocusTarget::BoardPosition(grid_pos) => {
+                        let target_zoom = params.death_zoom;
+                        let tile_size = params.tile_size_px * target_zoom;
+                        let desired_focus_x = grid_pos.x as f64 * tile_size + tile_size / 2.0;
+                        let desired_focus_y = grid_pos.y as f64 * tile_size + tile_size / 2.0;
+                        manager.target_camera = Vec2::new(desired_focus_x, desired_focus_y);
+                        manager.target_zoom = target_zoom.clamp(params.zoom_min, params.zoom_max);
+                    }
+                }
+            } else {
+                // Just died, focus on last king position.
+                let grid_pos = manager.last_king_grid_pos;
+                let target_zoom = params.death_zoom;
+                let tile_size = params.tile_size_px * target_zoom;
+                let desired_focus_x = grid_pos.x as f64 * tile_size + tile_size / 2.0;
+                let desired_focus_y = grid_pos.y as f64 * tile_size + tile_size / 2.0;
+                manager.target_camera = Vec2::new(desired_focus_x, desired_focus_y);
+                manager.target_zoom = target_zoom.clamp(params.zoom_min, params.zoom_max);
+            }
             manager.was_alive = false;
             manager.velocity = Vec2::ZERO;
             manager.input_locked = false;

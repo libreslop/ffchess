@@ -2,7 +2,7 @@
 
 use crate::reducer::{GameAction, GameStateReducer, InitPayload, UpdateStatePayload};
 use crate::utils::{clear_stored_session, set_stored_id, set_stored_secret};
-use common::protocol::{GameError, ServerMessage};
+use common::protocol::{GameError, ServerMessage, VictoryFocusTarget};
 use common::types::{ModeId, PlayerId};
 use futures_util::{SinkExt, StreamExt};
 use gloo_net::websocket::{Message, futures::WebSocket};
@@ -101,6 +101,7 @@ pub async fn connect_ws(
                                 GameAction::SetVictory {
                                     title: title.clone(),
                                     msg: message.clone(),
+                                    focus_target: VictoryFocusTarget::KeepCurrent,
                                 }
                             }
                             GameError::TargetFriendly => {
@@ -117,6 +118,15 @@ pub async fn connect_ws(
                                 msg: Some(message.clone()),
                             },
                             _ => GameAction::SetError(e),
+                        },
+                        ServerMessage::Victory {
+                            title,
+                            message,
+                            focus_target,
+                        } => GameAction::SetVictory {
+                            title,
+                            msg: message,
+                            focus_target,
                         },
                         ServerMessage::GameOver {
                             final_score,

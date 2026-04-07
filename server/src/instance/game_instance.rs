@@ -5,7 +5,7 @@ use crate::colors::ColorManager;
 use crate::time::now_ms;
 use crate::types::ConnectionId;
 use common::models::{GameModeConfig, GameState, PieceConfig, ShopConfig};
-use common::protocol::{GameError, ServerMessage};
+use common::protocol::{GameError, ServerMessage, VictoryFocusTarget};
 use common::types::{PieceId, PieceTypeId, PlayerId, SessionSecret, ShopId, TimestampMs};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -66,6 +66,24 @@ impl GameInstance {
         let channels = self.player_channels.read().await;
         if let Some(tx) = channels.get(&player_id) {
             let _ = tx.send(ServerMessage::Error(GameError::Custom { title, message }));
+        }
+    }
+
+    /// Sends a non-fatal victory payload to a specific player.
+    pub async fn send_victory_to_player(
+        &self,
+        player_id: PlayerId,
+        title: String,
+        message: String,
+        focus_target: VictoryFocusTarget,
+    ) {
+        let channels = self.player_channels.read().await;
+        if let Some(tx) = channels.get(&player_id) {
+            let _ = tx.send(ServerMessage::Victory {
+                title,
+                message,
+                focus_target,
+            });
         }
     }
 

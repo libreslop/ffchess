@@ -91,6 +91,15 @@ pub enum HookAction {
     WinRemaining,
 }
 
+/// Camera focus policy for victory overlays produced by hooks.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum HookVictoryFocus {
+    #[serde(rename = "CaptureSquare")]
+    CaptureSquare,
+    #[serde(rename = "KeepCurrent")]
+    KeepCurrent,
+}
+
 /// Supported hook behaviors understood by the runtime.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SupportedHook {
@@ -111,6 +120,8 @@ pub struct HookConfig {
     pub title: Option<String>,
     #[serde(default)]
     pub message: Option<String>,
+    #[serde(default)]
+    pub victory_focus: Option<HookVictoryFocus>,
 }
 
 impl HookConfig {
@@ -149,6 +160,15 @@ impl HookConfig {
         self.message
             .clone()
             .unwrap_or_else(|| default_message.to_string())
+    }
+
+    /// Returns the configured victory focus policy, or the default for `supported_hook`.
+    pub fn victory_focus_or_default(&self, supported_hook: SupportedHook) -> HookVictoryFocus {
+        self.victory_focus.unwrap_or(match supported_hook {
+            SupportedHook::WinCapturerOnActiveCapture => HookVictoryFocus::CaptureSquare,
+            SupportedHook::WinRemainingOnPlayerLeave => HookVictoryFocus::KeepCurrent,
+            SupportedHook::EliminateOwnerOnCapture => HookVictoryFocus::KeepCurrent,
+        })
     }
 }
 
