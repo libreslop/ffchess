@@ -94,6 +94,13 @@ pub async fn connect_ws(
                                 clear_stored_session(&mode_id);
                                 GameAction::Reset
                             }
+                            GameError::TargetFriendly => {
+                                web_sys::console::error_1(
+                                    &"Server rejected move: target square is occupied by a friendly piece."
+                                        .into(),
+                                );
+                                GameAction::SetError(e)
+                            }
                             GameError::Custom { title, message } => GameAction::SetDisconnected {
                                 disconnected: true,
                                 is_fatal: true,

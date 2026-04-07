@@ -3,7 +3,7 @@
 use super::GameInstance;
 use crate::time::now_ms;
 use common::protocol::GameError;
-use common::types::{PieceId, PlayerId, Score};
+use common::types::{PieceId, PlayerId};
 use glam::IVec2;
 
 impl GameInstance {
@@ -61,25 +61,7 @@ impl GameInstance {
 
         // Apply move
         if let Some(tp) = target_piece {
-            game.pieces.remove(&tp.id);
-            self.record_piece_removal(tp.id).await;
-
-            let attacker_score = self
-                .piece_configs
-                .get(&tp.piece_type)
-                .map(|c| c.score_value)
-                .unwrap_or_else(Score::zero);
-
-            if let Some(player) = game.players.get_mut(&player_id) {
-                player.score += attacker_score;
-                player.pieces_captured += 1;
-                if tp.piece_type.is_king() {
-                    player.kills += 1;
-                }
-            }
-
-            self.record_capture_event(Some(player_id), tp.piece_type.clone(), tp.owner_id)
-                .await;
+            self.capture_piece(tp, Some(player_id), &mut game).await;
         }
 
         if let Some(piece) = game.pieces.get_mut(&piece_id) {

@@ -197,19 +197,24 @@ impl GameInstance {
         }
 
         let mut game = self.game.write().await;
-        let removed_player = game.players.remove(&player_id).is_some();
         self.player_channels.write().await.remove(&player_id);
-        if removed_player {
-            self.record_player_removal(player_id, &mut game).await;
-            self.record_player_leave_event(player_id).await;
+        if self.remove_player_state(player_id, &mut game).await {
+            self.record_player_leave_event().await;
         }
     }
 
-    /// Records player removal and cleans up owned pieces.
+    /// Removes a player from active state and cleans up their owned pieces.
     ///
-    /// `player_id` identifies the removed player, `game` is the mutable state to update.
-    /// Returns nothing.
-    pub async fn record_player_removal(&self, player_id: PlayerId, game: &mut GameState) {
+    /// `player_id` identifies the removed player and `game` is the mutable state to update.
+    pub(super) async fn remove_player_state(
+        &self,
+        player_id: PlayerId,
+        game: &mut GameState,
+    ) -> bool {
+        if game.players.remove(&player_id).is_none() {
+            return false;
+        }
+
         self.removed_players.write().await.push(player_id);
         self.death_timestamps
             .write()
@@ -224,5 +229,6 @@ impl GameInstance {
                 true
             }
         });
+        true
     }
 }

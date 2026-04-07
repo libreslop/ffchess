@@ -3,15 +3,14 @@
 use super::GameInstance;
 use crate::time::now_ms;
 use common::protocol::ServerMessage;
-use common::types::{DurationMs, PieceId, TimestampMs};
-use rand::Rng;
+use common::types::DurationMs;
 
 impl GameInstance {
     /// Runs a single server tick: updates timers, broadcasts state, and cleans up.
     ///
     /// Returns nothing; this mutates game state and sends updates.
     pub async fn handle_tick(&self) {
-        let hook_events = self.take_hook_events().await;
+        self.start_tick_hooks().await;
         let now = now_ms();
         let players_viewing = !self.player_channels.read().await.is_empty()
             || !self.connection_channels.read().await.is_empty();
@@ -63,7 +62,7 @@ impl GameInstance {
             }
         }
 
-        self.process_hook_events(hook_events).await;
+        self.resolve_tick_hooks().await;
 
         let removed_pieces = {
             let mut rp = self.removed_pieces.write().await;
@@ -84,203 +83,5 @@ impl GameInstance {
             board_size: game.board_size,
         })
         .await;
-    }
-
-    /// Advances NPC spawning and movement logic for the current tick.
-    ///
-    /// Returns nothing; this mutates game state.
-    pub async fn tick_npcs(&self) {
-        let mut game = self.game.write().await;
-        let board_size = game.board_size;
-        let now = now_ms();
-
-        // NPC Spawning
-        for limit in &self.mode_config.npc_limits {
-            let current_count = game
-                .pieces
-                .values()
-                .filter(|p| {
-                    p.owner_id.is_none() && p.piece_type.as_ref() == limit.piece_id.as_ref()
-                })
-                .count();
-            let mut vars = std::collections::HashMap::new();
-            vars.insert("player_count".to_string(), game.players.len() as f64);
-            let max_npcs = common::logic::evaluate_expression(&limit.max_expr, &vars) as usize;
-
-            if current_count < max_npcs {
-                let spawn_pos = crate::spawning::find_spawn_pos(&game);
-                let id = PieceId::new();
-                let cooldown_ms = self
-                    .piece_configs
-                    .get(&limit.piece_id)
-                    .map(|c| c.cooldown_ms)
-                    .unwrap_or_else(|| DurationMs::from_millis(2000));
-                // Start NPC cooldowns at random offsets so initial spawns are de-synced.
-                let cooldown_window = cooldown_ms.as_i64().max(0);
-                let last_move_time = if cooldown_window == 0 {
-                    now
-                } else {
-                    let mut rng = rand::thread_rng();
-                    let offset = rng.gen_range(0..cooldown_window);
-                    TimestampMs::from_millis(now.as_i64() - offset)
-                };
-                game.pieces.insert(
-                    id,
-                    common::models::Piece {
-                        id,
-                        owner_id: None,
-                        piece_type: limit.piece_id.clone(),
-                        position: spawn_pos,
-                        last_move_time,
-                        cooldown_ms,
-                    },
-                );
-            }
-        }
-
-        // NPC Movement
-        let npc_ids: Vec<PieceId> = game
-            .pieces
-            .iter()
-            .filter(|(_, p)| p.owner_id.is_none())
-            .map(|(id, _)| *id)
-            .collect();
-        for id in npc_ids {
-            let (p_type, p_pos, last_move, cooldown) = {
-                let p = match game.pieces.get(&id) {
-                    Some(p) => p,
-                    None => continue,
-                };
-                (
-                    p.piece_type.clone(),
-                    p.position,
-                    p.last_move_time,
-                    p.cooldown_ms,
-                )
-            };
-
-            if now - last_move < cooldown {
-                continue;
-            }
-
-            let piece_config = match self.piece_configs.get(&p_type) {
-                Some(c) => c,
-                None => continue,
-            };
-
-            // Basic AI: move randomly or towards nearest player if close
-            let mut moved = false;
-
-            // Try to find a player to hunt
-            let nearest_player_piece = game
-                .pieces
-                .values()
-                .filter(|p| p.owner_id.is_some())
-                .min_by_key(|p| (p.position - p_pos).as_vec2().length_squared() as i32);
-
-            if let Some(target_p) = nearest_player_piece {
-                let dist = (target_p.position - p_pos).as_vec2().length();
-                if dist < 12.0 {
-                    // Try to move towards target
-                    // Check all possible capture/move paths
-                    let mut possible_moves = Vec::new();
-                    for path in &piece_config.capture_paths {
-                        for step in path {
-                            if common::logic::is_valid_move(common::logic::MoveValidationParams {
-                                piece_config,
-                                start: p_pos,
-                                end: p_pos + *step,
-                                is_capture: true,
-                                board_size,
-                                pieces: &game.pieces,
-                                moving_owner: None,
-                            }) {
-                                possible_moves.push((p_pos + *step, true));
-                            }
-                        }
-                    }
-                    for path in &piece_config.move_paths {
-                        for step in path {
-                            if common::logic::is_valid_move(common::logic::MoveValidationParams {
-                                piece_config,
-                                start: p_pos,
-                                end: p_pos + *step,
-                                is_capture: false,
-                                board_size,
-                                pieces: &game.pieces,
-                                moving_owner: None,
-                            }) {
-                                possible_moves.push((p_pos + *step, false));
-                            }
-                        }
-                    }
-
-                    if !possible_moves.is_empty() {
-                        // Pick move that minimizes distance to target
-                        possible_moves.sort_by_key(|(pos, _)| {
-                            (target_p.position - *pos).as_vec2().length_squared() as i32
-                        });
-                        let (best_move, is_capture) = possible_moves[0];
-
-                        // Execute move (re-using logic or simplifying)
-                        if is_capture
-                            && let Some(tp) = game
-                                .pieces
-                                .values()
-                                .find(|p| p.position == best_move)
-                                .cloned()
-                        {
-                            game.pieces.remove(&tp.id);
-                            self.record_piece_removal(tp.id).await;
-                            if tp.piece_type.is_king()
-                                && let Some(owner_id) = tp.owner_id
-                            {
-                                // Eliminate player
-                                self.record_player_removal(owner_id, &mut game).await;
-                                game.players.remove(&owner_id);
-                            }
-                        }
-
-                        if let Some(p) = game.pieces.get_mut(&id) {
-                            p.position = best_move;
-                            p.last_move_time = now;
-                            p.cooldown_ms = piece_config.cooldown_ms;
-                            moved = true;
-                        }
-                    }
-                }
-            }
-
-            if !moved {
-                // Random move
-                let mut all_steps = Vec::new();
-                for path in &piece_config.move_paths {
-                    for step in path {
-                        all_steps.push(*step);
-                    }
-                }
-                if !all_steps.is_empty() {
-                    let step = {
-                        let mut rng = rand::thread_rng();
-                        all_steps[rng.gen_range(0..all_steps.len())]
-                    };
-                    let target = p_pos + step;
-                    if common::logic::is_valid_move(common::logic::MoveValidationParams {
-                        piece_config,
-                        start: p_pos,
-                        end: target,
-                        is_capture: false,
-                        board_size,
-                        pieces: &game.pieces,
-                        moving_owner: None,
-                    }) && let Some(p) = game.pieces.get_mut(&id)
-                    {
-                        p.position = target;
-                        p.last_move_time = now;
-                        p.cooldown_ms = piece_config.cooldown_ms;
-                    }
-                }
-            }
-        }
     }
 }

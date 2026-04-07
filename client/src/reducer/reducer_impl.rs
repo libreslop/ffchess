@@ -60,7 +60,7 @@ impl Reducible for GameStateReducer {
                 handle_update_state(&mut next, *payload);
             }
             GameAction::SetError(e) => {
-                next.error = Some(e.clone());
+                next.error = (!matches!(e, GameError::TargetFriendly)).then_some(e.clone());
                 // Identify the first pending move; errors from the server always correspond to a pending move
                 let failing_piece_id = next
                     .pm_queue
@@ -140,6 +140,8 @@ impl Reducible for GameStateReducer {
                 let now = TimestampMs::from_millis(chrono::Utc::now().timestamp_millis());
 
                 let mut processed_pieces = std::collections::HashSet::<PieceId>::new();
+                let mut blocked_pieces = std::collections::HashSet::<PieceId>::new();
+                let player_id = next.player_id.unwrap_or_else(PlayerId::nil);
                 for pm in next.pm_queue.iter_mut() {
                     if processed_pieces.contains(&pm.piece_id) || pm.pending {
                         processed_pieces.insert(pm.piece_id);
@@ -151,6 +153,20 @@ impl Reducible for GameStateReducer {
                                 + piece.cooldown_ms
                                 + DurationMs::from_millis(50)
                     {
+                        let target_has_friendly_piece = next.state.pieces.values().any(|other| {
+                            other.position == pm.target
+                                && other.owner_id == Some(player_id)
+                                && other.id != pm.piece_id
+                        });
+                        if target_has_friendly_piece {
+                            log_client_error(
+                                "Skipping move because the target square is occupied by a friendly piece.",
+                            );
+                            blocked_pieces.insert(pm.piece_id);
+                            processed_pieces.insert(pm.piece_id);
+                            continue;
+                        }
+
                         let _ = tx.0.send(ClientMessage::MovePiece {
                             piece_id: pm.piece_id,
                             target: pm.target,
@@ -169,6 +185,8 @@ impl Reducible for GameStateReducer {
                         }
                     }
                 }
+                next.pm_queue
+                    .retain(|pm| !blocked_pieces.contains(&pm.piece_id));
             }
             GameAction::Pong(t) => {
                 let now = js_sys::Date::now() as u64;
@@ -206,6 +224,14 @@ impl Reducible for GameStateReducer {
         next.phase = compute_phase(&next);
         next.into()
     }
+}
+
+/// Logs a client-side error without surfacing it in the game UI.
+fn log_client_error(message: &str) {
+    #[cfg(target_arch = "wasm32")]
+    web_sys::console::error_1(&message.into());
+    #[cfg(not(target_arch = "wasm32"))]
+    eprintln!("{message}");
 }
 
 fn compute_phase(state: &GameStateReducer) -> ClientPhase {

@@ -43,10 +43,10 @@ async fn mode_list_snapshot(state: &Arc<ServerState>) -> Vec<ModeSummary> {
         };
         list.push(ModeSummary {
             id: mode_id.clone(),
-            display_name: instance.mode_config.display_name.clone(),
+            display_name: instance.mode_display_name().to_string(),
             players,
-            max_players: queue_target.unwrap_or(instance.mode_config.max_players),
-            respawn_cooldown_ms: instance.mode_config.respawn_cooldown_ms,
+            max_players: queue_target.unwrap_or(instance.max_players()),
+            respawn_cooldown_ms: instance.respawn_cooldown_ms(),
         });
     }
     list
@@ -135,9 +135,9 @@ async fn send_init(
         player_id,
         session_secret,
         state: Box::new(game.clone()),
-        mode: instance.mode_config.to_client_config(),
-        pieces: (*instance.piece_configs).clone(),
-        shops: (*instance.shop_configs).clone(),
+        mode: instance.client_mode_config(),
+        pieces: instance.piece_config_snapshot(),
+        shops: instance.shop_config_snapshot(),
     });
 }
 
