@@ -127,6 +127,8 @@ mod tests {
             .await
             .unwrap();
 
+        instance.handle_tick().await;
+
         let game = instance.game.read().await;
         assert!(!game.players.contains_key(&p1_id));
         assert!(game.players.contains_key(&p2_id));
@@ -167,6 +169,8 @@ mod tests {
 
         let p1_msg = rx1.try_recv().expect("Leaver should receive GameOver");
         assert!(matches!(p1_msg, ServerMessage::GameOver { .. }));
+
+        instance.handle_tick().await;
 
         let winner_msg = rx2
             .try_recv()
@@ -232,6 +236,8 @@ mod tests {
             .handle_move(p2_id, p2_queen_id, IVec2::new(11, 11))
             .await
             .expect("Capture should succeed");
+
+        instance.handle_tick().await;
 
         let winner_msg = rx2.try_recv().expect("Capturer should receive win message");
         match winner_msg {

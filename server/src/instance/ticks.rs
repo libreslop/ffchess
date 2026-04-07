@@ -11,6 +11,7 @@ impl GameInstance {
     ///
     /// Returns nothing; this mutates game state and sends updates.
     pub async fn handle_tick(&self) {
+        let hook_events = self.take_hook_events().await;
         let now = now_ms();
         let players_viewing = !self.player_channels.read().await.is_empty()
             || !self.connection_channels.read().await.is_empty();
@@ -61,6 +62,8 @@ impl GameInstance {
                 }
             }
         }
+
+        self.process_hook_events(hook_events).await;
 
         let removed_pieces = {
             let mut rp = self.removed_pieces.write().await;
