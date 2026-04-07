@@ -1,5 +1,6 @@
 //! Shared end-of-match overlay for victory and defeat outcomes.
 
+use crate::ui_state::CooldownSeconds;
 use crate::utils::is_mobile;
 use common::types::Score;
 use yew::prelude::*;
@@ -22,7 +23,7 @@ pub struct EndScreenProps {
     pub captured: u32,
     pub survival_secs: u64,
     pub on_rejoin: Callback<MouseEvent>,
-    pub rejoin_cooldown: i32,
+    pub rejoin_cooldown: CooldownSeconds,
 }
 
 #[function_component(EndScreen)]
@@ -75,13 +76,13 @@ pub fn end_screen(props: &EndScreenProps) -> Html {
                         </div>
                     </div>
 
-                    <button onclick={props.on_rejoin.clone()} disabled={props.rejoin_cooldown > 0}
+                    <button onclick={props.on_rejoin.clone()} disabled={props.rejoin_cooldown.is_active()}
                         style={format!("padding: 15px 40px; font-size: 1.2em; cursor: {}; background: {}; color: white; border: 3px solid {}; border-radius: 0; font-weight: 900; width: auto; transition: all 0.2s; text-transform: uppercase; letter-spacing: 2px;",
-                            if props.rejoin_cooldown > 0 { "not-allowed" } else { "pointer" },
-                            if props.rejoin_cooldown > 0 { "rgba(148, 163, 184, 0.2)" } else { "rgba(30, 41, 59, 0.4)" },
-                            if props.rejoin_cooldown > 0 { "#94a3b8" } else { "#fff" })}>
-                        if props.rejoin_cooldown > 0 {
-                            {format!("Wait ({}s)", props.rejoin_cooldown)}
+                            if props.rejoin_cooldown.is_active() { "not-allowed" } else { "pointer" },
+                            if props.rejoin_cooldown.is_active() { "rgba(148, 163, 184, 0.2)" } else { "rgba(30, 41, 59, 0.4)" },
+                            if props.rejoin_cooldown.is_active() { "#94a3b8" } else { "#fff" })}>
+                        if props.rejoin_cooldown.is_active() {
+                            {format!("Wait ({}s)", props.rejoin_cooldown.as_u32())}
                         } else {
                             {"PLAY AGAIN"}
                         }

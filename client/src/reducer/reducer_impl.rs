@@ -1,7 +1,7 @@
 //! Reducer implementation for applying actions to client state.
 
 use super::actions::{GameAction, InitPayload};
-use super::handlers::handle_update_state;
+use super::time::now_timestamp_ms;
 use super::types::{ClientPhase, GameStateReducer};
 use common::logic::calculate_cooldown;
 use common::protocol::{ClientMessage, GameError};
@@ -36,12 +36,8 @@ impl Reducible for GameStateReducer {
                 next.pm_queue.clear();
                 next.error = None;
                 next.queue_status = None;
-                next.disconnected = false;
-                next.is_victory = false;
-                next.victory_title = None;
-                next.victory_msg = None;
-                next.disconnected_title = None;
-                next.disconnected_msg = None;
+                next.clear_disconnect_ui();
+                next.clear_victory_state();
 
                 if player_id != PlayerId::nil() {
                     next.fatal_error = false;
@@ -62,14 +58,12 @@ impl Reducible for GameStateReducer {
             GameAction::SetQueueStatus(status) => {
                 next.queue_status = Some(status);
                 next.error = None;
-                next.disconnected = false;
+                next.clear_disconnect_ui();
                 next.is_dead = false;
-                next.is_victory = false;
-                next.victory_title = None;
-                next.victory_msg = None;
+                next.clear_victory_state();
             }
             GameAction::UpdateState(payload) => {
-                handle_update_state(&mut next, *payload);
+                next.apply_update_state(*payload);
             }
             GameAction::SetError(e) => {
                 next.error = (!matches!(e, GameError::TargetFriendly)).then_some(e.clone());
@@ -125,21 +119,11 @@ impl Reducible for GameStateReducer {
             }
             GameAction::SetVictory { title, msg } => {
                 next.error = None;
-                next.disconnected = false;
+                next.clear_disconnect_ui();
                 next.fatal_error = false;
                 next.is_dead = false;
-                if let Some(player_id) = next.player_id
-                    && let Some(player) = next.state.players.get(&player_id)
-                {
-                    next.last_score = player.score;
-                    next.last_kills = player.kills;
-                    next.last_captured = player.pieces_captured;
-                    let now = current_timestamp_ms();
-                    next.last_survival_secs = (now - player.join_time).as_u64() / 1000;
-                }
+                next.snapshot_last_stats_from_current_player();
                 next.is_victory = true;
-                next.disconnected_title = None;
-                next.disconnected_msg = None;
                 next.victory_title = Some(title);
                 next.victory_msg = Some(msg);
             }
@@ -154,8 +138,7 @@ impl Reducible for GameStateReducer {
                 next.last_captured = pieces_captured;
                 next.last_survival_secs = time_survived_secs;
                 next.is_victory = false;
-                next.victory_title = None;
-                next.victory_msg = None;
+                next.clear_victory_messages();
                 next.is_dead = true;
             }
             GameAction::AddPmove(pm) => {
@@ -243,9 +226,7 @@ impl Reducible for GameStateReducer {
                 next.disconnected_title = title;
                 next.disconnected_msg = msg;
                 if disconnected || is_fatal {
-                    next.is_victory = false;
-                    next.victory_title = None;
-                    next.victory_msg = None;
+                    next.clear_victory_state();
                 }
             }
             GameAction::Reset => {
@@ -254,15 +235,11 @@ impl Reducible for GameStateReducer {
                 next.state = common::models::GameState::default();
                 next.pm_queue.clear();
                 next.error = None;
-                next.disconnected = false;
+                next.clear_disconnect_ui();
                 next.fatal_error = false;
                 next.is_dead = false;
-                next.is_victory = false;
+                next.clear_victory_state();
                 next.queue_status = None;
-                next.victory_title = None;
-                next.victory_msg = None;
-                next.disconnected_title = None;
-                next.disconnected_msg = None;
                 // Keep mode and configs so the kit list can render while reconnecting
             }
         }
@@ -279,14 +256,37 @@ fn log_client_error(message: &str) {
     eprintln!("{message}");
 }
 
-fn current_timestamp_ms() -> TimestampMs {
-    #[cfg(target_arch = "wasm32")]
-    {
-        TimestampMs::from_millis(js_sys::Date::now() as i64)
+impl GameStateReducer {
+    /// Clears reconnect/disconnect UI details while keeping fatal flags untouched.
+    fn clear_disconnect_ui(&mut self) {
+        self.disconnected = false;
+        self.disconnected_title = None;
+        self.disconnected_msg = None;
     }
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        TimestampMs::from_millis(chrono::Utc::now().timestamp_millis())
+
+    /// Clears only victory message text.
+    fn clear_victory_messages(&mut self) {
+        self.victory_title = None;
+        self.victory_msg = None;
+    }
+
+    /// Clears all victory state so generic end overlays can be derived cleanly.
+    fn clear_victory_state(&mut self) {
+        self.is_victory = false;
+        self.clear_victory_messages();
+    }
+
+    /// Snapshots the current local player's live stats into end-screen fields.
+    fn snapshot_last_stats_from_current_player(&mut self) {
+        if let Some(player_id) = self.player_id
+            && let Some(player) = self.state.players.get(&player_id)
+        {
+            self.last_score = player.score;
+            self.last_kills = player.kills;
+            self.last_captured = player.pieces_captured;
+            let now = now_timestamp_ms();
+            self.last_survival_secs = (now - player.join_time).as_u64() / 1000;
+        }
     }
 }
 

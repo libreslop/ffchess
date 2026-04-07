@@ -7,6 +7,7 @@ use crate::components::{
     JoinScreen, Leaderboard,
 };
 use crate::reducer::{ClientPhase, GameAction, GameStateReducer, MsgSender};
+use crate::ui_state::{CooldownSeconds, JoinStep, RejoinFlow};
 use crate::utils::*;
 use common::models::ModeSummary;
 use common::protocol::ClientMessage;
@@ -28,10 +29,10 @@ pub fn app() -> Html {
     let global_cfg = use_state(load_global_config);
     let reducer = use_reducer(GameStateReducer::default);
     let is_joining = use_state(|| false);
-    let in_rejoin_flow = use_state(|| false);
+    let rejoin_flow = use_state(RejoinFlow::default);
     let tx = use_state(|| None::<MsgSender>);
     let player_name = use_state(get_stored_name);
-    let join_step = use_state(|| 0);
+    let join_step = use_state(JoinStep::default);
     let has_interacted = use_state(|| false);
     let show_disconnected = use_state(|| false);
     // Read initial mode list injected into index.html for immediate render
@@ -157,9 +158,9 @@ pub fn app() -> Html {
             let now = common::types::TimestampMs::from_millis(js_sys::Date::now() as i64);
             let diff_ms = cd_ms - (now - ts);
             if diff_ms > common::types::DurationMs::zero() {
-                (diff_ms.as_u64() / 1000) as i32
+                CooldownSeconds::from_seconds((diff_ms.as_u64() / 1000) as u32)
             } else {
-                0
+                CooldownSeconds::zero()
             }
         })
     };
@@ -170,14 +171,14 @@ pub fn app() -> Html {
         let lc_ref = lc_ref.clone();
         use_effect_with(*lc, move |&initial_lc| {
             let mut interval = None;
-            if initial_lc > 0 {
+            if initial_lc.is_active() {
                 *lc_ref.borrow_mut() = initial_lc;
                 let lc_inner = lc.clone();
                 let lr = lc_ref.clone();
                 interval = Some(Interval::new(1000, move || {
                     let mut cur = *lr.borrow();
-                    if cur > 0 {
-                        cur -= 1;
+                    if cur.is_active() {
+                        cur = cur.decrement();
                         *lr.borrow_mut() = cur;
                         lc_inner.set(cur);
                     }
@@ -356,12 +357,12 @@ pub fn app() -> Html {
         Callback::from(move |e: SubmitEvent| {
             e.prevent_default();
             has_interacted.set(true);
-            if reducer.disconnected || *landing_cooldown > 0 {
+            if reducer.disconnected || landing_cooldown.is_active() {
                 return;
             }
             let name = (*player_name).trim().to_string();
             set_stored_name(&name);
-            join_step.set(1);
+            join_step.set(JoinStep::SelectKit);
         })
     };
 
@@ -370,7 +371,7 @@ pub fn app() -> Html {
     let is_victory = reducer.is_victory;
     let has_match_result = is_dead || is_victory;
     let is_joined = reducer.phase == ClientPhase::Alive || has_match_result;
-    let force_join_overlay = *in_rejoin_flow && !has_match_result;
+    let force_join_overlay = rejoin_flow.forces_join_overlay(has_match_result);
 
     {
         let player_name = player_name.clone();
@@ -415,28 +416,28 @@ pub fn app() -> Html {
     }
 
     {
-        let in_rejoin_flow = in_rejoin_flow.clone();
+        let rejoin_flow = rejoin_flow.clone();
         use_effect_with(
             (
                 reducer.phase,
                 reducer.queue_status.clone(),
                 has_match_result,
-                *in_rejoin_flow,
+                *rejoin_flow,
             ),
-            move |(phase, queue_status, has_match_result, in_flow)| {
-                if *in_flow
+            move |(phase, queue_status, has_match_result, flow)| {
+                if flow.is_active()
                     && !*has_match_result
                     && *phase == ClientPhase::Alive
                     && queue_status.is_none()
                 {
-                    in_rejoin_flow.set(false);
+                    rejoin_flow.set(RejoinFlow::Inactive);
                 }
             },
         );
     }
 
-    let rejoin_cooldown = use_state(|| 0);
-    let rc_ref = use_mut_ref(|| 0);
+    let rejoin_cooldown = use_state(CooldownSeconds::zero);
+    let rc_ref = use_mut_ref(CooldownSeconds::zero);
     {
         let rejoin_cooldown = rejoin_cooldown.clone();
         let rc_ref = rc_ref.clone();
@@ -455,15 +456,16 @@ pub fn app() -> Html {
                     common::types::TimestampMs::from_millis(js_sys::Date::now() as i64),
                     cd_ms,
                 );
-                let cooldown_sec = (cd_ms.as_u64() / 1000).max(1) as i32;
+                let cooldown_sec =
+                    CooldownSeconds::from_seconds((cd_ms.as_u64() / 1000).max(1) as u32);
                 rejoin_cooldown.set(cooldown_sec);
                 *rc_ref.borrow_mut() = cooldown_sec;
                 let rc = rejoin_cooldown.clone();
                 let rr = rc_ref.clone();
                 interval = Some(Interval::new(1000, move || {
                     let mut val = *rr.borrow();
-                    if val > 0 {
-                        val -= 1;
+                    if val.is_active() {
+                        val = val.decrement();
                         *rr.borrow_mut() = val;
                         rc.set(val);
                     }
@@ -478,16 +480,16 @@ pub fn app() -> Html {
         let reducer = reducer.clone();
         let join_step = join_step.clone();
         let has_interacted = has_interacted.clone();
-        let in_rejoin_flow = in_rejoin_flow.clone();
+        let rejoin_flow = rejoin_flow.clone();
         Callback::from(move |_| {
-            if *rc_ref.borrow() == 0 {
+            if rc_ref.borrow().is_zero() {
                 has_interacted.set(true);
                 if reducer.disconnected {
                     return;
                 }
-                in_rejoin_flow.set(true);
+                rejoin_flow.set(RejoinFlow::Active);
                 reducer.dispatch(GameAction::Reset);
-                join_step.set(1);
+                join_step.set(JoinStep::SelectKit);
             }
         })
     };
@@ -533,20 +535,20 @@ pub fn app() -> Html {
                         let key = e.key();
                         if key == "Enter" {
                             if !joined && !dead && !victory {
-                                if step == 0 && lc == 0 && !disc {
+                                if step.is_enter_name() && lc.is_zero() && !disc {
                                     let name = (*player_name).trim().to_string();
                                     set_stored_name(&name);
-                                    join_step.set(1);
+                                    join_step.set(JoinStep::SelectKit);
                                     has_interacted.set(true);
                                 }
-                            } else if (dead || victory) && *rc_ref.borrow() == 0 && !disc {
+                            } else if (dead || victory) && rc_ref.borrow().is_zero() && !disc {
                                 on_rejoin.emit(MouseEvent::new("click").unwrap());
                                 has_interacted.set(true);
                             }
                         } else if !joined
                             && !dead
                             && !victory
-                            && step == 1
+                            && step.is_select_kit()
                             && !queueing
                             && !disc
                             && let Ok(num) = key.parse::<usize>()

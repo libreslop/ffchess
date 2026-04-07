@@ -6,6 +6,7 @@ mod canvas;
 mod components;
 mod math;
 mod reducer;
+mod ui_state;
 mod utils;
 
 /// Boots the Yew renderer and mounts the root app component.
