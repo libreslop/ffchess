@@ -96,6 +96,11 @@ pub enum ServerMessage {
         board_size: BoardSize,
     },
     Error(GameError),
+    QueueState {
+        position_in_queue: u32,
+        queued_players: u32,
+        required_players: u32,
+    },
     GameOver {
         final_score: Score,
         kills: u32,

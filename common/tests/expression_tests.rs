@@ -30,6 +30,7 @@ fn calculate_board_size_clamps_minimum() {
         id: ModeId::from("test"),
         display_name: "Test".to_string(),
         max_players: 8,
+        queue_players: 0,
         board_size: ExprString::from("0"),
         camera_pan_limit: ExprString::from("10"),
         fog_of_war_radius: ExprString::from("10"),

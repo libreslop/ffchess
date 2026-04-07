@@ -23,9 +23,18 @@ pub struct Pmove {
 pub enum ClientPhase {
     #[default]
     Menu,
+    Queued,
     Joining,
     Alive,
     Dead,
+}
+
+/// Queue state shown while waiting for a matchmaking game to start.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct QueueStatus {
+    pub position_in_queue: u32,
+    pub queued_players: u32,
+    pub required_players: u32,
 }
 
 /// Aggregated client game state and UI state.
@@ -48,6 +57,7 @@ pub struct GameStateReducer {
     pub disconnected: bool,
     pub fatal_error: bool,
     pub is_dead: bool,
+    pub queue_status: Option<QueueStatus>,
     pub phase: ClientPhase,
     pub disconnected_title: Option<String>,
     pub disconnected_msg: Option<String>,

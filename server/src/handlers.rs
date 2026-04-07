@@ -1,6 +1,7 @@
 //! Axum handlers for HTTP endpoints and WebSocket sessions.
 
-use crate::state::ServerState;
+use crate::instance::GameInstance;
+use crate::state::{MatchQueueEntry, QueueJoinResult, ServerState};
 use crate::types::ConnectionId;
 use axum::{
     extract::{
@@ -22,15 +23,29 @@ use tokio::sync::mpsc;
 ///
 /// `state` is the shared server state. Returns a vector of `ModeSummary`.
 async fn mode_list_snapshot(state: &Arc<ServerState>) -> Vec<ModeSummary> {
+    let public_games: Vec<(ModeId, Arc<GameInstance>)> = {
+        let games = state.games.read().await;
+        let hidden = state.private_game_ids.read().await;
+        games
+            .iter()
+            .filter(|(mode_id, _)| !hidden.contains(*mode_id))
+            .map(|(mode_id, instance)| (mode_id.clone(), instance.clone()))
+            .collect()
+    };
+
     let mut list = Vec::new();
-    let games = state.games.read().await;
-    for (mode_id, instance) in games.iter() {
-        let players = instance.game.read().await.players.len() as u32;
+    for (mode_id, instance) in public_games {
+        let queue_target = state.queue_target_players(&mode_id);
+        let players = if queue_target.is_some() {
+            state.queue_len(&mode_id).await
+        } else {
+            instance.game.read().await.players.len() as u32
+        };
         list.push(ModeSummary {
             id: mode_id.clone(),
             display_name: instance.mode_config.display_name.clone(),
             players,
-            max_players: instance.mode_config.max_players,
+            max_players: queue_target.unwrap_or(instance.mode_config.max_players),
             respawn_cooldown_ms: instance.mode_config.respawn_cooldown_ms,
         });
     }
@@ -108,12 +123,45 @@ fn generate_name(state: &ServerState) -> String {
     format!("{adj} {noun}")
 }
 
+/// Sends an Init snapshot to a client from a specific game instance.
+async fn send_init(
+    tx: &mpsc::UnboundedSender<ServerMessage>,
+    instance: &Arc<GameInstance>,
+    player_id: PlayerId,
+    session_secret: SessionSecret,
+) {
+    let game = instance.game.read().await;
+    let _ = tx.send(ServerMessage::Init {
+        player_id,
+        session_secret,
+        state: Box::new(game.clone()),
+        mode: instance.mode_config.to_client_config(),
+        pieces: (*instance.piece_configs).clone(),
+        shops: (*instance.shop_configs).clone(),
+    });
+}
+
+/// Broadcasts queue position/state updates to all queued players for a mode.
+async fn broadcast_queue_state(state: &Arc<ServerState>, mode_id: &ModeId) {
+    let Some((required_players, entries)) = state.queue_snapshot(mode_id).await else {
+        return;
+    };
+    let queued_players = entries.len() as u32;
+    for (idx, entry) in entries.iter().enumerate() {
+        let _ = entry.tx.send(ServerMessage::QueueState {
+            position_in_queue: (idx + 1) as u32,
+            queued_players,
+            required_players,
+        });
+    }
+}
+
 /// Handles the lifecycle of a single WebSocket client session.
 ///
 /// `socket` is the upgraded WebSocket, `mode_id` selects the mode, and `state` is shared.
 /// Returns nothing; this runs until the socket closes.
 async fn handle_socket(socket: WebSocket, mode_id: ModeId, state: Arc<ServerState>) {
-    let instance = match state.get_game(&mode_id).await {
+    let lobby_instance = match state.get_joinable_game(&mode_id).await {
         Some(i) => i,
         None => {
             tracing::error!("Game mode not found: {}", mode_id);
@@ -134,25 +182,13 @@ async fn handle_socket(socket: WebSocket, mode_id: ModeId, state: Arc<ServerStat
     });
 
     let conn_id = ConnectionId::new();
-    instance
+    lobby_instance
         .connection_channels
         .write()
         .await
         .insert(conn_id, tx.clone());
 
-    {
-        let game = instance.game.read().await;
-        let _ = tx.send(ServerMessage::Init {
-            player_id: PlayerId::nil(),
-            session_secret: SessionSecret::nil(),
-            state: Box::new(game.clone()),
-            mode: instance.mode_config.to_client_config(),
-            pieces: (*instance.piece_configs).clone(),
-            shops: (*instance.shop_configs).clone(),
-        });
-    }
-
-    let mut player_id: Option<PlayerId> = None;
+    send_init(&tx, &lobby_instance, PlayerId::nil(), SessionSecret::nil()).await;
 
     while let Some(Ok(msg)) = receiver.next().await {
         if let Message::Text(text) = msg {
@@ -168,9 +204,82 @@ async fn handle_socket(socket: WebSocket, mode_id: ModeId, state: Arc<ServerStat
                         if name.is_empty() {
                             name = generate_name(&state);
                         }
+
+                        if let Some(binding) = state.unbind_connection(conn_id).await {
+                            binding.instance.remove_player(binding.player_id).await;
+                            state.cleanup_private_games().await;
+                        }
+
+                        if state.remove_from_queue(&mode_id, conn_id).await {
+                            broadcast_queue_state(&state, &mode_id).await;
+                        }
+
+                        if state.queue_target_players(&mode_id).is_some() {
+                            let queue_entry = MatchQueueEntry {
+                                conn_id,
+                                tx: tx.clone(),
+                                name,
+                                kit_name,
+                            };
+                            match state.enqueue_matchmaking(&mode_id, queue_entry).await {
+                                Some(QueueJoinResult::Waiting) => {
+                                    broadcast_queue_state(&state, &mode_id).await;
+                                }
+                                Some(QueueJoinResult::Matched {
+                                    match_instance,
+                                    players,
+                                }) => {
+                                    for qp in players {
+                                        lobby_instance
+                                            .connection_channels
+                                            .write()
+                                            .await
+                                            .remove(&qp.conn_id);
+                                        match match_instance
+                                            .add_player(
+                                                qp.name,
+                                                qp.kit_name,
+                                                qp.tx.clone(),
+                                                None,
+                                                None,
+                                            )
+                                            .await
+                                        {
+                                            Ok((id, session_secret)) => {
+                                                state
+                                                    .bind_connection(
+                                                        qp.conn_id,
+                                                        id,
+                                                        match_instance.clone(),
+                                                    )
+                                                    .await;
+                                                send_init(
+                                                    &qp.tx,
+                                                    &match_instance,
+                                                    id,
+                                                    session_secret,
+                                                )
+                                                .await;
+                                            }
+                                            Err(e) => {
+                                                let _ = qp.tx.send(ServerMessage::Error(e));
+                                            }
+                                        }
+                                    }
+                                    broadcast_queue_state(&state, &mode_id).await;
+                                }
+                                None => {
+                                    let _ = tx.send(ServerMessage::Error(GameError::Internal(
+                                        "Matchmaking mode is not configured".to_string(),
+                                    )));
+                                }
+                            }
+                            continue;
+                        }
+
                         if let Some(pid) = pid {
-                            let channels = instance.player_channels.read().await;
-                            let game = instance.game.read().await;
+                            let channels = lobby_instance.player_channels.read().await;
+                            let game = lobby_instance.game.read().await;
                             if game.players.contains_key(&pid) && channels.contains_key(&pid) {
                                 let _ = tx.send(ServerMessage::Error(GameError::Custom {
                                     title: "Duplicate Session".to_string(),
@@ -181,32 +290,25 @@ async fn handle_socket(socket: WebSocket, mode_id: ModeId, state: Arc<ServerStat
                             }
                         }
 
-                        if let Some(old_pid) = player_id {
-                            instance.remove_player(old_pid).await;
-                            player_id = None;
-                        }
+                        lobby_instance
+                            .connection_channels
+                            .write()
+                            .await
+                            .remove(&conn_id);
 
-                        instance.connection_channels.write().await.remove(&conn_id);
-
-                        match instance
+                        match lobby_instance
                             .add_player(name, kit_name, tx.clone(), pid, secret)
                             .await
                         {
-                            Ok((id, secret)) => {
-                                player_id = Some(id);
-                                let game = instance.game.read().await;
-                                let _ = tx.send(ServerMessage::Init {
-                                    player_id: id,
-                                    session_secret: secret,
-                                    state: Box::new(game.clone()),
-                                    mode: instance.mode_config.to_client_config(),
-                                    pieces: (*instance.piece_configs).clone(),
-                                    shops: (*instance.shop_configs).clone(),
-                                });
+                            Ok((id, session_secret)) => {
+                                state
+                                    .bind_connection(conn_id, id, lobby_instance.clone())
+                                    .await;
+                                send_init(&tx, &lobby_instance, id, session_secret).await;
                             }
                             Err(e) => {
                                 let _ = tx.send(ServerMessage::Error(e));
-                                instance
+                                lobby_instance
                                     .connection_channels
                                     .write()
                                     .await
@@ -215,8 +317,11 @@ async fn handle_socket(socket: WebSocket, mode_id: ModeId, state: Arc<ServerStat
                         }
                     }
                     ClientMessage::MovePiece { piece_id, target } => {
-                        if let Some(pid) = player_id
-                            && let Err(e) = instance.handle_move(pid, piece_id, target).await
+                        if let Some(binding) = state.get_binding(conn_id).await
+                            && let Err(e) = binding
+                                .instance
+                                .handle_move(binding.player_id, piece_id, target)
+                                .await
                         {
                             let _ = tx.send(ServerMessage::Error(e));
                         }
@@ -225,9 +330,11 @@ async fn handle_socket(socket: WebSocket, mode_id: ModeId, state: Arc<ServerStat
                         shop_pos,
                         item_index,
                     } => {
-                        if let Some(pid) = player_id
-                            && let Err(e) =
-                                instance.handle_shop_buy(pid, shop_pos, item_index).await
+                        if let Some(binding) = state.get_binding(conn_id).await
+                            && let Err(e) = binding
+                                .instance
+                                .handle_shop_buy(binding.player_id, shop_pos, item_index)
+                                .await
                         {
                             let _ = tx.send(ServerMessage::Error(e));
                         }
@@ -243,10 +350,18 @@ async fn handle_socket(socket: WebSocket, mode_id: ModeId, state: Arc<ServerStat
         }
     }
 
-    if let Some(pid) = player_id {
-        instance.remove_player(pid).await;
+    if let Some(binding) = state.unbind_connection(conn_id).await {
+        binding.instance.remove_player(binding.player_id).await;
+        state.cleanup_private_games().await;
     } else {
-        instance.connection_channels.write().await.remove(&conn_id);
+        lobby_instance
+            .connection_channels
+            .write()
+            .await
+            .remove(&conn_id);
+        if state.remove_from_queue(&mode_id, conn_id).await {
+            broadcast_queue_state(&state, &mode_id).await;
+        }
     }
     send_task.abort();
 }

@@ -4,7 +4,7 @@ use crate::colors::ColorManager;
 use crate::time::now_ms;
 use crate::types::ConnectionId;
 use common::models::{GameModeConfig, GameState, PieceConfig, ShopConfig};
-use common::protocol::ServerMessage;
+use common::protocol::{GameError, ServerMessage};
 use common::types::{PieceId, PieceTypeId, PlayerId, SessionSecret, ShopId, TimestampMs};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -27,6 +27,76 @@ pub struct GameInstance {
 }
 
 impl GameInstance {
+    /// Resolves the first matching win hook in configured order.
+    ///
+    /// `game` is the current state after any removals, `capturer` and `captured_piece_type`
+    /// describe the active capture event, and `had_player_leave` marks leave-trigger eligibility.
+    /// Returns winner id and message payload when a win hook matches.
+    pub fn resolve_win_hook(
+        &self,
+        game: &GameState,
+        capturer: Option<PlayerId>,
+        captured_piece_type: Option<&PieceTypeId>,
+        had_player_leave: bool,
+    ) -> Option<(PlayerId, String, String)> {
+        for hook in &self.mode_config.hooks {
+            if hook.trigger == "OnCapturePieceActive" && hook.action == "WinCapturer" {
+                let Some(capturer_id) = capturer else {
+                    continue;
+                };
+                let Some(captured_type) = captured_piece_type else {
+                    continue;
+                };
+                if let Some(target_piece_id) = &hook.target_piece_id
+                    && target_piece_id != captured_type
+                {
+                    continue;
+                }
+                let title = hook.title.clone().unwrap_or_else(|| "VICTORY".to_string());
+                let message = hook
+                    .message
+                    .clone()
+                    .unwrap_or_else(|| "You won by capturing the enemy king.".to_string());
+                return Some((capturer_id, title, message));
+            }
+
+            if hook.trigger == "OnPlayerLeave" && hook.action == "WinRemaining" {
+                if !had_player_leave {
+                    continue;
+                }
+                let players_left = game.players.len() as u32;
+                if let Some(required) = hook.players_left
+                    && players_left != required
+                {
+                    continue;
+                }
+                if players_left != 1 {
+                    continue;
+                }
+                let Some((&winner_id, _)) = game.players.iter().next() else {
+                    continue;
+                };
+                let title = hook.title.clone().unwrap_or_else(|| "VICTORY".to_string());
+                let message = hook
+                    .message
+                    .clone()
+                    .unwrap_or_else(|| "Opponent disconnected. You win.".to_string());
+                return Some((winner_id, title, message));
+            }
+        }
+        None
+    }
+
+    /// Sends a fatal custom message to a specific player.
+    ///
+    /// `player_id` is the recipient and `title`/`message` are shown on the client.
+    pub async fn send_custom_to_player(&self, player_id: PlayerId, title: String, message: String) {
+        let channels = self.player_channels.read().await;
+        if let Some(tx) = channels.get(&player_id) {
+            let _ = tx.send(ServerMessage::Error(GameError::Custom { title, message }));
+        }
+    }
+
     /// Creates a new game instance for a given mode.
     ///
     /// `mode_config` defines the rules, `piece_configs` and `shop_configs` provide assets.

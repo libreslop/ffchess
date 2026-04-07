@@ -73,8 +73,14 @@ pub struct ShopCountConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct HookConfig {
     pub trigger: String,
-    pub target_piece_id: PieceTypeId,
+    pub target_piece_id: Option<PieceTypeId>,
+    #[serde(default)]
+    pub players_left: Option<u32>,
     pub action: String,
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub message: Option<String>,
 }
 
 /// Minimal kit info sent to clients.
@@ -90,6 +96,8 @@ pub struct KitSummary {
 pub struct GameModeClientConfig {
     pub id: ModeId,
     pub display_name: String,
+    #[serde(default)]
+    pub queue_players: u32,
     pub camera_pan_limit: ExprString,
     pub fog_of_war_radius: ExprString,
     pub respawn_cooldown_ms: DurationMs,
@@ -102,6 +110,8 @@ pub struct GameModeConfig {
     pub id: ModeId,
     pub display_name: String,
     pub max_players: u32,
+    #[serde(default)]
+    pub queue_players: u32,
     pub board_size: ExprString,
     pub camera_pan_limit: ExprString,
     pub fog_of_war_radius: ExprString,
@@ -185,6 +195,7 @@ impl GameModeConfig {
         GameModeClientConfig {
             id: self.id.clone(),
             display_name: self.display_name.clone(),
+            queue_players: self.queue_players,
             camera_pan_limit: self.camera_pan_limit.clone(),
             fog_of_war_radius: self.fog_of_war_radius.clone(),
             respawn_cooldown_ms: self.respawn_cooldown_ms,

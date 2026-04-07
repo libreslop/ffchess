@@ -16,13 +16,13 @@ use tokio::sync::mpsc;
 
 /// Builds a minimal piece config for testing.
 ///
-/// `id` is the piece id, `ch` is the display char, `score` is the reward value.
+/// `id` is the piece id and `score` is the reward value.
 /// Returns a `PieceConfig`.
-fn make_piece_config(id: &str, ch: char, score: u64) -> PieceConfig {
+fn make_piece_config(id: &str, score: u64) -> PieceConfig {
     PieceConfig {
         id: PieceTypeId::from(id),
         display_name: id.to_string(),
-        char: ch,
+        svg_path: format!("assets/pieces/{}.svg", id),
         score_value: Score::from(score),
         cooldown_ms: DurationMs::from_millis(500),
         move_paths: vec![vec![IVec2::new(1, 0)]],
@@ -34,14 +34,8 @@ fn make_piece_config(id: &str, ch: char, score: u64) -> PieceConfig {
 /// Verifies shop purchases deduct score and spawn pieces.
 async fn shop_purchase_deducts_score_and_adds_piece() {
     let mut piece_configs = HashMap::new();
-    piece_configs.insert(
-        PieceTypeId::from("king"),
-        make_piece_config("king", 'K', 500),
-    );
-    piece_configs.insert(
-        PieceTypeId::from("pawn"),
-        make_piece_config("pawn", 'P', 10),
-    );
+    piece_configs.insert(PieceTypeId::from("king"), make_piece_config("king", 500));
+    piece_configs.insert(PieceTypeId::from("pawn"), make_piece_config("pawn", 10));
 
     let shop_id = ShopId::from("test_shop");
     let shop_config = ShopConfig {
@@ -65,6 +59,7 @@ async fn shop_purchase_deducts_score_and_adds_piece() {
         id: ModeId::from("test"),
         display_name: "Test".to_string(),
         max_players: 8,
+        queue_players: 0,
         board_size: ExprString::from("20"),
         camera_pan_limit: ExprString::from("10"),
         fog_of_war_radius: ExprString::from("10"),

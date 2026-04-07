@@ -15,6 +15,7 @@ pub struct JoinScreenProps {
     pub join_step: i32,
     pub on_join: Callback<KitId>,
     pub error: Option<common::protocol::GameError>,
+    pub queue_status: Option<crate::reducer::QueueStatus>,
     pub is_loading: bool,
     pub mode: Option<GameModeClientConfig>,
     pub mode_options: Vec<ModeSummary>,
@@ -28,7 +29,7 @@ pub struct JoinScreenProps {
 /// `props` supplies the join state and callbacks. Returns rendered HTML.
 pub fn join_screen(props: &JoinScreenProps) -> Html {
     let mobile = is_mobile();
-    let is_disabled = props.is_loading || props.error.is_some();
+    let is_disabled = props.is_loading || props.error.is_some() || props.queue_status.is_some();
 
     html! {
         <>
@@ -83,33 +84,45 @@ pub fn join_screen(props: &JoinScreenProps) -> Html {
                             </div>
                         }
 
-                        <div style="display: flex; gap: 12px; width: 100%; justify-content: center; flex-wrap: wrap;">
-                            if let Some(mode) = &props.mode {
-                                { for mode.kits.iter().enumerate().map(|(idx, kit)| {
-                                    let kit_name = kit.name.clone();
-                                    let on_click = props.on_join.reform(move |_| kit_name.clone());
-                                    html! {
-                                        <button
-                                            disabled={is_disabled}
-                                            onclick={on_click}
-                                            style={format!(
-                                                "width: 150px; height: 150px; position: relative; padding: 12px; cursor: {}; border-radius: 0; border: 2px solid rgba(255,255,255,0.5); background: rgba(255,255,255,0.1); color: #fff; transition: all 0.2s; opacity: {}; display: flex; flex-direction: column; align-items: center; justify-content: center;",
-                                                if is_disabled { "not-allowed" } else { "pointer" },
-                                                if is_disabled { "0.5" } else { "1.0" }
-                                            )}
-                                        >
-                                            <span style="font-weight: 900; font-size: 1.1em; line-height: 1.1; text-align: center; margin-bottom: 8px;">{ kit.name.as_ref().to_uppercase() }</span>
-                                            <span style="font-weight: normal; font-size: 0.8em; color: #cbd5e1; line-height: 1.2; text-align: center; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden;">{ &kit.description }</span>
-                                            <span style="position: absolute; bottom: 6px; right: 10px; font-size: 1em; font-weight: 900; opacity: 0.5;">
-                                                { idx + 1 }
-                                            </span>
-                                        </button>
-                                    }
-                                })}
-                            } else {
-                                <div style="color: #fff;">{"Loading kits..."}</div>
-                            }
+                        if let Some(queue) = &props.queue_status {
+                            <div style="width: 100%; max-width: 440px; background: rgba(0,0,0,0.45); border: 2px solid rgba(255,255,255,0.6); padding: 16px;">
+                                <div style="color: #fff; font-size: 1.2em; font-weight: 900; letter-spacing: 1px; margin-bottom: 8px;">{"IN QUEUE"}</div>
+                                <div style="color: #cbd5e1; margin-bottom: 6px;">
+                                    { format!("Position: {}", queue.position_in_queue) }
+                                </div>
+                                <div style="color: #cbd5e1;">
+                                    { format!("Players queued: {}/{}", queue.queued_players, queue.required_players) }
+                                </div>
+                            </div>
+                        } else {
+                            <div style="display: flex; gap: 12px; width: 100%; justify-content: center; flex-wrap: wrap;">
+                                if let Some(mode) = &props.mode {
+                                    { for mode.kits.iter().enumerate().map(|(idx, kit)| {
+                                        let kit_name = kit.name.clone();
+                                        let on_click = props.on_join.reform(move |_| kit_name.clone());
+                                        html! {
+                                            <button
+                                                disabled={is_disabled}
+                                                onclick={on_click}
+                                                style={format!(
+                                                    "width: 150px; height: 150px; position: relative; padding: 12px; cursor: {}; border-radius: 0; border: 2px solid rgba(255,255,255,0.5); background: rgba(255,255,255,0.1); color: #fff; transition: all 0.2s; opacity: {}; display: flex; flex-direction: column; align-items: center; justify-content: center;",
+                                                    if is_disabled { "not-allowed" } else { "pointer" },
+                                                    if is_disabled { "0.5" } else { "1.0" }
+                                                )}
+                                            >
+                                                <span style="font-weight: 900; font-size: 1.1em; line-height: 1.1; text-align: center; margin-bottom: 8px;">{ kit.name.as_ref().to_uppercase() }</span>
+                                                <span style="font-weight: normal; font-size: 0.8em; color: #cbd5e1; line-height: 1.2; text-align: center; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden;">{ &kit.description }</span>
+                                                <span style="position: absolute; bottom: 6px; right: 10px; font-size: 1em; font-weight: 900; opacity: 0.5;">
+                                                    { idx + 1 }
+                                                </span>
+                                            </button>
+                                        }
+                                    })}
+                                } else {
+                                    <div style="color: #fff;">{"Loading kits..."}</div>
+                                }
                         </div>
+                            }
                     </div>
                 }
             </div>

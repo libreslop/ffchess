@@ -78,17 +78,29 @@ impl GameInstance {
                 }
             }
 
-            // Handle hooks (e.g., EliminateOwner)
+            let mut had_player_leave = false;
+
+            // Handle capture-passive hooks (e.g., EliminateOwner).
             for hook in &self.mode_config.hooks {
                 if hook.trigger == "OnCapture"
-                    && hook.target_piece_id == tp.piece_type
+                    && hook.target_piece_id.as_ref() == Some(&tp.piece_type)
                     && let Some(target_owner_id) = tp.owner_id
                     && hook.action == "EliminateOwner"
                 {
                     // Record player removal (updates death timestamps)
                     self.record_player_removal(target_owner_id, &mut game).await;
                     game.players.remove(&target_owner_id);
+                    had_player_leave = true;
                 }
+            }
+
+            if let Some((winner_id, title, message)) = self.resolve_win_hook(
+                &game,
+                Some(player_id),
+                Some(&tp.piece_type),
+                had_player_leave,
+            ) {
+                self.send_custom_to_player(winner_id, title, message).await;
             }
         }
 

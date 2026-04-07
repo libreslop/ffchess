@@ -3,6 +3,7 @@
 #[cfg(test)]
 mod tests {
     use common::models::Piece;
+    use common::protocol::{GameError, ServerMessage};
     use common::types::{DurationMs, KitId, ModeId, PieceId, PieceTypeId, Score, TimestampMs};
     use glam::IVec2;
     use server::state::ServerState;
@@ -140,5 +141,105 @@ mod tests {
 
         // P2 should have gained score (King value is 500)
         assert_eq!(game.players.get(&p2_id).unwrap().score, Score::from(500));
+    }
+
+    #[tokio::test]
+    /// Verifies disconnecting in duel grants a win message to the remaining player.
+    async fn test_duel_player_leave_win_hook() {
+        let state = ServerState::new();
+        let instance = state
+            .get_game(&ModeId::from("duel"))
+            .await
+            .expect("Duel game should exist");
+        let (tx1, mut rx1) = mpsc::unbounded_channel();
+        let (tx2, mut rx2) = mpsc::unbounded_channel();
+
+        let (p1_id, _) = instance
+            .add_player("P1".to_string(), KitId::from("Standard"), tx1, None, None)
+            .await
+            .expect("P1 join should succeed");
+        let (_p2_id, _) = instance
+            .add_player("P2".to_string(), KitId::from("Standard"), tx2, None, None)
+            .await
+            .expect("P2 join should succeed");
+
+        instance.remove_player(p1_id).await;
+
+        let p1_msg = rx1.try_recv().expect("Leaver should receive GameOver");
+        assert!(matches!(p1_msg, ServerMessage::GameOver { .. }));
+
+        let winner_msg = rx2
+            .try_recv()
+            .expect("Remaining player should receive win message");
+        match winner_msg {
+            ServerMessage::Error(GameError::Custom { title, message }) => {
+                assert_eq!(title, "VICTORY");
+                assert_eq!(message, "Opponent disconnected. You win.");
+            }
+            other => panic!("Unexpected winner message: {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    /// Verifies capture-win hook takes precedence over leave-win hook in duel.
+    async fn test_duel_capture_king_win_hook_precedes_leave_hook() {
+        let state = ServerState::new();
+        let instance = state
+            .get_game(&ModeId::from("duel"))
+            .await
+            .expect("Duel game should exist");
+        let (tx1, _rx1) = mpsc::unbounded_channel();
+        let (tx2, mut rx2) = mpsc::unbounded_channel();
+
+        let (p1_id, _) = instance
+            .add_player("P1".to_string(), KitId::from("Standard"), tx1, None, None)
+            .await
+            .expect("P1 join should succeed");
+        let (p2_id, _) = instance
+            .add_player("P2".to_string(), KitId::from("Standard"), tx2, None, None)
+            .await
+            .expect("P2 join should succeed");
+
+        let p1_king_id = {
+            let game = instance.game.read().await;
+            game.players.get(&p1_id).unwrap().king_id
+        };
+
+        let p2_queen_id = {
+            let mut game = instance.game.write().await;
+            let q_id = PieceId::new();
+            game.pieces.insert(
+                q_id,
+                Piece {
+                    id: q_id,
+                    owner_id: Some(p2_id),
+                    piece_type: PieceTypeId::from("queen"),
+                    position: IVec2::new(10, 10),
+                    last_move_time: TimestampMs::from_millis(0),
+                    cooldown_ms: DurationMs::zero(),
+                },
+            );
+            q_id
+        };
+
+        {
+            let mut game = instance.game.write().await;
+            game.pieces.get_mut(&p1_king_id).unwrap().position = IVec2::new(11, 11);
+            game.pieces.get_mut(&p2_queen_id).unwrap().position = IVec2::new(10, 10);
+        }
+
+        instance
+            .handle_move(p2_id, p2_queen_id, IVec2::new(11, 11))
+            .await
+            .expect("Capture should succeed");
+
+        let winner_msg = rx2.try_recv().expect("Capturer should receive win message");
+        match winner_msg {
+            ServerMessage::Error(GameError::Custom { title, message }) => {
+                assert_eq!(title, "VICTORY");
+                assert_eq!(message, "You won by capturing the enemy king.");
+            }
+            other => panic!("Unexpected winner message: {:?}", other),
+        }
     }
 }

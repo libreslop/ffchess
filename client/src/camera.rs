@@ -191,7 +191,7 @@ pub fn update_camera(manager: &mut CameraManager, params: CameraUpdateParams<'_>
             manager.input_locked = false;
             changed = true;
         }
-    } else if params.phase == ClientPhase::Menu {
+    } else if matches!(params.phase, ClientPhase::Menu | ClientPhase::Queued) {
         // Menu / Choose Army screen
         // In this coordinate system, (0,0) is the center of the board
         manager.target_camera = Vec2::ZERO;

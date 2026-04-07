@@ -117,6 +117,7 @@ pub fn app() -> Html {
             (
                 reducer.player_id,
                 reducer.error.clone(),
+                reducer.queue_status.clone(),
                 reducer.disconnected,
             ),
             move |_| {
@@ -301,7 +302,7 @@ pub fn app() -> Html {
         let current_mode_id = current_mode_id.clone();
         Callback::from(move |kit_name: KitId| {
             let current_reducer = reducer_ref.borrow().clone();
-            if *is_joining {
+            if *is_joining || current_reducer.queue_status.is_some() {
                 return;
             }
             if current_reducer.disconnected || current_reducer.fatal_error {
@@ -474,6 +475,7 @@ pub fn app() -> Html {
         let on_rejoin = on_rejoin.clone();
         let rc_ref = rc_ref.clone();
         let disconnected = reducer.disconnected;
+        let queueing = reducer.queue_status.is_some();
 
         let kits = reducer
             .mode
@@ -488,9 +490,10 @@ pub fn app() -> Html {
                 *join_step,
                 *landing_cooldown,
                 disconnected,
+                queueing,
                 kits.clone(),
             ),
-            move |&(joined, dead, step, lc, disc, ref kits)| {
+            move |&(joined, dead, step, lc, disc, queueing, ref kits)| {
                 let on_join = on_join.clone();
                 let on_rejoin = on_rejoin.clone();
                 let rc_ref = rc_ref.clone();
@@ -515,6 +518,7 @@ pub fn app() -> Html {
                         } else if !joined
                             && !dead
                             && step == 1
+                            && !queueing
                             && !disc
                             && let Ok(num) = key.parse::<usize>()
                             && num > 0
@@ -609,6 +613,7 @@ pub fn app() -> Html {
                     join_step={*join_step}
                     on_join={on_join}
                     error={reducer.error.clone()}
+                    queue_status={reducer.queue_status.clone()}
                     is_loading={*is_joining}
                     mode={reducer.mode.clone()}
                     mode_options={(*mode_options).clone()}

@@ -197,9 +197,15 @@ impl GameInstance {
         }
 
         let mut game = self.game.write().await;
-        if game.players.remove(&player_id).is_some() {
-            self.player_channels.write().await.remove(&player_id);
+        let removed_player = game.players.remove(&player_id).is_some();
+        self.player_channels.write().await.remove(&player_id);
+        if removed_player {
             self.record_player_removal(player_id, &mut game).await;
+            if let Some((winner_id, title, message)) =
+                self.resolve_win_hook(&game, None, None, true)
+            {
+                self.send_custom_to_player(winner_id, title, message).await;
+            }
         }
     }
 

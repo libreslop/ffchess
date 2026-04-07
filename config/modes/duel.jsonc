@@ -1,0 +1,49 @@
+{
+    "display_name": "Duel",
+    "max_players": 2,
+    "queue_players": 2,
+    "board_size": "24",
+    "camera_pan_limit": "fog_of_war_radius + 1",
+    "fog_of_war_radius": "14",
+    "respawn_cooldown_ms": 0,
+    "npc_limits": [],
+    "shop_counts": [],
+    "kits": [
+        {
+            "name": "Standard",
+            "description": "2 Pawns, 2 Knights",
+            "pieces": ["king", "pawn", "pawn", "knight", "knight"]
+        },
+        {
+            "name": "Scout",
+            "description": "1 Pawn, 2 Bishops",
+            "pieces": ["king", "pawn", "bishop", "bishop"]
+        },
+        {
+            "name": "Tank",
+            "description": "1 Pawn, 1 Rook",
+            "pieces": ["king", "rook", "pawn"]
+        }
+    ],
+    "hooks": [
+        {
+            "trigger": "OnCapture",
+            "target_piece_id": "king",
+            "action": "EliminateOwner"
+        },
+        {
+            "trigger": "OnCapturePieceActive",
+            "target_piece_id": "king",
+            "action": "WinCapturer",
+            "title": "VICTORY",
+            "message": "You won by capturing the enemy king."
+        },
+        {
+            "trigger": "OnPlayerLeave",
+            "players_left": 1,
+            "action": "WinRemaining",
+            "title": "VICTORY",
+            "message": "Opponent disconnected. You win."
+        }
+    ]
+}

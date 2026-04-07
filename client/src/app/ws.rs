@@ -78,6 +78,15 @@ pub async fn connect_ws(
                             removed_players,
                             board_size,
                         })),
+                        ServerMessage::QueueState {
+                            position_in_queue,
+                            queued_players,
+                            required_players,
+                        } => GameAction::SetQueueStatus(crate::reducer::QueueStatus {
+                            position_in_queue,
+                            queued_players,
+                            required_players,
+                        }),
                         ServerMessage::Error(e) => match &e {
                             GameError::Custom { title, message: _ }
                                 if title.to_lowercase().contains("invalid session secret") =>

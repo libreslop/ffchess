@@ -35,6 +35,7 @@ impl Reducible for GameStateReducer {
                 next.shop_configs = shops;
                 next.pm_queue.clear();
                 next.error = None;
+                next.queue_status = None;
                 next.disconnected = false;
 
                 if player_id != PlayerId::nil() {
@@ -49,6 +50,11 @@ impl Reducible for GameStateReducer {
                         next.is_dead = false;
                     }
                 }
+            }
+            GameAction::SetQueueStatus(status) => {
+                next.queue_status = Some(status);
+                next.error = None;
+                next.disconnected = false;
             }
             GameAction::UpdateState(payload) => {
                 handle_update_state(&mut next, *payload);
@@ -193,6 +199,7 @@ impl Reducible for GameStateReducer {
                 next.disconnected = false;
                 next.fatal_error = false;
                 next.is_dead = false;
+                next.queue_status = None;
                 // Keep mode and configs so the kit list can render while reconnecting
             }
         }
@@ -207,6 +214,9 @@ fn compute_phase(state: &GameStateReducer) -> ClientPhase {
         return ClientPhase::Menu;
     };
     if player_id == PlayerId::nil() {
+        if state.queue_status.is_some() {
+            return ClientPhase::Queued;
+        }
         return ClientPhase::Menu;
     }
     if state.is_dead {
