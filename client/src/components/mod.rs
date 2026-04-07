@@ -8,6 +8,7 @@ pub mod game_view;
 pub mod join_screen;
 pub mod leaderboard;
 pub mod shop_ui;
+pub mod victory_screen;
 
 pub use defeat_screen::DefeatScreen;
 pub use disconnected_screen::DisconnectedScreen;
@@ -16,3 +17,4 @@ pub use fatal_notification::FatalNotification;
 pub use game_view::GameView;
 pub use join_screen::JoinScreen;
 pub use leaderboard::Leaderboard;
+pub use victory_screen::VictoryScreen;

@@ -57,10 +57,13 @@ pub struct GameStateReducer {
     pub disconnected: bool,
     pub fatal_error: bool,
     pub is_dead: bool,
+    pub is_victory: bool,
     pub queue_status: Option<QueueStatus>,
     pub phase: ClientPhase,
     pub disconnected_title: Option<String>,
     pub disconnected_msg: Option<String>,
+    pub victory_title: Option<String>,
+    pub victory_msg: Option<String>,
 }
 
 /// Channel sender wrapper for client messages.

@@ -37,6 +37,11 @@ impl Reducible for GameStateReducer {
                 next.error = None;
                 next.queue_status = None;
                 next.disconnected = false;
+                next.is_victory = false;
+                next.victory_title = None;
+                next.victory_msg = None;
+                next.disconnected_title = None;
+                next.disconnected_msg = None;
 
                 if player_id != PlayerId::nil() {
                     next.fatal_error = false;
@@ -49,12 +54,19 @@ impl Reducible for GameStateReducer {
                         // The next UpdateState will correct it if they are truly gone.
                         next.is_dead = false;
                     }
+                } else {
+                    // Queue Init snapshots use nil player id. Never carry over dead state.
+                    next.is_dead = false;
                 }
             }
             GameAction::SetQueueStatus(status) => {
                 next.queue_status = Some(status);
                 next.error = None;
                 next.disconnected = false;
+                next.is_dead = false;
+                next.is_victory = false;
+                next.victory_title = None;
+                next.victory_msg = None;
             }
             GameAction::UpdateState(payload) => {
                 handle_update_state(&mut next, *payload);
@@ -111,6 +123,17 @@ impl Reducible for GameStateReducer {
                     }
                 }
             }
+            GameAction::SetVictory { title, msg } => {
+                next.error = None;
+                next.disconnected = false;
+                next.fatal_error = false;
+                next.is_dead = false;
+                next.is_victory = true;
+                next.disconnected_title = None;
+                next.disconnected_msg = None;
+                next.victory_title = Some(title);
+                next.victory_msg = Some(msg);
+            }
             GameAction::GameOver {
                 final_score,
                 kills,
@@ -121,6 +144,9 @@ impl Reducible for GameStateReducer {
                 next.last_kills = kills;
                 next.last_captured = pieces_captured;
                 next.last_survival_secs = time_survived_secs;
+                next.is_victory = false;
+                next.victory_title = None;
+                next.victory_msg = None;
                 next.is_dead = true;
             }
             GameAction::AddPmove(pm) => {
@@ -207,6 +233,11 @@ impl Reducible for GameStateReducer {
                 next.fatal_error = is_fatal;
                 next.disconnected_title = title;
                 next.disconnected_msg = msg;
+                if disconnected || is_fatal {
+                    next.is_victory = false;
+                    next.victory_title = None;
+                    next.victory_msg = None;
+                }
             }
             GameAction::Reset => {
                 next.player_id = Some(PlayerId::nil());
@@ -217,7 +248,12 @@ impl Reducible for GameStateReducer {
                 next.disconnected = false;
                 next.fatal_error = false;
                 next.is_dead = false;
+                next.is_victory = false;
                 next.queue_status = None;
+                next.victory_title = None;
+                next.victory_msg = None;
+                next.disconnected_title = None;
+                next.disconnected_msg = None;
                 // Keep mode and configs so the kit list can render while reconnecting
             }
         }
@@ -245,7 +281,7 @@ fn compute_phase(state: &GameStateReducer) -> ClientPhase {
         }
         return ClientPhase::Menu;
     }
-    if state.is_dead {
+    if state.is_dead || state.is_victory {
         return ClientPhase::Dead;
     }
     if let Some(player) = state.state.players.get(&player_id)

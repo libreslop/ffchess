@@ -4,7 +4,7 @@ use crate::app::config::{load_global_config, order_modes};
 use crate::app::ws::connect_ws;
 use crate::components::{
     DefeatScreen, DisconnectedScreen, ErrorToast, FatalNotification, GameView, JoinScreen,
-    Leaderboard,
+    Leaderboard, VictoryScreen,
 };
 use crate::reducer::{GameAction, GameStateReducer, MsgSender};
 use crate::utils::*;
@@ -366,8 +366,12 @@ pub fn app() -> Html {
 
     let player_id = reducer.player_id.unwrap_or_else(PlayerId::nil);
     let is_dead = reducer.is_dead;
-    let is_joined =
-        (reducer.player_id.is_some() && reducer.player_id != Some(PlayerId::nil())) || is_dead;
+    let is_victory = reducer.is_victory;
+    let has_match_result = is_dead || is_victory;
+    let is_queued = reducer.queue_status.is_some();
+    let has_active_player =
+        reducer.player_id.is_some() && reducer.player_id != Some(PlayerId::nil());
+    let is_joined = (has_active_player && !is_queued) || has_match_result;
 
     {
         let player_name = player_name.clone();
@@ -395,7 +399,8 @@ pub fn app() -> Html {
 
     {
         let show_disconnected = show_disconnected.clone();
-        let should_show = reducer.disconnected && !reducer.fatal_error && is_joined && !is_dead;
+        let should_show =
+            reducer.disconnected && !reducer.fatal_error && is_joined && !has_match_result;
         use_effect_with(should_show, move |&should| {
             if should {
                 show_disconnected.set(true);
@@ -417,9 +422,9 @@ pub fn app() -> Html {
         let rc_ref = rc_ref.clone();
         let current_mode_id = current_mode_id.clone();
         let reducer = reducer.clone();
-        use_effect_with(is_dead, move |is_dead| {
+        use_effect_with(has_match_result, move |has_match_result| {
             let mut interval = None;
-            if *is_dead {
+            if *has_match_result {
                 let cd_ms = reducer
                     .mode
                     .as_ref()
@@ -487,13 +492,14 @@ pub fn app() -> Html {
             (
                 is_joined,
                 is_dead,
+                is_victory,
                 *join_step,
                 *landing_cooldown,
                 disconnected,
                 queueing,
                 kits.clone(),
             ),
-            move |&(joined, dead, step, lc, disc, queueing, ref kits)| {
+            move |&(joined, dead, victory, step, lc, disc, queueing, ref kits)| {
                 let on_join = on_join.clone();
                 let on_rejoin = on_rejoin.clone();
                 let rc_ref = rc_ref.clone();
@@ -504,19 +510,20 @@ pub fn app() -> Html {
                         let e = e.dyn_ref::<web_sys::KeyboardEvent>().unwrap();
                         let key = e.key();
                         if key == "Enter" {
-                            if !joined && !dead {
+                            if !joined && !dead && !victory {
                                 if step == 0 && lc == 0 && !disc {
                                     let name = (*player_name).trim().to_string();
                                     set_stored_name(&name);
                                     join_step.set(1);
                                     has_interacted.set(true);
                                 }
-                            } else if dead && *rc_ref.borrow() == 0 && !disc {
+                            } else if (dead || victory) && *rc_ref.borrow() == 0 && !disc {
                                 on_rejoin.emit(MouseEvent::new("click").unwrap());
                                 has_interacted.set(true);
                             }
                         } else if !joined
                             && !dead
+                            && !victory
                             && step == 1
                             && !queueing
                             && !disc
@@ -563,7 +570,7 @@ pub fn app() -> Html {
             if *show_disconnected {
                 <DisconnectedScreen
                     show={true}
-                    disconnected={reducer.disconnected && !reducer.fatal_error && is_joined && !is_dead}
+                    disconnected={reducer.disconnected && !reducer.fatal_error && is_joined && !has_match_result}
                     title={reducer.disconnected_title.clone()}
                     msg={reducer.disconnected_msg.clone()}
                 />
@@ -576,7 +583,18 @@ pub fn app() -> Html {
             />
 
             if is_joined {
-                if is_dead {
+                if is_victory {
+                    <VictoryScreen
+                        title={reducer.victory_title.clone().unwrap_or_else(|| "VICTORY".to_string())}
+                        message={reducer.victory_msg.clone()}
+                        score={reducer.last_score}
+                        kills={reducer.last_kills}
+                        captured={reducer.last_captured}
+                        survival_secs={reducer.last_survival_secs}
+                        on_rejoin={on_rejoin.clone()}
+                        rejoin_cooldown={*rejoin_cooldown}
+                    />
+                } else if is_dead {
                     <DefeatScreen score={reducer.last_score} kills={reducer.last_kills} captured={reducer.last_captured} survival_secs={reducer.last_survival_secs} on_rejoin={on_rejoin} rejoin_cooldown={*rejoin_cooldown} />
                 } else {
                     <div data-testid="in-game-hud">
@@ -604,7 +622,7 @@ pub fn app() -> Html {
                         </div>
                     </div>
                 }
-            } else if tx.is_some() && !is_dead {
+            } else if tx.is_some() && !has_match_result {
                 <JoinScreen
                     player_name={(*player_name).clone()}
                     on_name_input={on_name_input}
@@ -627,7 +645,7 @@ pub fn app() -> Html {
             }
 
             if let Some(error) = &reducer.error {
-                if is_joined && !is_dead {
+                if is_joined && !has_match_result {
                     <ErrorToast error={error.clone()} />
                 }
             }

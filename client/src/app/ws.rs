@@ -94,6 +94,15 @@ pub async fn connect_ws(
                                 clear_stored_session(&mode_id);
                                 GameAction::Reset
                             }
+                            GameError::Custom { title, message }
+                                if title.eq_ignore_ascii_case("victory")
+                                    || title.to_lowercase().contains("victory") =>
+                            {
+                                GameAction::SetVictory {
+                                    title: title.clone(),
+                                    msg: message.clone(),
+                                }
+                            }
                             GameError::TargetFriendly => {
                                 web_sys::console::error_1(
                                     &"Server rejected move: target square is occupied by a friendly piece."

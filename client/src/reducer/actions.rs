@@ -34,6 +34,10 @@ pub enum GameAction {
     SetQueueStatus(QueueStatus),
     UpdateState(Box<UpdateStatePayload>),
     SetError(GameError),
+    SetVictory {
+        title: String,
+        msg: String,
+    },
     GameOver {
         final_score: Score,
         kills: u32,

@@ -78,7 +78,9 @@ pub fn handle_update_state(next: &mut GameStateReducer, params: UpdateStatePaylo
         next.state.players.remove(&id);
     }
 
-    if let Some(player_id) = next.player_id
+    if next.queue_status.is_some() {
+        next.is_dead = false;
+    } else if let Some(player_id) = next.player_id
         && player_id != PlayerId::nil()
     {
         next.is_dead = !next.state.players.contains_key(&player_id);
