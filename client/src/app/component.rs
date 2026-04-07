@@ -3,10 +3,10 @@
 use crate::app::config::{load_global_config, order_modes};
 use crate::app::ws::connect_ws;
 use crate::components::{
-    DefeatScreen, DisconnectedScreen, ErrorToast, FatalNotification, GameView, JoinScreen,
-    Leaderboard, VictoryScreen,
+    DisconnectedScreen, EndScreen, EndScreenKind, ErrorToast, FatalNotification, GameView,
+    JoinScreen, Leaderboard,
 };
-use crate::reducer::{GameAction, GameStateReducer, MsgSender};
+use crate::reducer::{ClientPhase, GameAction, GameStateReducer, MsgSender};
 use crate::utils::*;
 use common::models::ModeSummary;
 use common::protocol::ClientMessage;
@@ -28,6 +28,7 @@ pub fn app() -> Html {
     let global_cfg = use_state(load_global_config);
     let reducer = use_reducer(GameStateReducer::default);
     let is_joining = use_state(|| false);
+    let in_rejoin_flow = use_state(|| false);
     let tx = use_state(|| None::<MsgSender>);
     let player_name = use_state(get_stored_name);
     let join_step = use_state(|| 0);
@@ -368,10 +369,8 @@ pub fn app() -> Html {
     let is_dead = reducer.is_dead;
     let is_victory = reducer.is_victory;
     let has_match_result = is_dead || is_victory;
-    let is_queued = reducer.queue_status.is_some();
-    let has_active_player =
-        reducer.player_id.is_some() && reducer.player_id != Some(PlayerId::nil());
-    let is_joined = (has_active_player && !is_queued) || has_match_result;
+    let is_joined = reducer.phase == ClientPhase::Alive || has_match_result;
+    let force_join_overlay = *in_rejoin_flow && !has_match_result;
 
     {
         let player_name = player_name.clone();
@@ -413,6 +412,27 @@ pub fn app() -> Html {
                 Box::new(move || drop(handle)) as Box<dyn FnOnce()>
             }
         });
+    }
+
+    {
+        let in_rejoin_flow = in_rejoin_flow.clone();
+        use_effect_with(
+            (
+                reducer.phase,
+                reducer.queue_status.clone(),
+                has_match_result,
+                *in_rejoin_flow,
+            ),
+            move |(phase, queue_status, has_match_result, in_flow)| {
+                if *in_flow
+                    && !*has_match_result
+                    && *phase == ClientPhase::Alive
+                    && queue_status.is_none()
+                {
+                    in_rejoin_flow.set(false);
+                }
+            },
+        );
     }
 
     let rejoin_cooldown = use_state(|| 0);
@@ -458,12 +478,14 @@ pub fn app() -> Html {
         let reducer = reducer.clone();
         let join_step = join_step.clone();
         let has_interacted = has_interacted.clone();
+        let in_rejoin_flow = in_rejoin_flow.clone();
         Callback::from(move |_| {
             if *rc_ref.borrow() == 0 {
                 has_interacted.set(true);
                 if reducer.disconnected {
                     return;
                 }
+                in_rejoin_flow.set(true);
                 reducer.dispatch(GameAction::Reset);
                 join_step.set(1);
             }
@@ -582,21 +604,19 @@ pub fn app() -> Html {
                 msg={reducer.disconnected_msg.clone()}
             />
 
-            if is_joined {
-                if is_victory {
-                    <VictoryScreen
-                        title={reducer.victory_title.clone().unwrap_or_else(|| "VICTORY".to_string())}
-                        message={reducer.victory_msg.clone()}
-                        score={reducer.last_score}
-                        kills={reducer.last_kills}
-                        captured={reducer.last_captured}
-                        survival_secs={reducer.last_survival_secs}
-                        on_rejoin={on_rejoin.clone()}
-                        rejoin_cooldown={*rejoin_cooldown}
-                    />
-                } else if is_dead {
-                    <DefeatScreen score={reducer.last_score} kills={reducer.last_kills} captured={reducer.last_captured} survival_secs={reducer.last_survival_secs} on_rejoin={on_rejoin} rejoin_cooldown={*rejoin_cooldown} />
-                } else {
+            if has_match_result && !force_join_overlay {
+                <EndScreen
+                    kind={if is_victory { EndScreenKind::Victory } else { EndScreenKind::Defeat }}
+                    title={reducer.victory_title.clone()}
+                    message={reducer.victory_msg.clone()}
+                    score={reducer.last_score}
+                    kills={reducer.last_kills}
+                    captured={reducer.last_captured}
+                    survival_secs={reducer.last_survival_secs}
+                    on_rejoin={on_rejoin.clone()}
+                    rejoin_cooldown={*rejoin_cooldown}
+                />
+            } else if is_joined && !force_join_overlay {
                     <div data-testid="in-game-hud">
                         <Leaderboard players={reducer.state.players.values().cloned().collect::<Vec<_>>()} self_id={player_id} />
                         <div
@@ -621,8 +641,7 @@ pub fn app() -> Html {
                             <div>{format!("Board: {}x{}", reducer.state.board_size, reducer.state.board_size)}</div>
                         </div>
                     </div>
-                }
-            } else if tx.is_some() && !has_match_result {
+            } else if (tx.is_some() && !has_match_result) || force_join_overlay {
                 <JoinScreen
                     player_name={(*player_name).clone()}
                     on_name_input={on_name_input}

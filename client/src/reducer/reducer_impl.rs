@@ -128,6 +128,15 @@ impl Reducible for GameStateReducer {
                 next.disconnected = false;
                 next.fatal_error = false;
                 next.is_dead = false;
+                if let Some(player_id) = next.player_id
+                    && let Some(player) = next.state.players.get(&player_id)
+                {
+                    next.last_score = player.score;
+                    next.last_kills = player.kills;
+                    next.last_captured = player.pieces_captured;
+                    let now = current_timestamp_ms();
+                    next.last_survival_secs = (now - player.join_time).as_u64() / 1000;
+                }
                 next.is_victory = true;
                 next.disconnected_title = None;
                 next.disconnected_msg = None;
@@ -268,6 +277,17 @@ fn log_client_error(message: &str) {
     web_sys::console::error_1(&message.into());
     #[cfg(not(target_arch = "wasm32"))]
     eprintln!("{message}");
+}
+
+fn current_timestamp_ms() -> TimestampMs {
+    #[cfg(target_arch = "wasm32")]
+    {
+        TimestampMs::from_millis(js_sys::Date::now() as i64)
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        TimestampMs::from_millis(chrono::Utc::now().timestamp_millis())
+    }
 }
 
 fn compute_phase(state: &GameStateReducer) -> ClientPhase {

@@ -20,7 +20,7 @@ pub fn handle_update_state(next: &mut GameStateReducer, params: UpdateStatePaylo
     let now_ms = TimestampMs::from_millis(chrono::Utc::now().timestamp_millis());
 
     for p in params.players {
-        if next.player_id == Some(p.id) {
+        if next.player_id == Some(p.id) && !next.is_dead && !next.is_victory {
             next.last_score = p.score;
             next.last_kills = p.kills;
             next.last_captured = p.pieces_captured;
