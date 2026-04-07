@@ -41,6 +41,7 @@ pub struct QueueStatus {
 #[derive(Clone, PartialEq, Default)]
 pub struct GameStateReducer {
     pub state: GameState,
+    pub menu_preview_state: Option<GameState>,
     pub mode: Option<GameModeClientConfig>,
     pub piece_configs: HashMap<PieceTypeId, PieceConfig>,
     pub shop_configs: HashMap<ShopId, ShopConfig>,

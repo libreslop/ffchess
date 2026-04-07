@@ -12,6 +12,14 @@ impl GameStateReducer {
         self.disconnected = false;
         self.state.board_size = params.board_size;
         let local_player_id = self.player_id.unwrap_or_else(PlayerId::nil);
+        if local_player_id == PlayerId::nil() {
+            if let Some(preview_state) = self.menu_preview_state.clone() {
+                self.state = preview_state;
+            }
+            self.pm_queue.clear();
+            self.is_dead = false;
+            return;
+        }
 
         let now_ms = now_timestamp_ms();
 

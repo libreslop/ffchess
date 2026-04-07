@@ -156,6 +156,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
     let fps_counter = use_mut_ref(FpsCounter::new);
 
     let window_size = use_state(read_window_size);
+    let has_match_result = props.reducer.is_dead || props.reducer.is_victory;
 
     /// Returns true when a pointer/touch event originates from the shop UI overlay.
     fn is_shop_ui_target(target: Option<web_sys::EventTarget>) -> bool {
@@ -313,19 +314,19 @@ pub fn game_view(props: &GameViewProps) -> Html {
     {
         let manager_ref = manager_ref.clone();
         let canvas_ref = canvas_ref.clone();
-        let is_dead = props.reducer.is_dead;
+        let input_blocked = has_match_result;
         let globals = props.globals.clone();
         use_effect_with(
-            (canvas_ref.clone(), is_dead),
-            move |(canvas_ref, is_dead)| {
+            (canvas_ref.clone(), input_blocked),
+            move |(canvas_ref, input_blocked)| {
                 if let Some(canvas) = canvas_ref.cast::<web_sys::HtmlElement>() {
                     let manager_ref = manager_ref.clone();
-                    let is_dead = *is_dead;
+                    let input_blocked = *input_blocked;
                     let zoom_min = globals.camera_zoom_min;
                     let zoom_max = globals.camera_zoom_max;
                     let scroll_base = globals.scroll_zoom_base;
                     let listener = EventListener::new(&canvas, "wheel", move |e| {
-                        if is_dead {
+                        if input_blocked {
                             return;
                         }
                         let e = e.dyn_ref::<web_sys::WheelEvent>().unwrap();
@@ -354,6 +355,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
         let shop_configs = props.reducer.shop_configs.clone();
         let globals = props.globals.clone();
         let piece_anims = piece_anims.clone();
+        let has_match_result = has_match_result;
         use_effect_with(
             (
                 *frame_id,
@@ -365,8 +367,8 @@ pub fn game_view(props: &GameViewProps) -> Html {
                 reducer.mode.clone(),
                 reducer.player_id,
                 *selected_piece_id,
+                has_match_result,
                 shop_configs,
-                globals.clone(),
             ),
             move |(
                 _,
@@ -378,10 +380,11 @@ pub fn game_view(props: &GameViewProps) -> Html {
                 mode,
                 player_id,
                 sid,
+                has_match_result,
                 shop_configs,
-                globals,
             )| {
                 if let Some(renderer) = renderer_state.as_ref() {
+                    let selected_piece_id = if *has_match_result { None } else { *sid };
                     let mut ghosts = state.pieces.clone();
                     apply_visible_ghosts(&mut ghosts, pm_queue, state);
                     let visible_pm: Vec<_> = pm_queue
@@ -413,7 +416,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
                     renderer.draw_with_ghosts(crate::canvas::RenderParams {
                         state,
                         player_id: player_id.unwrap_or_else(PlayerId::nil),
-                        selected_piece_id: *sid,
+                        selected_piece_id,
                         pm_queue: &visible_pm,
                         ghost_pieces: &ghosts,
                         animated_positions: &animated_positions,
@@ -423,6 +426,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
                         tile_size_px: globals.tile_size_px,
                         mode: mode.as_ref(),
                         shop_configs,
+                        disable_fog_of_war: *has_match_result,
                     });
                 }
                 || ()
@@ -442,8 +446,8 @@ pub fn game_view(props: &GameViewProps) -> Html {
 
     {
         let selected_piece_id = selected_piece_id.clone();
-        let player_id = props.reducer.player_id;
-        use_effect_with(player_id, move |_| {
+        let reset_selection = (props.reducer.player_id, has_match_result);
+        use_effect_with(reset_selection, move |_| {
             selected_piece_id.set(None);
             || ()
         });
@@ -505,7 +509,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
         let reducer = props.reducer.clone();
         let tile_size_px = props.globals.tile_size_px;
         Callback::from(move |input: InputStart| {
-            if reducer.is_dead {
+            if reducer.is_dead || reducer.is_victory {
                 return;
             }
             let mut manager = manager_ref.borrow_mut();
@@ -559,7 +563,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
         let did_pan = did_pan.clone();
         let reducer = props.reducer.clone();
         Callback::from(move |input: InputMove| {
-            if reducer.is_dead {
+            if reducer.is_dead || reducer.is_victory {
                 return;
             }
             let mut manager = manager_ref.borrow_mut();
@@ -604,7 +608,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
         let tile_size_px = props.globals.tile_size_px;
 
         Callback::from(move |input: InputEnd| {
-            if reducer.is_dead {
+            if reducer.is_dead || reducer.is_victory {
                 drag_start.set(None);
                 manager_ref.borrow_mut().velocity = Vec2::ZERO;
                 *did_pan.borrow_mut() = false;
@@ -742,8 +746,8 @@ pub fn game_view(props: &GameViewProps) -> Html {
         let drag_start = drag_start.clone();
         let manager_ref = manager_ref.clone();
         let did_pan = did_pan.clone();
-        use_effect_with(props.reducer.is_dead, move |is_dead| {
-            if *is_dead {
+        use_effect_with(has_match_result, move |has_match_result| {
+            if *has_match_result {
                 drag_start.set(None);
                 manager_ref.borrow_mut().velocity = Vec2::ZERO;
                 *did_pan.borrow_mut() = false;
@@ -832,14 +836,14 @@ pub fn game_view(props: &GameViewProps) -> Html {
                 let manager_ref = manager_ref.clone();
                 let drag_start = drag_start.clone();
                 let latest_state = latest_state.clone();
-                let is_dead = props.reducer.is_dead;
+                let input_blocked = has_match_result;
                 let touch_gesture_active = touch_gesture_active.clone();
                 Callback::from(move |e: TouchEvent| {
                     if is_shop_ui_target(e.target()) {
                         return;
                     }
                     e.prevent_default();
-                    if is_dead {
+                    if input_blocked {
                         return;
                     }
                     if e.touches().length() == 2 {
@@ -876,7 +880,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
                 let handle_input_move = handle_input_move.clone();
                 let manager_ref = manager_ref.clone();
                 let canvas_ref = canvas_ref.clone();
-                let is_dead = props.reducer.is_dead;
+                let input_blocked = has_match_result;
                 let cam_state = cam_state.clone();
                 let zoom_state = zoom_state.clone();
                 let latest_state = latest_state.clone();
@@ -889,7 +893,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
                         return;
                     }
                     e.prevent_default();
-                    if is_dead {
+                    if input_blocked {
                         return;
                     }
                     if e.touches().length() == 2 {

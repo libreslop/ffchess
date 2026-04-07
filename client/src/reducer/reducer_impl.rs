@@ -39,6 +39,10 @@ impl Reducible for GameStateReducer {
                 next.clear_disconnect_ui();
                 next.clear_victory_state();
 
+                if player_id == PlayerId::nil() {
+                    next.menu_preview_state = Some(next.state.clone());
+                }
+
                 if player_id != PlayerId::nil() {
                     next.fatal_error = false;
                     if let Some(p) = next.state.players.get(&player_id) {
@@ -237,7 +241,7 @@ impl Reducible for GameStateReducer {
             GameAction::Reset => {
                 next.player_id = Some(PlayerId::nil());
                 next.session_secret = None;
-                next.state = common::models::GameState::default();
+                next.state = next.menu_preview_state.clone().unwrap_or_default();
                 next.pm_queue.clear();
                 next.error = None;
                 next.clear_disconnect_ui();
@@ -245,7 +249,8 @@ impl Reducible for GameStateReducer {
                 next.is_dead = false;
                 next.clear_victory_state();
                 next.queue_status = None;
-                // Keep mode and configs so the kit list can render while reconnecting
+                // Keep state/mode/configs so the join overlay shows the same preview board
+                // as a fresh menu screen without a visual blank between flows.
             }
         }
         next.phase = compute_phase(&next);

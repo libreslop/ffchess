@@ -85,4 +85,5 @@ pub struct RenderParams<'a> {
     pub tile_size_px: f64,
     pub mode: Option<&'a GameModeClientConfig>,
     pub shop_configs: &'a HashMap<ShopId, ShopConfig>,
+    pub disable_fog_of_war: bool,
 }

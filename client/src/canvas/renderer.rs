@@ -51,6 +51,7 @@ impl Renderer {
             tile_size_px,
             mode,
             shop_configs,
+            disable_fog_of_war,
         } = params;
         let width = canvas_size.x;
         let height = canvas_size.y;
@@ -371,7 +372,7 @@ impl Renderer {
         }
 
         // Fog of War Overlay
-        if player_id != PlayerId::nil() && has_king {
+        if !disable_fog_of_war && player_id != PlayerId::nil() && has_king {
             let king_screen_x = king_pos.x as f64 * tile_size + offset_x + tile_size / 2.0;
             let king_screen_y = king_pos.y as f64 * tile_size + offset_y + tile_size / 2.0;
 
