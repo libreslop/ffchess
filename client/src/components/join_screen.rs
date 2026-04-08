@@ -53,7 +53,16 @@ pub fn join_screen(props: &JoinScreenProps) -> Html {
                                     )}
                                 >
                                     <span>{ m.display_name.clone() }</span>
-                                    <span style="opacity: 0.8; font-variant-numeric: tabular-nums;">{ format!("{}/{}", m.players, m.max_players) }</span>
+                                    <span style={format!(
+                                        "font-variant-numeric: tabular-nums; color: {};",
+                                        if m.players >= 1 { "#22c55e" } else { "rgba(255,255,255,0.8)" }
+                                    )}>
+                                        { if m.queue_players >= 2 {
+                                            format!("{} playing", m.players)
+                                        } else {
+                                            format!("{}/{}", m.players, m.max_players)
+                                        } }
+                                    </span>
                                 </button>
                             }
                         })}
@@ -77,7 +86,9 @@ pub fn join_screen(props: &JoinScreenProps) -> Html {
                     </form>
                 } else {
                     <div style="animation: fadeIn 0.3s ease-out; display: flex; flex-direction: column; align-items: center;">
-                        <h3 style="color: #fff; margin-bottom: 25px; text-transform: uppercase; letter-spacing: 2px; text-shadow: 2px 2px 0 rgba(0,0,0,0.5);">{"CHOOSE YOUR ARMY"}</h3>
+                        if props.queue_status.is_none() {
+                            <h3 style="color: #fff; margin-bottom: 25px; text-transform: uppercase; letter-spacing: 2px; text-shadow: 2px 2px 0 rgba(0,0,0,0.5);">{"CHOOSE YOUR ARMY"}</h3>
+                        }
 
                         if let Some(error) = &props.error {
                             <div style="margin-bottom: 20px; color: #ef4444; background: rgba(255,255,255,0.9); padding: 10px 20px; border-radius: 4px; font-weight: bold;">
@@ -86,18 +97,22 @@ pub fn join_screen(props: &JoinScreenProps) -> Html {
                         }
 
                         if let Some(queue) = &props.queue_status {
-                            <div style="width: 100%; max-width: 440px; background: rgba(0,0,0,0.45); border: 2px solid rgba(255,255,255,0.6); padding: 16px;">
-                                <div style="color: #fff; font-size: 1.2em; font-weight: 900; letter-spacing: 1px; margin-bottom: 8px;">{"IN QUEUE"}</div>
-                                <div style="color: #cbd5e1; margin-bottom: 6px;">
-                                    { format!("Position: {}", queue.position_in_queue.as_u32()) }
-                                </div>
-                                <div style="color: #cbd5e1;">
-                                    { format!(
-                                        "Players queued: {}/{}",
-                                        queue.queued_players.as_u32(),
-                                        queue.required_players.as_u32()
-                                    ) }
-                                </div>
+                            <div style="color: #cbd5e1; font-size: 1.1em; font-weight: 700;">
+                                { format!(
+                                    "Waiting for {} more {}",
+                                    queue.required_players
+                                        .as_u32()
+                                        .saturating_sub(queue.queued_players.as_u32()),
+                                    if queue.required_players
+                                        .as_u32()
+                                        .saturating_sub(queue.queued_players.as_u32())
+                                        == 1
+                                    {
+                                        "player"
+                                    } else {
+                                        "players"
+                                    }
+                                ) }
                             </div>
                         } else {
                             <div style="display: flex; gap: 12px; width: 100%; justify-content: center; flex-wrap: wrap;">

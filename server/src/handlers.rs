@@ -33,11 +33,27 @@ async fn mode_list_snapshot(state: &Arc<ServerState>) -> Vec<ModeSummary> {
             .collect()
     };
 
+    let private_games: Vec<(ModeId, Arc<GameInstance>)> = {
+        let games = state.games.read().await;
+        let hidden = state.private_game_ids.read().await;
+        hidden
+            .iter()
+            .filter_map(|id| games.get(id).cloned().map(|instance| (id.clone(), instance)))
+            .collect()
+    };
+
     let mut list = Vec::new();
     for (mode_id, instance) in public_games {
         let queue_target = state.queue_target_players(&mode_id);
         let players = if queue_target.is_some() {
-            state.queue_len(&mode_id).await
+            let private_mode_prefix = format!("{}__", mode_id.as_ref());
+            let mut active_match_players = 0u32;
+            for (private_id, private_instance) in &private_games {
+                if private_id.as_ref().starts_with(&private_mode_prefix) {
+                    active_match_players += private_instance.game.read().await.players.len() as u32;
+                }
+            }
+            state.queue_len(&mode_id).await + active_match_players
         } else {
             instance.game.read().await.players.len() as u32
         };
@@ -46,6 +62,7 @@ async fn mode_list_snapshot(state: &Arc<ServerState>) -> Vec<ModeSummary> {
             display_name: instance.mode_display_name().to_string(),
             players,
             max_players: queue_target.unwrap_or(instance.max_players()),
+            queue_players: queue_target.unwrap_or(0),
             respawn_cooldown_ms: instance.respawn_cooldown_ms(),
         });
     }

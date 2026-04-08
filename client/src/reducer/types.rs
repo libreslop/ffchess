@@ -38,11 +38,6 @@ impl QueuePosition {
     pub const fn new(value: u32) -> Self {
         Self(value)
     }
-
-    /// Returns the queue position as `u32`.
-    pub const fn as_u32(self) -> u32 {
-        self.0
-    }
 }
 
 /// Number of players for queue-state accounting.
