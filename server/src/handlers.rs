@@ -12,7 +12,7 @@ use axum::{
 };
 use common::models::ModeSummary;
 use common::protocol::{ClientMessage, GameError, ServerMessage};
-use common::types::{ModeId, PlayerId, SessionSecret};
+use common::types::{ModeId, PlayerCount, PlayerId, QueuePosition, SessionSecret};
 use futures_util::{SinkExt, StreamExt};
 use jsonc_parser::parse_to_serde_value;
 use rand::seq::SliceRandom;
@@ -38,7 +38,12 @@ async fn mode_list_snapshot(state: &Arc<ServerState>) -> Vec<ModeSummary> {
         let hidden = state.private_game_ids.read().await;
         hidden
             .iter()
-            .filter_map(|id| games.get(id).cloned().map(|instance| (id.clone(), instance)))
+            .filter_map(|id| {
+                games
+                    .get(id)
+                    .cloned()
+                    .map(|instance| (id.clone(), instance))
+            })
             .collect()
     };
 
@@ -47,22 +52,22 @@ async fn mode_list_snapshot(state: &Arc<ServerState>) -> Vec<ModeSummary> {
         let queue_target = state.queue_target_players(&mode_id);
         let players = if queue_target.is_some() {
             let private_mode_prefix = format!("{}__", mode_id.as_ref());
-            let mut active_match_players = 0u32;
+            let mut active_match_players = PlayerCount::zero();
             for (private_id, private_instance) in &private_games {
                 if private_id.as_ref().starts_with(&private_mode_prefix) {
-                    active_match_players += private_instance.game.read().await.players.len() as u32;
+                    active_match_players += private_instance.player_count().await;
                 }
             }
             state.queue_len(&mode_id).await + active_match_players
         } else {
-            instance.game.read().await.players.len() as u32
+            instance.player_count().await
         };
         list.push(ModeSummary {
             id: mode_id.clone(),
             display_name: instance.mode_display_name().to_string(),
             players,
-            max_players: queue_target.unwrap_or(instance.max_players()),
-            queue_players: queue_target.unwrap_or(0),
+            max_players: queue_target.unwrap_or_else(|| instance.max_players()),
+            queue_players: queue_target.unwrap_or_else(PlayerCount::zero),
             respawn_cooldown_ms: instance.respawn_cooldown_ms(),
         });
     }
@@ -163,10 +168,10 @@ async fn broadcast_queue_state(state: &Arc<ServerState>, mode_id: &ModeId) {
     let Some((required_players, entries)) = state.queue_snapshot(mode_id).await else {
         return;
     };
-    let queued_players = entries.len() as u32;
+    let queued_players = PlayerCount::new(entries.len() as u32);
     for (idx, entry) in entries.iter().enumerate() {
         let _ = entry.tx.send(ServerMessage::QueueState {
-            position_in_queue: (idx + 1) as u32,
+            position_in_queue: QueuePosition::new((idx + 1) as u32),
             queued_players,
             required_players,
         });
@@ -200,10 +205,8 @@ async fn handle_socket(socket: WebSocket, mode_id: ModeId, state: Arc<ServerStat
 
     let conn_id = ConnectionId::new();
     lobby_instance
-        .connection_channels
-        .write()
-        .await
-        .insert(conn_id, tx.clone());
+        .add_connection_channel(conn_id, tx.clone())
+        .await;
 
     send_init(&tx, &lobby_instance, PlayerId::nil(), SessionSecret::nil()).await;
 
@@ -247,11 +250,7 @@ async fn handle_socket(socket: WebSocket, mode_id: ModeId, state: Arc<ServerStat
                                     players,
                                 }) => {
                                     for qp in players {
-                                        lobby_instance
-                                            .connection_channels
-                                            .write()
-                                            .await
-                                            .remove(&qp.conn_id);
+                                        lobby_instance.remove_connection_channel(qp.conn_id).await;
                                         match match_instance
                                             .add_player(
                                                 qp.name,
@@ -294,24 +293,18 @@ async fn handle_socket(socket: WebSocket, mode_id: ModeId, state: Arc<ServerStat
                             continue;
                         }
 
-                        if let Some(pid) = pid {
-                            let channels = lobby_instance.player_channels.read().await;
-                            let game = lobby_instance.game.read().await;
-                            if game.players.contains_key(&pid) && channels.contains_key(&pid) {
-                                let _ = tx.send(ServerMessage::Error(GameError::Custom {
-                                    title: "Duplicate Session".to_string(),
-                                    message: "You are already playing in another tab".to_string(),
-                                }));
-                                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-                                break;
-                            }
+                        if let Some(pid) = pid
+                            && lobby_instance.has_active_player_session(pid).await
+                        {
+                            let _ = tx.send(ServerMessage::Error(GameError::Custom {
+                                title: "Duplicate Session".to_string(),
+                                message: "You are already playing in another tab".to_string(),
+                            }));
+                            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                            break;
                         }
 
-                        lobby_instance
-                            .connection_channels
-                            .write()
-                            .await
-                            .remove(&conn_id);
+                        lobby_instance.remove_connection_channel(conn_id).await;
 
                         match lobby_instance
                             .add_player(name, kit_name, tx.clone(), pid, secret)
@@ -326,10 +319,8 @@ async fn handle_socket(socket: WebSocket, mode_id: ModeId, state: Arc<ServerStat
                             Err(e) => {
                                 let _ = tx.send(ServerMessage::Error(e));
                                 lobby_instance
-                                    .connection_channels
-                                    .write()
-                                    .await
-                                    .insert(conn_id, tx.clone());
+                                    .add_connection_channel(conn_id, tx.clone())
+                                    .await;
                             }
                         }
                     }
@@ -371,11 +362,7 @@ async fn handle_socket(socket: WebSocket, mode_id: ModeId, state: Arc<ServerStat
         binding.instance.remove_player(binding.player_id).await;
         state.cleanup_private_games().await;
     } else {
-        lobby_instance
-            .connection_channels
-            .write()
-            .await
-            .remove(&conn_id);
+        lobby_instance.remove_connection_channel(conn_id).await;
         if state.remove_from_queue(&mode_id, conn_id).await {
             broadcast_queue_state(&state, &mode_id).await;
         }

@@ -55,13 +55,9 @@ pub fn join_screen(props: &JoinScreenProps) -> Html {
                                     <span>{ m.display_name.clone() }</span>
                                     <span style={format!(
                                         "font-variant-numeric: tabular-nums; color: {};",
-                                        if m.players >= 1 { "#22c55e" } else { "rgba(255,255,255,0.8)" }
+                                        if m.players.as_u32() >= 1 { "#22c55e" } else { "rgba(255,255,255,0.8)" }
                                     )}>
-                                        { if m.queue_players >= 2 {
-                                            format!("{} playing", m.players)
-                                        } else {
-                                            format!("{}/{}", m.players, m.max_players)
-                                        } }
+                                        { mode_population_label(m) }
                                     </span>
                                 </button>
                             }
@@ -98,21 +94,7 @@ pub fn join_screen(props: &JoinScreenProps) -> Html {
 
                         if let Some(queue) = &props.queue_status {
                             <div style="color: #cbd5e1; font-size: 1.1em; font-weight: 700;">
-                                { format!(
-                                    "Waiting for {} more {}",
-                                    queue.required_players
-                                        .as_u32()
-                                        .saturating_sub(queue.queued_players.as_u32()),
-                                    if queue.required_players
-                                        .as_u32()
-                                        .saturating_sub(queue.queued_players.as_u32())
-                                        == 1
-                                    {
-                                        "player"
-                                    } else {
-                                        "players"
-                                    }
-                                ) }
+                                { queue_waiting_message(queue) }
                             </div>
                         } else {
                             <div style="display: flex; gap: 12px; width: 100%; justify-content: center; flex-wrap: wrap;">
@@ -148,4 +130,24 @@ pub fn join_screen(props: &JoinScreenProps) -> Html {
             </div>
         </>
     }
+}
+
+/// Returns the mode population label shown in the mode list row.
+fn mode_population_label(mode: &ModeSummary) -> String {
+    if mode.is_queue_mode() {
+        format!("{} playing", mode.players)
+    } else {
+        format!("{}/{}", mode.players, mode.max_players)
+    }
+}
+
+/// Returns the queue waiting sentence with proper singular/plural grammar.
+fn queue_waiting_message(queue: &crate::reducer::QueueStatus) -> String {
+    let missing = queue.players_needed();
+    let noun = if missing.is_one() {
+        "player"
+    } else {
+        "players"
+    };
+    format!("Waiting for {} more {}", missing, noun)
 }

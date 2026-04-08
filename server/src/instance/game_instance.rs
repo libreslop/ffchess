@@ -6,7 +6,9 @@ use crate::time::now_ms;
 use crate::types::ConnectionId;
 use common::models::{GameModeConfig, GameState, PieceConfig, ShopConfig};
 use common::protocol::{GameError, ServerMessage, VictoryFocusTarget};
-use common::types::{PieceId, PieceTypeId, PlayerId, SessionSecret, ShopId, TimestampMs};
+use common::types::{
+    PieceId, PieceTypeId, PlayerCount, PlayerId, SessionSecret, ShopId, TimestampMs,
+};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{RwLock, mpsc};
@@ -35,7 +37,7 @@ impl GameInstance {
     }
 
     /// Returns the max player count configured for this mode.
-    pub fn max_players(&self) -> u32 {
+    pub fn max_players(&self) -> PlayerCount {
         self.mode_config.max_players
     }
 
@@ -44,9 +46,46 @@ impl GameInstance {
         self.mode_config.respawn_cooldown_ms
     }
 
+    /// Returns the current number of active players in this instance.
+    pub async fn player_count(&self) -> PlayerCount {
+        PlayerCount::new(self.game.read().await.players.len() as u32)
+    }
+
     /// Returns the client-safe mode configuration for this instance.
     pub fn client_mode_config(&self) -> common::models::GameModeClientConfig {
         self.mode_config.to_client_config()
+    }
+
+    /// Registers a passive connection channel for lobby/observer updates.
+    pub async fn add_connection_channel(
+        &self,
+        conn_id: ConnectionId,
+        tx: mpsc::UnboundedSender<ServerMessage>,
+    ) {
+        self.connection_channels.write().await.insert(conn_id, tx);
+    }
+
+    /// Removes a passive connection channel.
+    pub async fn remove_connection_channel(&self, conn_id: ConnectionId) {
+        self.connection_channels.write().await.remove(&conn_id);
+    }
+
+    /// Returns true when the player is already active in this instance.
+    pub async fn has_active_player_session(&self, player_id: PlayerId) -> bool {
+        let channels = self.player_channels.read().await;
+        if !channels.contains_key(&player_id) {
+            return false;
+        }
+        let game = self.game.read().await;
+        game.players.contains_key(&player_id)
+    }
+
+    /// Returns true when no players or viewers remain attached to this instance.
+    pub async fn is_empty(&self) -> bool {
+        let has_players = !self.game.read().await.players.is_empty();
+        let has_player_channels = !self.player_channels.read().await.is_empty();
+        let has_viewers = !self.connection_channels.read().await.is_empty();
+        !has_players && !has_player_channels && !has_viewers
     }
 
     /// Returns a snapshot of piece configurations for client initialization.

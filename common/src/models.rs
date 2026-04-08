@@ -1,8 +1,8 @@
 //! Core domain models shared between server logic and client rendering.
 
 use crate::types::{
-    BoardSize, ColorHex, DurationMs, ExprString, KitId, ModeId, PieceId, PieceTypeId, PlayerId,
-    Score, ShopId, TimestampMs,
+    BoardSize, ColorHex, DurationMs, ExprString, KitId, ModeId, PieceId, PieceTypeId, PlayerCount,
+    PlayerId, Score, ShopId, TimestampMs,
 };
 use glam::IVec2;
 use serde::{Deserialize, Serialize};
@@ -186,7 +186,7 @@ pub struct GameModeClientConfig {
     pub id: ModeId,
     pub display_name: String,
     #[serde(default)]
-    pub queue_players: u32,
+    pub queue_players: PlayerCount,
     pub camera_pan_limit: ExprString,
     pub fog_of_war_radius: ExprString,
     pub respawn_cooldown_ms: DurationMs,
@@ -198,9 +198,9 @@ pub struct GameModeClientConfig {
 pub struct GameModeConfig {
     pub id: ModeId,
     pub display_name: String,
-    pub max_players: u32,
+    pub max_players: PlayerCount,
     #[serde(default)]
-    pub queue_players: u32,
+    pub queue_players: PlayerCount,
     pub board_size: ExprString,
     pub camera_pan_limit: ExprString,
     pub fog_of_war_radius: ExprString,
@@ -271,10 +271,24 @@ impl Default for GameState {
 pub struct ModeSummary {
     pub id: ModeId,
     pub display_name: String,
-    pub players: u32,
-    pub max_players: u32,
-    pub queue_players: u32,
+    pub players: PlayerCount,
+    pub max_players: PlayerCount,
+    pub queue_players: PlayerCount,
     pub respawn_cooldown_ms: DurationMs,
+}
+
+impl GameModeConfig {
+    /// Returns the required queue size for matchmaking modes.
+    pub fn queue_requirement(&self) -> Option<PlayerCount> {
+        (self.queue_players.as_u32() >= 2).then_some(self.queue_players)
+    }
+}
+
+impl ModeSummary {
+    /// Returns true when this summary describes a queue-based mode.
+    pub fn is_queue_mode(&self) -> bool {
+        self.queue_players.as_u32() >= 2
+    }
 }
 
 impl GameModeConfig {

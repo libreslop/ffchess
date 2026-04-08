@@ -6,7 +6,7 @@ use common::models::{
     ShopGroupConfig, ShopItemConfig,
 };
 use common::types::{
-    DurationMs, ExprString, KitId, ModeId, PieceTypeId, Score, ShopId, TimestampMs,
+    DurationMs, ExprString, KitId, ModeId, PieceTypeId, PlayerCount, Score, ShopId, TimestampMs,
 };
 use glam::IVec2;
 use server::instance::GameInstance;
@@ -58,8 +58,8 @@ async fn shop_purchase_deducts_score_and_adds_piece() {
     let mode_config = GameModeConfig {
         id: ModeId::from("test"),
         display_name: "Test".to_string(),
-        max_players: 8,
-        queue_players: 0,
+        max_players: PlayerCount::new(8),
+        queue_players: PlayerCount::zero(),
         board_size: ExprString::from("20"),
         camera_pan_limit: ExprString::from("10"),
         fog_of_war_radius: ExprString::from("10"),

@@ -94,25 +94,28 @@ impl ServerState {
     }
 
     /// Returns the configured queue size for a mode if it is a matchmaking mode.
-    pub fn queue_target_players(&self, mode_id: &ModeId) -> Option<u32> {
+    pub fn queue_target_players(&self, mode_id: &ModeId) -> Option<PlayerCount> {
         self.config_manager
             .modes
             .get(mode_id)
-            .and_then(|m| (m.queue_players >= 2).then_some(m.queue_players))
+            .and_then(|mode| mode.queue_requirement())
     }
 
     /// Returns the current queue length for a mode.
-    pub async fn queue_len(&self, mode_id: &ModeId) -> u32 {
+    pub async fn queue_len(&self, mode_id: &ModeId) -> PlayerCount {
         self.queue_entries
             .read()
             .await
             .get(mode_id)
-            .map(|q| q.len() as u32)
-            .unwrap_or(0)
+            .map(|queue| PlayerCount::new(queue.len() as u32))
+            .unwrap_or_else(PlayerCount::zero)
     }
 
     /// Returns a snapshot of current queue entries and required size.
-    pub async fn queue_snapshot(&self, mode_id: &ModeId) -> Option<(u32, Vec<MatchQueueEntry>)> {
+    pub async fn queue_snapshot(
+        &self,
+        mode_id: &ModeId,
+    ) -> Option<(PlayerCount, Vec<MatchQueueEntry>)> {
         let required = self.queue_target_players(mode_id)?;
         let entries = self
             .queue_entries
@@ -149,7 +152,7 @@ impl ServerState {
         mode_id: &ModeId,
         entry: MatchQueueEntry,
     ) -> Option<QueueJoinResult> {
-        let required = self.queue_target_players(mode_id)? as usize;
+        let required = self.queue_target_players(mode_id)?.as_u32() as usize;
         let players = {
             let mut queues = self.queue_entries.write().await;
             let queue = queues.entry(mode_id.clone()).or_default();
@@ -167,7 +170,7 @@ impl ServerState {
         let private_mode_id = ModeId::from(format!("{}__{}", mode_id.as_ref(), Uuid::new_v4()));
         let mut private_mode = template;
         private_mode.id = private_mode_id.clone();
-        private_mode.queue_players = 0;
+        private_mode.queue_players = PlayerCount::zero();
 
         let match_instance = Arc::new(GameInstance::new(
             private_mode,
@@ -231,10 +234,7 @@ impl ServerState {
 
         let mut to_remove = Vec::new();
         for (id, instance) in hidden_instances {
-            let has_players = !instance.game.read().await.players.is_empty();
-            let has_player_channels = !instance.player_channels.read().await.is_empty();
-            let has_viewers = !instance.connection_channels.read().await.is_empty();
-            if !has_players && !has_player_channels && !has_viewers {
+            if instance.is_empty().await {
                 to_remove.push(id);
             }
         }

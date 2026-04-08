@@ -4,7 +4,8 @@ use crate::models::{
     GameModeClientConfig, GameState, Piece, PieceConfig, Player, Shop, ShopConfig,
 };
 use crate::types::{
-    BoardSize, KitId, PieceId, PieceTypeId, PlayerId, Score, SessionSecret, ShopId,
+    BoardSize, KitId, PieceId, PieceTypeId, PlayerCount, PlayerId, QueuePosition, Score,
+    SessionSecret, ShopId,
 };
 use glam::IVec2;
 use serde::{Deserialize, Serialize};
@@ -110,9 +111,9 @@ pub enum ServerMessage {
         focus_target: VictoryFocusTarget,
     },
     QueueState {
-        position_in_queue: u32,
-        queued_players: u32,
-        required_players: u32,
+        position_in_queue: QueuePosition,
+        queued_players: PlayerCount,
+        required_players: PlayerCount,
     },
     GameOver {
         final_score: Score,

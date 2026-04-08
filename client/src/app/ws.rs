@@ -1,9 +1,6 @@
 //! WebSocket connection loop for the client app.
 
-use crate::reducer::{
-    GameAction, GameStateReducer, InitPayload, QueuePlayerCount, QueuePosition, QueueStatus,
-    UpdateStatePayload,
-};
+use crate::reducer::{GameAction, GameStateReducer, InitPayload, QueueStatus, UpdateStatePayload};
 use crate::utils::{clear_stored_session, set_stored_id, set_stored_secret};
 use common::protocol::{GameError, ServerMessage};
 use common::types::{ModeId, PlayerId};
@@ -86,9 +83,9 @@ pub async fn connect_ws(
                             queued_players,
                             required_players,
                         } => GameAction::SetQueueStatus(QueueStatus {
-                            position_in_queue: QueuePosition::new(position_in_queue),
-                            queued_players: QueuePlayerCount::new(queued_players),
-                            required_players: QueuePlayerCount::new(required_players),
+                            position_in_queue,
+                            queued_players,
+                            required_players,
                         }),
                         ServerMessage::Error(e) => match &e {
                             GameError::Custom { title, message: _ }

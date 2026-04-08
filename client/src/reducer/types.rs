@@ -3,7 +3,8 @@
 use common::models::{GameModeClientConfig, GameState, PieceConfig, ShopConfig};
 use common::protocol::{ClientMessage, GameError, VictoryFocusTarget};
 use common::types::{
-    DurationMs, PieceId, PieceTypeId, PlayerId, Score, SessionSecret, ShopId, TimestampMs,
+    DurationMs, PieceId, PieceTypeId, PlayerCount, PlayerId, QueuePosition, Score, SessionSecret,
+    ShopId, TimestampMs,
 };
 use glam::IVec2;
 use std::collections::HashMap;
@@ -30,38 +31,18 @@ pub enum ClientPhase {
 }
 
 /// Queue state shown while waiting for a matchmaking game to start.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub struct QueuePosition(u32);
-
-impl QueuePosition {
-    /// Wraps a queue position value.
-    pub const fn new(value: u32) -> Self {
-        Self(value)
-    }
-}
-
-/// Number of players for queue-state accounting.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub struct QueuePlayerCount(u32);
-
-impl QueuePlayerCount {
-    /// Wraps a queue player-count value.
-    pub const fn new(value: u32) -> Self {
-        Self(value)
-    }
-
-    /// Returns the player count as `u32`.
-    pub const fn as_u32(self) -> u32 {
-        self.0
-    }
-}
-
-/// Queue state shown while waiting for a matchmaking game to start.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct QueueStatus {
     pub position_in_queue: QueuePosition,
-    pub queued_players: QueuePlayerCount,
-    pub required_players: QueuePlayerCount,
+    pub queued_players: PlayerCount,
+    pub required_players: PlayerCount,
+}
+
+impl QueueStatus {
+    /// Returns how many additional players are needed to start the match.
+    pub fn players_needed(&self) -> PlayerCount {
+        self.required_players.saturating_sub(self.queued_players)
+    }
 }
 
 /// Aggregated client game state and UI state.
