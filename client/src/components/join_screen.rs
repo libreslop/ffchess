@@ -89,10 +89,14 @@ pub fn join_screen(props: &JoinScreenProps) -> Html {
                             <div style="width: 100%; max-width: 440px; background: rgba(0,0,0,0.45); border: 2px solid rgba(255,255,255,0.6); padding: 16px;">
                                 <div style="color: #fff; font-size: 1.2em; font-weight: 900; letter-spacing: 1px; margin-bottom: 8px;">{"IN QUEUE"}</div>
                                 <div style="color: #cbd5e1; margin-bottom: 6px;">
-                                    { format!("Position: {}", queue.position_in_queue) }
+                                    { format!("Position: {}", queue.position_in_queue.as_u32()) }
                                 </div>
                                 <div style="color: #cbd5e1;">
-                                    { format!("Players queued: {}/{}", queue.queued_players, queue.required_players) }
+                                    { format!(
+                                        "Players queued: {}/{}",
+                                        queue.queued_players.as_u32(),
+                                        queue.required_players.as_u32()
+                                    ) }
                                 </div>
                             </div>
                         } else {

@@ -4,7 +4,8 @@ use super::helpers::{MOVE_ANIM_MS, PieceAnim, apply_visible_ghosts, pm_visible};
 use crate::camera::{CameraManager, update_camera};
 use crate::canvas::Renderer;
 use crate::math::{Vec2, vec2};
-use crate::reducer::{GameAction, GameStateReducer, MsgSender, Pmove};
+use crate::reducer::{GameAction, GameStateReducer, MsgSender, PendingMoveClear, Pmove};
+use crate::utils::request_fullscreen;
 use common::logic::is_within_board;
 use common::types::{DurationMs, PieceId, PlayerId, Score, TimestampMs};
 use glam::IVec2;
@@ -167,21 +168,6 @@ pub fn game_view(props: &GameViewProps) -> Html {
             return false;
         };
         element.closest("[data-shop-ui]").ok().flatten().is_some()
-    }
-
-    /// Requests fullscreen mode for the document if not already active.
-    fn request_fullscreen() {
-        let Some(window) = web_sys::window() else {
-            return;
-        };
-        let Some(document) = window.document() else {
-            return;
-        };
-        if document.fullscreen_element().is_none()
-            && let Some(element) = document.document_element()
-        {
-            let _ = element.request_fullscreen();
-        }
     }
 
     // Drive a steady render heartbeat with requestAnimationFrame so visual elements (e.g., cooldown bars) update every frame
@@ -355,7 +341,6 @@ pub fn game_view(props: &GameViewProps) -> Html {
         let shop_configs = props.reducer.shop_configs.clone();
         let globals = props.globals.clone();
         let piece_anims = piece_anims.clone();
-        let has_match_result = has_match_result;
         use_effect_with(
             (
                 *frame_id,
@@ -655,7 +640,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
 
             if input.is_right_click {
                 selected_piece_id.set(None);
-                reducer.dispatch(GameAction::ClearPmQueue(PieceId::nil()));
+                reducer.dispatch(GameAction::ClearPmQueue(PendingMoveClear::All));
                 return;
             }
 
@@ -670,7 +655,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
                 if let Some(p) = proj_p {
                     if target == p.position {
                         selected_piece_id.set(None);
-                        reducer.dispatch(GameAction::ClearPmQueue(sid));
+                        reducer.dispatch(GameAction::ClearPmQueue(PendingMoveClear::Piece(sid)));
                         handled_action = true;
                     } else if let Some(other) = current_ghosts
                         .values()

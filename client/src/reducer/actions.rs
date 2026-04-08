@@ -28,6 +28,12 @@ pub struct UpdateStatePayload {
     pub board_size: BoardSize,
 }
 
+/// Scope for clearing pending client-side predicted moves.
+pub enum PendingMoveClear {
+    All,
+    Piece(PieceId),
+}
+
 /// Actions that drive the client reducer state machine.
 pub enum GameAction {
     SetInit(Box<InitPayload>),
@@ -46,7 +52,7 @@ pub enum GameAction {
         time_survived_secs: u64,
     },
     AddPmove(Pmove),
-    ClearPmQueue(PieceId),
+    ClearPmQueue(PendingMoveClear),
     Tick(MsgSender),
     Pong(u64),
     SetFPS(u32),

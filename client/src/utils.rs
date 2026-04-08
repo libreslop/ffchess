@@ -163,11 +163,17 @@ pub fn is_mobile() -> bool {
 ///
 /// Returns nothing.
 pub fn request_fullscreen() {
-    let window = web_sys::window().expect("no global `window` exists");
-    let document = window.document().expect("should have a document on window");
-    let element = document
-        .document_element()
-        .expect("should have a document element");
-
+    let Some(window) = web_sys::window() else {
+        return;
+    };
+    let Some(document) = window.document() else {
+        return;
+    };
+    if document.fullscreen_element().is_some() {
+        return;
+    }
+    let Some(element) = document.document_element() else {
+        return;
+    };
     let _ = element.request_fullscreen();
 }

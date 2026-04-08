@@ -15,7 +15,7 @@ fn mock_pawn_config() -> PieceConfig {
     PieceConfig {
         id: PieceTypeId::from("pawn"),
         display_name: "Pawn".to_string(),
-        char: 'P',
+        svg_path: "assets/pieces/pawn.svg".to_string(),
         score_value: Score::from(10),
         cooldown_ms: DurationMs::from_millis(1000),
         move_paths: vec![
@@ -198,7 +198,7 @@ fn test_path_blocking() {
     let rook_config = PieceConfig {
         id: PieceTypeId::from("rook"),
         display_name: "Rook".to_string(),
-        char: 'R',
+        svg_path: "assets/pieces/rook.svg".to_string(),
         score_value: Score::from(50),
         cooldown_ms: DurationMs::from_millis(3000),
         move_paths: vec![vec![IVec2::new(0, 1), IVec2::new(0, 2), IVec2::new(0, 3)]],
@@ -288,7 +288,7 @@ fn test_calculate_cooldown_returns_config_value() {
     let config = PieceConfig {
         id: PieceTypeId::from("pawn"),
         display_name: "Pawn".to_string(),
-        char: 'P',
+        svg_path: "assets/pieces/pawn.svg".to_string(),
         score_value: Score::from(1),
         cooldown_ms: DurationMs::from_millis(1500),
         move_paths: vec![vec![IVec2::new(0, 1)]],

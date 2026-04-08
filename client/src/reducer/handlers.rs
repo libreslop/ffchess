@@ -3,7 +3,6 @@
 use super::actions::UpdateStatePayload;
 use super::time::now_timestamp_ms;
 use crate::reducer::types::GameStateReducer;
-use common::types::PlayerId;
 
 impl GameStateReducer {
     /// Applies a server update payload to this reducer state.
@@ -11,15 +10,14 @@ impl GameStateReducer {
         self.error = None;
         self.disconnected = false;
         self.state.board_size = params.board_size;
-        let local_player_id = self.player_id.unwrap_or_else(PlayerId::nil);
-        if local_player_id == PlayerId::nil() {
+        let Some(local_player_id) = self.active_player_id() else {
             if let Some(preview_state) = self.menu_preview_state.clone() {
                 self.state = preview_state;
             }
             self.pm_queue.clear();
             self.is_dead = false;
             return;
-        }
+        };
 
         let now_ms = now_timestamp_ms();
 
@@ -83,9 +81,7 @@ impl GameStateReducer {
 
         if self.queue_status.is_some() {
             self.is_dead = false;
-        } else if let Some(player_id) = self.player_id
-            && player_id != PlayerId::nil()
-        {
+        } else if let Some(player_id) = self.active_player_id() {
             self.is_dead = !self.state.players.contains_key(&player_id);
         }
     }

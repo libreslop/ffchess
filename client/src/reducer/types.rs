@@ -30,11 +30,43 @@ pub enum ClientPhase {
 }
 
 /// Queue state shown while waiting for a matchmaking game to start.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct QueuePosition(u32);
+
+impl QueuePosition {
+    /// Wraps a queue position value.
+    pub const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    /// Returns the queue position as `u32`.
+    pub const fn as_u32(self) -> u32 {
+        self.0
+    }
+}
+
+/// Number of players for queue-state accounting.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct QueuePlayerCount(u32);
+
+impl QueuePlayerCount {
+    /// Wraps a queue player-count value.
+    pub const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    /// Returns the player count as `u32`.
+    pub const fn as_u32(self) -> u32 {
+        self.0
+    }
+}
+
+/// Queue state shown while waiting for a matchmaking game to start.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct QueueStatus {
-    pub position_in_queue: u32,
-    pub queued_players: u32,
-    pub required_players: u32,
+    pub position_in_queue: QueuePosition,
+    pub queued_players: QueuePlayerCount,
+    pub required_players: QueuePlayerCount,
 }
 
 /// Aggregated client game state and UI state.
@@ -66,6 +98,14 @@ pub struct GameStateReducer {
     pub victory_title: Option<String>,
     pub victory_msg: Option<String>,
     pub victory_focus_target: VictoryFocusTarget,
+}
+
+impl GameStateReducer {
+    /// Returns the local player id when it represents an active session player.
+    pub fn active_player_id(&self) -> Option<PlayerId> {
+        self.player_id
+            .filter(|player_id| *player_id != PlayerId::nil())
+    }
 }
 
 /// Channel sender wrapper for client messages.

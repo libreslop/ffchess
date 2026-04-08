@@ -1,6 +1,6 @@
 //! Reducer implementation for applying actions to client state.
 
-use super::actions::{GameAction, InitPayload};
+use super::actions::{GameAction, InitPayload, PendingMoveClear};
 use super::time::now_timestamp_ms;
 use super::types::{ClientPhase, GameStateReducer};
 use common::logic::calculate_cooldown;
@@ -153,13 +153,14 @@ impl Reducible for GameStateReducer {
             GameAction::AddPmove(pm) => {
                 next.pm_queue.push(pm);
             }
-            GameAction::ClearPmQueue(piece_id) => {
-                if piece_id == PieceId::nil() {
+            GameAction::ClearPmQueue(clear_scope) => match clear_scope {
+                PendingMoveClear::All => {
                     next.pm_queue.clear();
-                } else {
+                }
+                PendingMoveClear::Piece(piece_id) => {
                     next.pm_queue.retain(|pm| pm.piece_id != piece_id);
                 }
-            }
+            },
             GameAction::Tick(tx) => {
                 #[cfg(target_arch = "wasm32")]
                 let now = TimestampMs::from_millis(js_sys::Date::now() as i64);
@@ -168,7 +169,7 @@ impl Reducible for GameStateReducer {
 
                 let mut processed_pieces = std::collections::HashSet::<PieceId>::new();
                 let mut blocked_pieces = std::collections::HashSet::<PieceId>::new();
-                let player_id = next.player_id.unwrap_or_else(PlayerId::nil);
+                let player_id = next.active_player_id().unwrap_or_else(PlayerId::nil);
                 for pm in next.pm_queue.iter_mut() {
                     if processed_pieces.contains(&pm.piece_id) || pm.pending {
                         processed_pieces.insert(pm.piece_id);
@@ -303,15 +304,12 @@ impl GameStateReducer {
 
 fn compute_phase(state: &GameStateReducer) -> ClientPhase {
     // Phase is derived from authoritative server state plus the local death flag.
-    let Some(player_id) = state.player_id else {
-        return ClientPhase::Menu;
-    };
-    if player_id == PlayerId::nil() {
+    let Some(player_id) = state.active_player_id() else {
         if state.queue_status.is_some() {
             return ClientPhase::Queued;
         }
         return ClientPhase::Menu;
-    }
+    };
     if state.is_dead || state.is_victory {
         return ClientPhase::Dead;
     }
