@@ -195,104 +195,108 @@ pub fn app() -> Html {
         let reducer_ref = reducer_ref.clone();
         let tx_handle = tx.clone();
         let global_cfg = global_cfg.clone();
-        use_effect_with((*current_mode_id).clone(), move |mode_id| {
-            reducer_ref.borrow().clone().dispatch(GameAction::Reset);
-            let (client_tx, mut client_rx) = mpsc::unbounded_channel::<ClientMessage>();
-            let sender = MsgSender(client_tx);
-            tx_handle.set(Some(sender.clone()));
+        use_effect_with(
+            ((*current_mode_id).clone(), reducer.ws_reconnect_epoch),
+            move |(mode_id, _reconnect_epoch)| {
+                reducer_ref.borrow().clone().dispatch(GameAction::Reset);
+                let (client_tx, mut client_rx) = mpsc::unbounded_channel::<ClientMessage>();
+                let sender = MsgSender(client_tx);
+                tx_handle.set(Some(sender.clone()));
 
-            let tick_sender = sender.clone();
-            let tick_reducer_ref = reducer_ref.clone();
-            let tick_ms = global_cfg.tick_interval_ms.max(10);
-            let interval = Interval::new(tick_ms, move || {
-                let handle = tick_reducer_ref.borrow().clone();
-                handle.dispatch(GameAction::Tick(tick_sender.clone()));
-            });
+                let tick_sender = sender.clone();
+                let tick_reducer_ref = reducer_ref.clone();
+                let tick_ms = global_cfg.tick_interval_ms.max(10);
+                let interval = Interval::new(tick_ms, move || {
+                    let handle = tick_reducer_ref.borrow().clone();
+                    handle.dispatch(GameAction::Tick(tick_sender.clone()));
+                });
 
-            let ping_sender = sender.clone();
-            let ping_interval_ms = global_cfg.ping_interval_ms.max(500);
-            let ping_interval = Interval::new(ping_interval_ms, move || {
-                let now = js_sys::Date::now() as u64;
-                let _ = ping_sender.0.send(ClientMessage::Ping(now));
-            });
+                let ping_sender = sender.clone();
+                let ping_interval_ms = global_cfg.ping_interval_ms.max(500);
+                let ping_interval = Interval::new(ping_interval_ms, move || {
+                    let now = js_sys::Date::now() as u64;
+                    let _ = ping_sender.0.send(ClientMessage::Ping(now));
+                });
 
-            let listener_reducer_ref = reducer_ref.clone();
-            let current_ws_tx = Rc::new(std::cell::RefCell::new(
-                None::<mpsc::UnboundedSender<Message>>,
-            ));
+                let listener_reducer_ref = reducer_ref.clone();
+                let current_ws_tx = Rc::new(std::cell::RefCell::new(
+                    None::<mpsc::UnboundedSender<Message>>,
+                ));
 
-            let sender_ws_tx = current_ws_tx.clone();
-            let sender_reducer_ref = reducer_ref.clone();
-            spawn_local(async move {
-                while let Some(msg) = client_rx.recv().await {
-                    let maybe_tx = sender_ws_tx.borrow().clone();
-                    let current_reducer = sender_reducer_ref.borrow().clone();
-                    if let Some(tx) = maybe_tx {
-                        if tx
-                            .send(Message::Text(serde_json::to_string(&msg).unwrap()))
-                            .is_err()
+                let sender_ws_tx = current_ws_tx.clone();
+                let sender_reducer_ref = reducer_ref.clone();
+                spawn_local(async move {
+                    while let Some(msg) = client_rx.recv().await {
+                        let maybe_tx = sender_ws_tx.borrow().clone();
+                        let current_reducer = sender_reducer_ref.borrow().clone();
+                        if let Some(tx) = maybe_tx {
+                            if tx
+                                .send(Message::Text(serde_json::to_string(&msg).unwrap()))
+                                .is_err()
+                                && !current_reducer.disconnected
+                                && !current_reducer.fatal_error
+                            {
+                                sender_reducer_ref.borrow().clone().dispatch(
+                                    GameAction::SetDisconnected {
+                                        disconnected: true,
+                                        is_fatal: false,
+                                        title: None,
+                                        msg: None,
+                                    },
+                                );
+                            }
+                        } else if !matches!(msg, ClientMessage::Ping(_))
                             && !current_reducer.disconnected
                             && !current_reducer.fatal_error
                         {
-                            sender_reducer_ref.borrow().clone().dispatch(
-                                GameAction::SetDisconnected {
+                            sender_reducer_ref
+                                .borrow()
+                                .clone()
+                                .dispatch(GameAction::SetDisconnected {
                                     disconnected: true,
                                     is_fatal: false,
                                     title: None,
                                     msg: None,
-                                },
-                            );
+                                });
                         }
-                    } else if !matches!(msg, ClientMessage::Ping(_))
-                        && !current_reducer.disconnected
-                        && !current_reducer.fatal_error
-                    {
-                        sender_reducer_ref
-                            .borrow()
-                            .clone()
-                            .dispatch(GameAction::SetDisconnected {
-                                disconnected: true,
-                                is_fatal: false,
-                                title: None,
-                                msg: None,
-                            });
                     }
-                }
-            });
-
-            let (abort_handle, abort_reg) = AbortHandle::new_pair();
-            {
-                let listener_reducer_ref = listener_reducer_ref.clone();
-                let current_ws_tx = current_ws_tx.clone();
-                let mode_id = mode_id.clone();
-                spawn_local(async move {
-                    let window = web_sys::window().unwrap();
-                    let host = window.location().host().unwrap();
-                    let protocol = if window.location().protocol().unwrap() == "https:" {
-                        "wss:"
-                    } else {
-                        "ws:"
-                    };
-
-                    let ws_url = format!("{}//{}/api/ws/{}", protocol, host, mode_id.as_ref());
-                    let fut = Abortable::new(
-                        connect_ws(
-                            ws_url,
-                            mode_id.clone(),
-                            listener_reducer_ref.clone(),
-                            current_ws_tx.clone(),
-                        ),
-                        abort_reg,
-                    );
-                    let _ = fut.await;
                 });
-            }
-            move || {
-                drop(interval);
-                drop(ping_interval);
-                abort_handle.abort();
-            }
-        });
+
+                let (abort_handle, abort_reg) = AbortHandle::new_pair();
+                {
+                    let listener_reducer_ref = listener_reducer_ref.clone();
+                    let current_ws_tx = current_ws_tx.clone();
+                    let mode_id = mode_id.clone();
+                    spawn_local(async move {
+                        let window = web_sys::window().unwrap();
+                        let host = window.location().host().unwrap();
+                        let protocol = if window.location().protocol().unwrap() == "https:" {
+                            "wss:"
+                        } else {
+                            "ws:"
+                        };
+
+                        let ws_url =
+                            format!("{}//{}/api/ws/{}", protocol, host, mode_id.as_ref());
+                        let fut = Abortable::new(
+                            connect_ws(
+                                ws_url,
+                                mode_id.clone(),
+                                listener_reducer_ref.clone(),
+                                current_ws_tx.clone(),
+                            ),
+                            abort_reg,
+                        );
+                        let _ = fut.await;
+                    });
+                }
+                move || {
+                    drop(interval);
+                    drop(ping_interval);
+                    abort_handle.abort();
+                }
+            },
+        );
     }
 
     let on_join = {

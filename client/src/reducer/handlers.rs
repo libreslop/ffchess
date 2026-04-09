@@ -10,19 +10,31 @@ impl GameStateReducer {
         self.error = None;
         self.disconnected = false;
         self.state.board_size = params.board_size;
-        let Some(local_player_id) = self.active_player_id() else {
-            if let Some(preview_state) = self.menu_preview_state.clone() {
-                self.state = preview_state;
-            }
+        let is_queue_mode = self
+            .mode
+            .as_ref()
+            .map(|m| m.queue_players.as_u32() >= 2)
+            .unwrap_or(false);
+        let had_players = !self.state.players.is_empty();
+        let incoming_empty = params.players.is_empty();
+        if is_queue_mode && incoming_empty && had_players {
+            self.ws_reconnect_epoch = self.ws_reconnect_epoch.wrapping_add(1);
+        }
+
+        let local_player_id = self.active_player_id();
+        if local_player_id.is_none() {
             self.pm_queue.clear();
             self.is_dead = false;
-            return;
-        };
+        }
 
         let now_ms = now_timestamp_ms();
 
         for player in params.players {
-            if self.player_id == Some(player.id) && !self.is_dead && !self.is_victory {
+            if let Some(_) = local_player_id
+                && self.player_id == Some(player.id)
+                && !self.is_dead
+                && !self.is_victory
+            {
                 self.last_score = player.score;
                 self.last_kills = player.kills;
                 self.last_captured = player.pieces_captured;
@@ -32,7 +44,8 @@ impl GameStateReducer {
         }
 
         for mut piece in params.pieces {
-            if piece.owner_id == Some(local_player_id)
+            if let Some(local_player_id) = local_player_id
+                && piece.owner_id == Some(local_player_id)
                 && let Some(previous_piece) = self.state.pieces.get(&piece.id)
             {
                 piece.last_move_time = previous_piece.last_move_time;
@@ -83,6 +96,12 @@ impl GameStateReducer {
             self.is_dead = false;
         } else if let Some(player_id) = self.active_player_id() {
             self.is_dead = !self.state.players.contains_key(&player_id);
+        } else {
+            self.is_dead = false;
+        }
+
+        if local_player_id.is_none() {
+            self.menu_preview_state = Some(self.state.clone());
         }
     }
 }

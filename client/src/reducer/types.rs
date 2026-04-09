@@ -65,6 +65,7 @@ pub struct GameStateReducer {
     pub fps: u32,
     pub disconnected: bool,
     pub fatal_error: bool,
+    pub ws_reconnect_epoch: u64,
     pub is_dead: bool,
     pub is_victory: bool,
     pub queue_status: Option<QueueStatus>,
