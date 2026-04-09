@@ -5,6 +5,7 @@ You are to make large scale refactors of the code base to optimise for what's sp
 - use tight encapsulation
 - break up complex logic into functions
 - ensure meaning are encoded in types
+- avoid single struct or functions with too many fields, if needed, declare new structs/types
 you are allowed to modify the client, server and common code, as well as the protocol, ask the user before modifying config format
 
 before submitting, nitpick the code, and restart the refactor if there are any issues found
