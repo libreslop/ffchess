@@ -13,12 +13,7 @@ async fn main() {
     let state = Arc::new(ServerState::new());
 
     // Initialize shops for all games
-    {
-        let games = state.games.read().await;
-        for instance in games.values() {
-            instance.spawn_initial_shops().await;
-        }
-    }
+    state.spawn_initial_shops().await;
 
     // Spawn game loop task
     let state_clone = state.clone();
@@ -26,11 +21,7 @@ async fn main() {
         let mut interval = tokio::time::interval(tokio::time::Duration::from_millis(100));
         loop {
             interval.tick().await;
-            let games = state_clone.games.read().await;
-            for instance in games.values() {
-                instance.handle_tick().await;
-            }
-            drop(games);
+            state_clone.tick_all_games().await;
             state_clone.tick_previews().await;
         }
     });

@@ -1,6 +1,5 @@
 //! Axum handlers for HTTP endpoints and WebSocket sessions.
 
-use crate::instance::GameInstance;
 use crate::state::{MatchQueueEntry, QueueJoinResult, ServerState};
 use crate::types::ConnectionId;
 use axum::{
@@ -23,29 +22,8 @@ use tokio::sync::mpsc;
 ///
 /// `state` is the shared server state. Returns a vector of `ModeSummary`.
 async fn mode_list_snapshot(state: &Arc<ServerState>) -> Vec<ModeSummary> {
-    let public_games: Vec<(ModeId, Arc<GameInstance>)> = {
-        let games = state.games.read().await;
-        let hidden = state.private_game_ids.read().await;
-        games
-            .iter()
-            .filter(|(mode_id, _)| !hidden.contains(*mode_id))
-            .map(|(mode_id, instance)| (mode_id.clone(), instance.clone()))
-            .collect()
-    };
-
-    let private_games: Vec<(ModeId, Arc<GameInstance>)> = {
-        let games = state.games.read().await;
-        let hidden = state.private_game_ids.read().await;
-        hidden
-            .iter()
-            .filter_map(|id| {
-                games
-                    .get(id)
-                    .cloned()
-                    .map(|instance| (id.clone(), instance))
-            })
-            .collect()
-    };
+    let public_games = state.public_game_instances().await;
+    let private_games = state.private_game_instances().await;
 
     let mut list = Vec::new();
     for (mode_id, instance) in public_games {
@@ -125,7 +103,7 @@ pub async fn list_modes(State(state): State<Arc<ServerState>>) -> impl IntoRespo
 ///
 /// `state` provides the name pool. Returns a generated display name.
 fn generate_name(state: &ServerState) -> String {
-    let pool = &state.config_manager.name_pool;
+    let pool = state.name_pool();
     let mut rng = rand::thread_rng();
     let adj = pool
         .adjectives
@@ -152,7 +130,7 @@ async fn broadcast_queue_state(state: &Arc<ServerState>, mode_id: &ModeId) {
     };
     let queued_players = PlayerCount::new(entries.len() as u32);
     for (idx, entry) in entries.iter().enumerate() {
-        let _ = entry.tx.send(ServerMessage::QueueState {
+        let _ = entry.tx().send(ServerMessage::QueueState {
             position_in_queue: QueuePosition::new((idx + 1) as u32),
             queued_players,
             required_players,
@@ -216,7 +194,8 @@ async fn handle_socket(socket: WebSocket, mode_id: ModeId, state: Arc<ServerStat
                         }
 
                         if let Some(binding) = state.unbind_connection(conn_id).await {
-                            binding.instance.remove_player(binding.player_id).await;
+                            let (player_id, instance) = binding.into_parts();
+                            instance.remove_player(player_id).await;
                             state.cleanup_private_games().await;
                         }
 
@@ -228,12 +207,8 @@ async fn handle_socket(socket: WebSocket, mode_id: ModeId, state: Arc<ServerStat
                             state
                                 .ensure_preview_connection(&mode_id, conn_id, tx.clone())
                                 .await;
-                            let queue_entry = MatchQueueEntry {
-                                conn_id,
-                                tx: tx.clone(),
-                                name,
-                                kit_name,
-                            };
+                            let queue_entry =
+                                MatchQueueEntry::new(conn_id, tx.clone(), name, kit_name);
                             match state.enqueue_matchmaking(&mode_id, queue_entry).await {
                                 Some(QueueJoinResult::Waiting) => {
                                     broadcast_queue_state(&state, &mode_id).await;
@@ -243,30 +218,23 @@ async fn handle_socket(socket: WebSocket, mode_id: ModeId, state: Arc<ServerStat
                                     players,
                                 }) => {
                                     for qp in players {
-                                        state
-                                            .remove_preview_connection(&mode_id, qp.conn_id)
-                                            .await;
+                                        let (conn_id, tx, name, kit_name) = qp.into_parts();
+                                        state.remove_preview_connection(&mode_id, conn_id).await;
                                         match match_instance
-                                            .add_player(
-                                                qp.name,
-                                                qp.kit_name,
-                                                qp.tx.clone(),
-                                                None,
-                                                None,
-                                            )
+                                            .add_player(name, kit_name, tx.clone(), None, None)
                                             .await
                                         {
                                             Ok((id, session_secret)) => {
                                                 state
                                                     .bind_connection(
-                                                        qp.conn_id,
+                                                        conn_id,
                                                         id,
                                                         match_instance.clone(),
                                                     )
                                                     .await;
                                                 state
                                                     .send_init(
-                                                        &qp.tx,
+                                                        &tx,
                                                         &match_instance,
                                                         id,
                                                         session_secret,
@@ -274,7 +242,7 @@ async fn handle_socket(socket: WebSocket, mode_id: ModeId, state: Arc<ServerStat
                                                     .await;
                                             }
                                             Err(e) => {
-                                                let _ = qp.tx.send(ServerMessage::Error(e));
+                                                let _ = tx.send(ServerMessage::Error(e));
                                             }
                                         }
                                     }
@@ -326,8 +294,8 @@ async fn handle_socket(socket: WebSocket, mode_id: ModeId, state: Arc<ServerStat
                     ClientMessage::MovePiece { piece_id, target } => {
                         if let Some(binding) = state.get_binding(conn_id).await
                             && let Err(e) = binding
-                                .instance
-                                .handle_move(binding.player_id, piece_id, target)
+                                .instance()
+                                .handle_move(binding.player_id(), piece_id, target)
                                 .await
                         {
                             let _ = tx.send(ServerMessage::Error(e));
@@ -339,8 +307,8 @@ async fn handle_socket(socket: WebSocket, mode_id: ModeId, state: Arc<ServerStat
                     } => {
                         if let Some(binding) = state.get_binding(conn_id).await
                             && let Err(e) = binding
-                                .instance
-                                .handle_shop_buy(binding.player_id, shop_pos, item_index)
+                                .instance()
+                                .handle_shop_buy(binding.player_id(), shop_pos, item_index)
                                 .await
                         {
                             let _ = tx.send(ServerMessage::Error(e));
@@ -365,13 +333,12 @@ async fn handle_socket(socket: WebSocket, mode_id: ModeId, state: Arc<ServerStat
     }
 
     if let Some(binding) = state.unbind_connection(conn_id).await {
-        binding.instance.remove_player(binding.player_id).await;
+        let (player_id, instance) = binding.into_parts();
+        instance.remove_player(player_id).await;
         state.cleanup_private_games().await;
     } else {
         if is_queue_mode {
-            state
-                .remove_preview_connection(&mode_id, conn_id)
-                .await;
+            state.remove_preview_connection(&mode_id, conn_id).await;
         } else {
             lobby_instance.remove_connection_channel(conn_id).await;
         }
