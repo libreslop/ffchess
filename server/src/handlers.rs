@@ -189,7 +189,7 @@ async fn handle_socket(socket: WebSocket, mode_id: ModeId, state: Arc<ServerStat
     let conn_id = ConnectionId::new();
     if is_queue_mode {
         state
-            .add_preview_connection(&mode_id, conn_id, tx.clone())
+            .ensure_preview_connection(&mode_id, conn_id, tx.clone())
             .await;
     } else {
         lobby_instance
@@ -224,7 +224,10 @@ async fn handle_socket(socket: WebSocket, mode_id: ModeId, state: Arc<ServerStat
                             broadcast_queue_state(&state, &mode_id).await;
                         }
 
-                        if state.queue_target_players(&mode_id).is_some() {
+                        if is_queue_mode {
+                            state
+                                .ensure_preview_connection(&mode_id, conn_id, tx.clone())
+                                .await;
                             let queue_entry = MatchQueueEntry {
                                 conn_id,
                                 tx: tx.clone(),
@@ -341,6 +344,13 @@ async fn handle_socket(socket: WebSocket, mode_id: ModeId, state: Arc<ServerStat
                                 .await
                         {
                             let _ = tx.send(ServerMessage::Error(e));
+                        }
+                    }
+                    ClientMessage::SetPreviewDefault { enabled } => {
+                        if is_queue_mode {
+                            state
+                                .set_preview_default(&mode_id, conn_id, tx.clone(), enabled)
+                                .await;
                         }
                     }
                     ClientMessage::Ping(t) => {

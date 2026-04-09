@@ -35,6 +35,7 @@ pub fn app() -> Html {
     let join_step = use_state(JoinStep::default);
     let has_interacted = use_state(|| false);
     let show_disconnected = use_state(|| false);
+    let preview_default_ref = use_mut_ref(|| None::<bool>);
     // Read initial mode list injected into index.html for immediate render
     let injected_modes: Vec<ModeSummary> = {
         let doc = document();
@@ -431,6 +432,47 @@ pub fn app() -> Html {
                     && queue_status.is_none()
                 {
                     rejoin_flow.set(RejoinFlow::Inactive);
+                }
+            },
+        );
+    }
+
+    {
+        let tx = tx.clone();
+        let join_step = join_step.clone();
+        let reducer = reducer.clone();
+        let preview_default_ref = preview_default_ref.clone();
+        let has_tx = (*tx).is_some();
+        use_effect_with(
+            (
+                *join_step,
+                reducer.queue_status.clone(),
+                reducer.mode.clone(),
+                has_tx,
+                is_joined,
+            ),
+            move |(step, queue_status, mode, _has_tx, joined)| {
+                let is_queue_mode = mode
+                    .as_ref()
+                    .map(|m| m.queue_players.as_u32() >= 2)
+                    .unwrap_or(false);
+                if *joined {
+                    preview_default_ref.borrow_mut().take();
+                    return;
+                }
+
+                let should_force =
+                    is_queue_mode && (step.is_select_kit() || queue_status.is_some());
+
+                if let Some(sender) = (*tx).as_ref() {
+                    let mut last_sent = preview_default_ref.borrow_mut();
+                    if last_sent.as_ref() == Some(&should_force) {
+                        return;
+                    }
+                    *last_sent = Some(should_force);
+                    let _ = sender
+                        .0
+                        .send(ClientMessage::SetPreviewDefault { enabled: should_force });
                 }
             },
         );

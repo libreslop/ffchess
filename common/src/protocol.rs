@@ -82,6 +82,9 @@ pub enum ClientMessage {
         shop_pos: IVec2,
         item_index: usize,
     },
+    SetPreviewDefault {
+        enabled: bool,
+    },
     Ping(u64),
 }
 

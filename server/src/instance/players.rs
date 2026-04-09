@@ -210,6 +210,18 @@ impl GameInstance {
         }
     }
 
+    /// Removes a player from the game without sending a GameOver payload.
+    ///
+    /// Used when a player is leaving via the join flow.
+    pub async fn detach_player(&self, player_id: PlayerId) {
+        let mut game = self.game.write().await;
+        self.player_channels.write().await.remove(&player_id);
+        self.victory_players.write().await.remove(&player_id);
+        if self.remove_player_state(player_id, &mut game).await {
+            self.record_player_leave_event().await;
+        }
+    }
+
     /// Removes a player from active state and cleans up their owned pieces.
     ///
     /// `player_id` identifies the removed player and `game` is the mutable state to update.

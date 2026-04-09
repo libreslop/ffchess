@@ -40,6 +40,7 @@ struct ModePreviewState {
     target_mode_id: Option<ModeId>,
     empty_since: Option<TimestampMs>,
     watchers: HashMap<ConnectionId, mpsc::UnboundedSender<common::protocol::ServerMessage>>,
+    default_only: HashSet<ConnectionId>,
 }
 
 impl ModePreviewState {
@@ -48,6 +49,7 @@ impl ModePreviewState {
             target_mode_id: None,
             empty_since: None,
             watchers: HashMap::new(),
+            default_only: HashSet::new(),
         }
     }
 }
@@ -218,25 +220,52 @@ impl ServerState {
         }
     }
 
+    /// Ensures a matchmaking connection is watching a preview board.
+    pub async fn ensure_preview_connection(
+        &self,
+        mode_id: &ModeId,
+        conn_id: ConnectionId,
+        tx: mpsc::UnboundedSender<common::protocol::ServerMessage>,
+    ) {
+        let already_watching = {
+            let previews = self.preview_state.read().await;
+            previews
+                .get(mode_id)
+                .map(|preview| preview.watchers.contains_key(&conn_id))
+                .unwrap_or(false)
+        };
+
+        if !already_watching {
+            self.add_preview_connection(mode_id, conn_id, tx).await;
+        }
+    }
+
     /// Removes a preview watcher from a matchmaking mode.
     pub async fn remove_preview_connection(&self, mode_id: &ModeId, conn_id: ConnectionId) {
-        let target_id = {
+        let (target_id, was_default) = {
             let mut previews = self.preview_state.write().await;
             let Some(preview) = previews.get_mut(mode_id) else {
                 return;
             };
             preview.watchers.remove(&conn_id);
+            let was_default = preview.default_only.remove(&conn_id);
             let target_id = preview.target_mode_id.clone();
             if preview.watchers.is_empty() {
                 previews.remove(mode_id);
             }
-            target_id
+            (target_id, was_default)
         };
 
         if let Some(target_id) = target_id
             && let Some(instance) = self.get_game(&target_id).await
         {
             instance.remove_connection_channel(conn_id).await;
+        }
+
+        if was_default
+            && let Some(default_instance) = self.get_game(mode_id).await
+        {
+            default_instance.remove_connection_channel(conn_id).await;
         }
     }
 
@@ -319,7 +348,7 @@ impl ServerState {
 
     /// Re-evaluates preview selection for a matchmaking mode.
     pub async fn refresh_preview_for_mode(&self, mode_id: &ModeId) {
-        let (watchers, current_target_id, empty_since) = {
+        let (watchers, default_only, current_target_id, empty_since) = {
             let previews = self.preview_state.read().await;
             let Some(preview) = previews.get(mode_id) else {
                 return;
@@ -329,10 +358,20 @@ impl ServerState {
             }
             (
                 preview.watchers.clone(),
+                preview.default_only.clone(),
                 preview.target_mode_id.clone(),
                 preview.empty_since,
             )
         };
+
+        let dynamic_watchers = watchers
+            .into_iter()
+            .filter(|(conn_id, _)| !default_only.contains(conn_id))
+            .collect::<HashMap<_, _>>();
+
+        if dynamic_watchers.is_empty() {
+            return;
+        }
 
         let instances = self.preview_instances_for_mode(mode_id).await;
         let default_instance = self.get_game(mode_id).await;
@@ -381,7 +420,7 @@ impl ServerState {
 
         if switch_required {
             if let Some(old_instance) = current_instance {
-                for (conn_id, _) in &watchers {
+                for (conn_id, _) in &dynamic_watchers {
                     old_instance.remove_connection_channel(*conn_id).await;
                 }
             }
@@ -389,7 +428,7 @@ impl ServerState {
             if let Some(target_id) = &desired_target
                 && let Some(new_instance) = self.get_game(target_id).await
             {
-                for (conn_id, tx) in &watchers {
+                for (conn_id, tx) in &dynamic_watchers {
                     new_instance
                         .add_connection_channel(*conn_id, tx.clone())
                         .await;
@@ -409,6 +448,92 @@ impl ServerState {
 
         if switch_required {
             self.cleanup_private_games().await;
+        }
+    }
+
+    /// Forces a preview connection to either the default board or the active preview.
+    pub async fn set_preview_default(
+        &self,
+        mode_id: &ModeId,
+        conn_id: ConnectionId,
+        tx: mpsc::UnboundedSender<common::protocol::ServerMessage>,
+        enabled: bool,
+    ) {
+        if enabled {
+            if let Some(binding) = self.unbind_connection(conn_id).await {
+                binding.instance.detach_player(binding.player_id).await;
+                self.cleanup_private_games().await;
+            }
+        }
+        self.ensure_preview_connection(mode_id, conn_id, tx.clone())
+            .await;
+
+        let (current_target_id, was_default) = {
+            let previews = self.preview_state.read().await;
+            let Some(preview) = previews.get(mode_id) else {
+                return;
+            };
+            (
+                preview.target_mode_id.clone(),
+                preview.default_only.contains(&conn_id),
+            )
+        };
+
+        if enabled == was_default {
+            return;
+        }
+
+        {
+            let mut previews = self.preview_state.write().await;
+            if let Some(preview) = previews.get_mut(mode_id) {
+                if enabled {
+                    preview.default_only.insert(conn_id);
+                } else {
+                    preview.default_only.remove(&conn_id);
+                }
+            }
+        }
+
+        if enabled {
+            if let Some(target_id) = current_target_id
+                && let Some(instance) = self.get_game(&target_id).await
+            {
+                instance.remove_connection_channel(conn_id).await;
+            }
+
+            if let Some(default_instance) = self.get_game(mode_id).await {
+                default_instance
+                    .add_connection_channel(conn_id, tx.clone())
+                    .await;
+                self.send_init(&tx, &default_instance, PlayerId::nil(), SessionSecret::nil())
+                    .await;
+            }
+            return;
+        }
+
+        if let Some(default_instance) = self.get_game(mode_id).await {
+            default_instance.remove_connection_channel(conn_id).await;
+        }
+
+        let target = match current_target_id {
+            Some(id) => self.get_game(&id).await,
+            None => self.select_preview_target(mode_id).await,
+        };
+
+        if let Some(instance) = target {
+            instance
+                .add_connection_channel(conn_id, tx.clone())
+                .await;
+            self.send_init(&tx, &instance, PlayerId::nil(), SessionSecret::nil())
+                .await;
+
+            let mut previews = self.preview_state.write().await;
+            if let Some(preview) = previews.get_mut(mode_id) {
+                if preview.target_mode_id.as_ref() != Some(instance.mode_id()) {
+                    preview.target_mode_id = Some(instance.mode_id().clone());
+                    preview.empty_since = None;
+                }
+            }
         }
     }
 
