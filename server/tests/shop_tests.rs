@@ -81,7 +81,8 @@ async fn shop_purchase_deducts_score_and_adds_piece() {
     };
 
     let instance = GameInstance::new(
-        mode_config,
+        mode_config.clone(),
+        mode_config.id.clone(),
         Arc::new(piece_configs),
         Arc::new(HashMap::from([(shop_id.clone(), shop_config.clone())])),
     );

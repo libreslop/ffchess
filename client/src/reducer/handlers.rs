@@ -10,17 +10,6 @@ impl GameStateReducer {
         self.error = None;
         self.disconnected = false;
         self.state.board_size = params.board_size;
-        let is_queue_mode = self
-            .mode
-            .as_ref()
-            .map(|m| m.queue_players.as_u32() >= 2)
-            .unwrap_or(false);
-        let had_players = !self.state.players.is_empty();
-        let incoming_empty = params.players.is_empty();
-        if is_queue_mode && incoming_empty && had_players {
-            self.ws_reconnect_epoch = self.ws_reconnect_epoch.wrapping_add(1);
-        }
-
         let local_player_id = self.active_player_id();
         if local_player_id.is_none() {
             self.pm_queue.clear();

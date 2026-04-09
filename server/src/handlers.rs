@@ -145,24 +145,6 @@ fn generate_name(state: &ServerState) -> String {
     format!("{adj} {noun}")
 }
 
-/// Sends an Init snapshot to a client from a specific game instance.
-async fn send_init(
-    tx: &mpsc::UnboundedSender<ServerMessage>,
-    instance: &Arc<GameInstance>,
-    player_id: PlayerId,
-    session_secret: SessionSecret,
-) {
-    let game = instance.game.read().await;
-    let _ = tx.send(ServerMessage::Init {
-        player_id,
-        session_secret,
-        state: Box::new(game.clone()),
-        mode: instance.client_mode_config(),
-        pieces: instance.piece_config_snapshot(),
-        shops: instance.shop_config_snapshot(),
-    });
-}
-
 /// Broadcasts queue position/state updates to all queued players for a mode.
 async fn broadcast_queue_state(state: &Arc<ServerState>, mode_id: &ModeId) {
     let Some((required_players, entries)) = state.queue_snapshot(mode_id).await else {
@@ -190,6 +172,7 @@ async fn handle_socket(socket: WebSocket, mode_id: ModeId, state: Arc<ServerStat
             return;
         }
     };
+    let is_queue_mode = state.queue_target_players(&mode_id).is_some();
 
     let (mut sender, mut receiver) = socket.split();
     let (tx, mut rx) = mpsc::unbounded_channel::<ServerMessage>();
@@ -204,11 +187,18 @@ async fn handle_socket(socket: WebSocket, mode_id: ModeId, state: Arc<ServerStat
     });
 
     let conn_id = ConnectionId::new();
-    lobby_instance
-        .add_connection_channel(conn_id, tx.clone())
-        .await;
-
-    send_init(&tx, &lobby_instance, PlayerId::nil(), SessionSecret::nil()).await;
+    if is_queue_mode {
+        state
+            .add_preview_connection(&mode_id, conn_id, tx.clone())
+            .await;
+    } else {
+        lobby_instance
+            .add_connection_channel(conn_id, tx.clone())
+            .await;
+        state
+            .send_init(&tx, &lobby_instance, PlayerId::nil(), SessionSecret::nil())
+            .await;
+    }
 
     while let Some(Ok(msg)) = receiver.next().await {
         if let Message::Text(text) = msg {
@@ -250,7 +240,9 @@ async fn handle_socket(socket: WebSocket, mode_id: ModeId, state: Arc<ServerStat
                                     players,
                                 }) => {
                                     for qp in players {
-                                        lobby_instance.remove_connection_channel(qp.conn_id).await;
+                                        state
+                                            .remove_preview_connection(&mode_id, qp.conn_id)
+                                            .await;
                                         match match_instance
                                             .add_player(
                                                 qp.name,
@@ -269,19 +261,21 @@ async fn handle_socket(socket: WebSocket, mode_id: ModeId, state: Arc<ServerStat
                                                         match_instance.clone(),
                                                     )
                                                     .await;
-                                                send_init(
-                                                    &qp.tx,
-                                                    &match_instance,
-                                                    id,
-                                                    session_secret,
-                                                )
-                                                .await;
+                                                state
+                                                    .send_init(
+                                                        &qp.tx,
+                                                        &match_instance,
+                                                        id,
+                                                        session_secret,
+                                                    )
+                                                    .await;
                                             }
                                             Err(e) => {
                                                 let _ = qp.tx.send(ServerMessage::Error(e));
                                             }
                                         }
                                     }
+                                    state.refresh_preview_for_mode(&mode_id).await;
                                     broadcast_queue_state(&state, &mode_id).await;
                                 }
                                 None => {
@@ -314,7 +308,9 @@ async fn handle_socket(socket: WebSocket, mode_id: ModeId, state: Arc<ServerStat
                                 state
                                     .bind_connection(conn_id, id, lobby_instance.clone())
                                     .await;
-                                send_init(&tx, &lobby_instance, id, session_secret).await;
+                                state
+                                    .send_init(&tx, &lobby_instance, id, session_secret)
+                                    .await;
                             }
                             Err(e) => {
                                 let _ = tx.send(ServerMessage::Error(e));
@@ -362,7 +358,13 @@ async fn handle_socket(socket: WebSocket, mode_id: ModeId, state: Arc<ServerStat
         binding.instance.remove_player(binding.player_id).await;
         state.cleanup_private_games().await;
     } else {
-        lobby_instance.remove_connection_channel(conn_id).await;
+        if is_queue_mode {
+            state
+                .remove_preview_connection(&mode_id, conn_id)
+                .await;
+        } else {
+            lobby_instance.remove_connection_channel(conn_id).await;
+        }
         if state.remove_from_queue(&mode_id, conn_id).await {
             broadcast_queue_state(&state, &mode_id).await;
         }

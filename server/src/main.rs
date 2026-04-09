@@ -30,6 +30,8 @@ async fn main() {
             for instance in games.values() {
                 instance.handle_tick().await;
             }
+            drop(games);
+            state_clone.tick_previews().await;
         }
     });
 

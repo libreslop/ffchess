@@ -195,13 +195,11 @@ pub fn app() -> Html {
         let reducer_ref = reducer_ref.clone();
         let tx_handle = tx.clone();
         let global_cfg = global_cfg.clone();
-        use_effect_with(
-            ((*current_mode_id).clone(), reducer.ws_reconnect_epoch),
-            move |(mode_id, _reconnect_epoch)| {
-                reducer_ref.borrow().clone().dispatch(GameAction::Reset);
-                let (client_tx, mut client_rx) = mpsc::unbounded_channel::<ClientMessage>();
-                let sender = MsgSender(client_tx);
-                tx_handle.set(Some(sender.clone()));
+        use_effect_with((*current_mode_id).clone(), move |mode_id| {
+            reducer_ref.borrow().clone().dispatch(GameAction::Reset);
+            let (client_tx, mut client_rx) = mpsc::unbounded_channel::<ClientMessage>();
+            let sender = MsgSender(client_tx);
+            tx_handle.set(Some(sender.clone()));
 
                 let tick_sender = sender.clone();
                 let tick_reducer_ref = reducer_ref.clone();
@@ -276,11 +274,10 @@ pub fn app() -> Html {
                             "ws:"
                         };
 
-                        let ws_url =
-                            format!("{}//{}/api/ws/{}", protocol, host, mode_id.as_ref());
-                        let fut = Abortable::new(
-                            connect_ws(
-                                ws_url,
+                let ws_url = format!("{}//{}/api/ws/{}", protocol, host, mode_id.as_ref());
+                let fut = Abortable::new(
+                    connect_ws(
+                        ws_url,
                                 mode_id.clone(),
                                 listener_reducer_ref.clone(),
                                 current_ws_tx.clone(),
@@ -295,8 +292,7 @@ pub fn app() -> Html {
                     drop(ping_interval);
                     abort_handle.abort();
                 }
-            },
-        );
+        });
     }
 
     let on_join = {

@@ -7,30 +7,43 @@ use crate::types::ConnectionId;
 use common::models::{GameModeConfig, GameState, PieceConfig, ShopConfig};
 use common::protocol::{GameError, ServerMessage, VictoryFocusTarget};
 use common::types::{
-    PieceId, PieceTypeId, PlayerCount, PlayerId, SessionSecret, ShopId, TimestampMs,
+    ModeId, PieceId, PieceTypeId, PlayerCount, PlayerId, SessionSecret, ShopId, TimestampMs,
 };
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::{RwLock, mpsc};
 
 /// Live game instance state for a single mode.
 pub struct GameInstance {
     pub(super) mode_config: GameModeConfig,
+    pub(super) public_mode_id: ModeId,
     pub(super) piece_configs: Arc<HashMap<PieceTypeId, PieceConfig>>,
     pub(super) shop_configs: Arc<HashMap<ShopId, ShopConfig>>,
     pub game: RwLock<GameState>,
     pub connection_channels: RwLock<HashMap<ConnectionId, mpsc::UnboundedSender<ServerMessage>>>,
     pub player_channels: RwLock<HashMap<PlayerId, mpsc::UnboundedSender<ServerMessage>>>,
     pub session_secrets: RwLock<HashMap<PlayerId, SessionSecret>>,
+    pub victory_players: RwLock<HashSet<PlayerId>>,
     pub removed_pieces: RwLock<Vec<PieceId>>,
     pub removed_players: RwLock<Vec<PlayerId>>,
     pub color_manager: RwLock<ColorManager>,
     pub last_viewed_at: RwLock<TimestampMs>,
+    pub last_started_at: RwLock<TimestampMs>,
     pub death_timestamps: RwLock<HashMap<PlayerId, TimestampMs>>,
     pub(super) hook_events: RwLock<HookEventBuffer>,
 }
 
 impl GameInstance {
+    /// Returns the public mode identifier for this instance.
+    pub fn public_mode_id(&self) -> &ModeId {
+        &self.public_mode_id
+    }
+
+    /// Returns the internal mode identifier for this instance.
+    pub fn mode_id(&self) -> &ModeId {
+        &self.mode_config.id
+    }
+
     /// Returns the display name of this mode instance.
     pub fn mode_display_name(&self) -> &str {
         &self.mode_config.display_name
@@ -46,14 +59,26 @@ impl GameInstance {
         self.mode_config.respawn_cooldown_ms
     }
 
-    /// Returns the current number of active players in this instance.
+    /// Returns the current number of in-game players in this instance.
     pub async fn player_count(&self) -> PlayerCount {
-        PlayerCount::new(self.game.read().await.players.len() as u32)
+        let game = self.game.read().await;
+        let victory_players = self.victory_players.read().await;
+        let count = game
+            .players
+            .keys()
+            .filter(|player_id| !victory_players.contains(player_id))
+            .count();
+        PlayerCount::new(count as u32)
     }
 
     /// Returns the client-safe mode configuration for this instance.
     pub fn client_mode_config(&self) -> common::models::GameModeClientConfig {
         self.mode_config.to_client_config()
+    }
+
+    /// Returns the last time this instance transitioned from empty to active.
+    pub async fn last_started_at(&self) -> TimestampMs {
+        *self.last_started_at.read().await
     }
 
     /// Registers a passive connection channel for lobby/observer updates.
@@ -116,6 +141,7 @@ impl GameInstance {
         message: String,
         focus_target: VictoryFocusTarget,
     ) {
+        self.victory_players.write().await.insert(player_id);
         let channels = self.player_channels.read().await;
         if let Some(tx) = channels.get(&player_id) {
             let _ = tx.send(ServerMessage::Victory {
@@ -128,16 +154,20 @@ impl GameInstance {
 
     /// Creates a new game instance for a given mode.
     ///
-    /// `mode_config` defines the rules, `piece_configs` and `shop_configs` provide assets.
+    /// `mode_config` defines the rules, `public_mode_id` is the shared mode identifier, and
+    /// `piece_configs`/`shop_configs` provide assets.
     /// Returns a fully initialized `GameInstance`.
     pub fn new(
         mode_config: GameModeConfig,
+        public_mode_id: ModeId,
         piece_configs: Arc<HashMap<PieceTypeId, PieceConfig>>,
         shop_configs: Arc<HashMap<ShopId, ShopConfig>>,
     ) -> Self {
         let board_size = common::logic::calculate_board_size(&mode_config, 0);
+        let now = now_ms();
         Self {
             mode_config: mode_config.clone(),
+            public_mode_id,
             piece_configs,
             shop_configs,
             game: RwLock::new(GameState {
@@ -148,10 +178,12 @@ impl GameInstance {
             connection_channels: RwLock::new(HashMap::new()),
             player_channels: RwLock::new(HashMap::new()),
             session_secrets: RwLock::new(HashMap::new()),
+            victory_players: RwLock::new(HashSet::new()),
             removed_pieces: RwLock::new(Vec::new()),
             removed_players: RwLock::new(Vec::new()),
             color_manager: RwLock::new(ColorManager::new()),
-            last_viewed_at: RwLock::new(now_ms()),
+            last_viewed_at: RwLock::new(now),
+            last_started_at: RwLock::new(now),
             death_timestamps: RwLock::new(HashMap::new()),
             hook_events: RwLock::new(HookEventBuffer::default()),
         }

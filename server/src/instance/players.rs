@@ -49,11 +49,11 @@ impl GameInstance {
         };
         drop(secrets);
 
+        let now = now_ms();
         let respawn_ms = self.mode_config.respawn_cooldown_ms;
         if respawn_ms > DurationMs::zero() {
             let deaths = self.death_timestamps.read().await;
             if let Some(death_time) = deaths.get(&player_id) {
-                let now = now_ms();
                 let elapsed = now - *death_time;
                 if elapsed < respawn_ms {
                     let remaining = (respawn_ms - elapsed).as_u64() / 1000;
@@ -73,8 +73,10 @@ impl GameInstance {
         };
 
         self.player_channels.write().await.insert(player_id, tx);
+        self.victory_players.write().await.remove(&player_id);
 
         let mut game = self.game.write().await;
+        let was_empty = game.players.is_empty();
         let new_size =
             common::logic::calculate_board_size(&self.mode_config, game.players.len() + 1);
         if new_size > game.board_size {
@@ -158,13 +160,17 @@ impl GameInstance {
             score: Score::zero(),
             kills: 0,
             pieces_captured: 0,
-            join_time: now_ms(),
+            join_time: now,
             king_id,
             color,
         };
 
         game.players.insert(player_id, player);
         drop(game);
+
+        if was_empty {
+            *self.last_started_at.write().await = now;
+        }
 
         self.death_timestamps.write().await.remove(&player_id);
 
@@ -198,6 +204,7 @@ impl GameInstance {
 
         let mut game = self.game.write().await;
         self.player_channels.write().await.remove(&player_id);
+        self.victory_players.write().await.remove(&player_id);
         if self.remove_player_state(player_id, &mut game).await {
             self.record_player_leave_event().await;
         }
@@ -215,6 +222,7 @@ impl GameInstance {
             return false;
         }
 
+        self.victory_players.write().await.remove(&player_id);
         self.removed_players.write().await.push(player_id);
         self.death_timestamps
             .write()
