@@ -6,10 +6,11 @@ mod view;
 
 use callbacks::{build_on_join, build_on_name_input, build_on_name_submit, build_on_rejoin};
 use effects::{
-    use_disconnected_overlay_effect, use_fatal_error_reset_effect, use_joining_reset_effect,
-    use_keyboard_shortcuts_effect, use_landing_cooldown_effect, use_mode_refresh_effect,
-    use_mode_url_navigation_effect, use_player_name_sync_effect, use_preview_default_effect,
-    use_rejoin_cooldown_effect, use_rejoin_flow_reset_effect, use_ws_connection_effect,
+    KeyboardShortcutEffectInputs, use_disconnected_overlay_effect, use_fatal_error_reset_effect,
+    use_joining_reset_effect, use_keyboard_shortcuts_effect, use_landing_cooldown_effect,
+    use_mode_refresh_effect, use_mode_url_navigation_effect, use_player_name_sync_effect,
+    use_preview_default_effect, use_rejoin_cooldown_effect, use_rejoin_flow_reset_effect,
+    use_ws_connection_effect,
 };
 use view::{AppViewProps, render_app};
 
@@ -190,21 +191,21 @@ pub fn app() -> Html {
         .unwrap_or_default();
     let disconnected = reducer.disconnected;
     let queueing = reducer.queue_status.is_some();
-    use_keyboard_shortcuts_effect(
+    use_keyboard_shortcuts_effect(KeyboardShortcutEffectInputs {
         is_joined,
         is_dead,
         is_victory,
-        join_step.clone(),
-        landing_cooldown.clone(),
+        join_step: join_step.clone(),
+        landing_cooldown: landing_cooldown.clone(),
         disconnected,
         queueing,
         kits,
-        player_name.clone(),
-        has_interacted.clone(),
-        on_join.clone(),
-        on_rejoin.clone(),
-        rc_ref.clone(),
-    );
+        player_name: player_name.clone(),
+        has_interacted: has_interacted.clone(),
+        on_join: on_join.clone(),
+        on_rejoin: on_rejoin.clone(),
+        rc_ref: rc_ref.clone(),
+    });
 
     let on_select_mode = {
         Callback::from(move |id: ModeId| {

@@ -193,7 +193,7 @@ pub fn request_fullscreen() {
     }
 
     // Fallback for iOS when Fullscreen API is unavailable: collapse browser chrome.
-    let _ = window.scroll_to_with_x_and_y(0.0, 1.0);
+    window.scroll_to_with_x_and_y(0.0, 1.0);
 }
 
 fn try_prefixed_fullscreen(element: &web_sys::Element) -> bool {

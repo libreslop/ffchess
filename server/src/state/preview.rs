@@ -56,6 +56,22 @@ struct PreviewSelection {
     empty_since: Option<TimestampMs>,
 }
 
+/// Captures the current target state while evaluating preview selection.
+struct CurrentPreviewState<'a> {
+    target_mode_id: Option<ModeId>,
+    empty_since: Option<TimestampMs>,
+    instance: Option<&'a Arc<GameInstance>>,
+}
+
+/// Bundles all inputs required to compute the next preview selection.
+struct PreviewSelectionInput<'a> {
+    mode_id: &'a ModeId,
+    now: TimestampMs,
+    current: CurrentPreviewState<'a>,
+    default_instance: Option<&'a Arc<GameInstance>>,
+    latest_running: Option<&'a Arc<GameInstance>>,
+}
+
 impl ServerState {
     /// Registers a preview watcher for a matchmaking mode.
     pub async fn add_preview_connection(
@@ -91,11 +107,11 @@ impl ServerState {
             .await;
 
         let mut previews = self.preview_state.write().await;
-        if let Some(preview) = previews.get_mut(mode_id) {
-            if preview.target_mode_id.as_ref() != Some(instance.mode_id()) {
-                preview.target_mode_id = Some(instance.mode_id().clone());
-                preview.empty_since = None;
-            }
+        if let Some(preview) = previews.get_mut(mode_id)
+            && preview.target_mode_id.as_ref() != Some(instance.mode_id())
+        {
+            preview.target_mode_id = Some(instance.mode_id().clone());
+            preview.empty_since = None;
         }
     }
 
@@ -186,15 +202,17 @@ impl ServerState {
         };
 
         let selection = self
-            .select_preview_state(
+            .select_preview_state(PreviewSelectionInput {
                 mode_id,
                 now,
-                snapshot.target_mode_id.clone(),
-                snapshot.empty_since,
-                current_instance.as_ref(),
-                default_instance.as_ref(),
-                latest_running.as_ref(),
-            )
+                current: CurrentPreviewState {
+                    target_mode_id: snapshot.target_mode_id.clone(),
+                    empty_since: snapshot.empty_since,
+                    instance: current_instance.as_ref(),
+                },
+                default_instance: default_instance.as_ref(),
+                latest_running: latest_running.as_ref(),
+            })
             .await;
 
         let switch_required = selection.target_mode_id != snapshot.target_mode_id;
@@ -202,7 +220,7 @@ impl ServerState {
 
         if switch_required {
             if let Some(old_instance) = current_instance {
-                for (conn_id, _) in &snapshot.dynamic_watchers {
+                for conn_id in snapshot.dynamic_watchers.keys() {
                     old_instance.remove_connection_channel(*conn_id).await;
                 }
             }
@@ -241,12 +259,10 @@ impl ServerState {
         tx: mpsc::UnboundedSender<ServerMessage>,
         enabled: bool,
     ) {
-        if enabled {
-            if let Some(binding) = self.unbind_connection(conn_id).await {
-                let (player_id, instance) = binding.into_parts();
-                instance.detach_player(player_id).await;
-                self.cleanup_private_games().await;
-            }
+        if enabled && let Some(binding) = self.unbind_connection(conn_id).await {
+            let (player_id, instance) = binding.into_parts();
+            instance.detach_player(player_id).await;
+            self.cleanup_private_games().await;
         }
         self.ensure_preview_connection(mode_id, conn_id, tx.clone())
             .await;
@@ -314,55 +330,53 @@ impl ServerState {
                 .await;
 
             let mut previews = self.preview_state.write().await;
-            if let Some(preview) = previews.get_mut(mode_id) {
-                if preview.target_mode_id.as_ref() != Some(instance.mode_id()) {
-                    preview.target_mode_id = Some(instance.mode_id().clone());
-                    preview.empty_since = None;
-                }
+            if let Some(preview) = previews.get_mut(mode_id)
+                && preview.target_mode_id.as_ref() != Some(instance.mode_id())
+            {
+                preview.target_mode_id = Some(instance.mode_id().clone());
+                preview.empty_since = None;
             }
         }
     }
 
-    async fn select_preview_state(
-        &self,
-        mode_id: &ModeId,
-        now: TimestampMs,
-        current_target_id: Option<ModeId>,
-        empty_since: Option<TimestampMs>,
-        current_instance: Option<&Arc<GameInstance>>,
-        default_instance: Option<&Arc<GameInstance>>,
-        latest_running: Option<&Arc<GameInstance>>,
-    ) -> PreviewSelection {
+    async fn select_preview_state(&self, input: PreviewSelectionInput<'_>) -> PreviewSelection {
+        let PreviewSelectionInput {
+            mode_id,
+            now,
+            current,
+            default_instance,
+            latest_running,
+        } = input;
         let switch_delay = self
             .config_manager
             .modes
             .get(mode_id)
             .map(|mode| mode.preview_switch_delay_ms)
-            .unwrap_or_else(|| common::models::GameModeConfig::default_preview_switch_delay_ms());
-        let current_players = match current_instance {
+            .unwrap_or_else(common::models::GameModeConfig::default_preview_switch_delay_ms);
+        let current_players = match current.instance {
             Some(instance) => instance.player_count().await,
             None => PlayerCount::zero(),
         };
-        let current_is_default = current_target_id.as_ref() == Some(mode_id);
+        let current_is_default = current.target_mode_id.as_ref() == Some(mode_id);
 
-        if current_target_id.is_some() && !current_is_default {
+        if current.target_mode_id.is_some() && !current_is_default {
             if current_players > PlayerCount::zero() {
                 return PreviewSelection {
-                    target_mode_id: current_target_id,
+                    target_mode_id: current.target_mode_id,
                     empty_since: None,
                 };
             }
 
-            match empty_since {
+            match current.empty_since {
                 None => {
                     return PreviewSelection {
-                        target_mode_id: current_target_id,
+                        target_mode_id: current.target_mode_id,
                         empty_since: Some(now),
                     };
                 }
                 Some(ts) if now - ts < switch_delay => {
                     return PreviewSelection {
-                        target_mode_id: current_target_id,
+                        target_mode_id: current.target_mode_id,
                         empty_since: Some(ts),
                     };
                 }
@@ -384,7 +398,7 @@ impl ServerState {
             };
         }
 
-        if current_target_id.is_none() {
+        if current.target_mode_id.is_none() {
             return PreviewSelection {
                 target_mode_id: default_instance.map(|instance| instance.mode_id().clone()),
                 empty_since: None,
@@ -392,7 +406,7 @@ impl ServerState {
         }
 
         PreviewSelection {
-            target_mode_id: current_target_id,
+            target_mode_id: current.target_mode_id,
             empty_since: None,
         }
     }

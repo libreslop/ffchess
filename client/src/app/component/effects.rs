@@ -21,6 +21,23 @@ use wasm_bindgen_futures::spawn_local;
 use yew::hook;
 use yew::prelude::*;
 
+/// Inputs for keyboard shortcut handling on the landing and end screens.
+pub struct KeyboardShortcutEffectInputs {
+    pub is_joined: bool,
+    pub is_dead: bool,
+    pub is_victory: bool,
+    pub join_step: UseStateHandle<JoinStep>,
+    pub landing_cooldown: UseStateHandle<CooldownSeconds>,
+    pub disconnected: bool,
+    pub queueing: bool,
+    pub kits: Vec<KitSummary>,
+    pub player_name: UseStateHandle<String>,
+    pub has_interacted: UseStateHandle<bool>,
+    pub on_join: Callback<KitId>,
+    pub on_rejoin: Callback<MouseEvent>,
+    pub rc_ref: Rc<RefCell<CooldownSeconds>>,
+}
+
 /// Keeps the mode list refreshed on an interval.
 #[hook]
 pub fn use_mode_refresh_effect(
@@ -487,21 +504,22 @@ pub fn use_rejoin_cooldown_effect(
 
 /// Handles keyboard shortcuts for joining and rejoining games.
 #[hook]
-pub fn use_keyboard_shortcuts_effect(
-    is_joined: bool,
-    is_dead: bool,
-    is_victory: bool,
-    join_step: UseStateHandle<JoinStep>,
-    landing_cooldown: UseStateHandle<CooldownSeconds>,
-    disconnected: bool,
-    queueing: bool,
-    kits: Vec<KitSummary>,
-    player_name: UseStateHandle<String>,
-    has_interacted: UseStateHandle<bool>,
-    on_join: Callback<KitId>,
-    on_rejoin: Callback<MouseEvent>,
-    rc_ref: Rc<RefCell<CooldownSeconds>>,
-) {
+pub fn use_keyboard_shortcuts_effect(inputs: KeyboardShortcutEffectInputs) {
+    let KeyboardShortcutEffectInputs {
+        is_joined,
+        is_dead,
+        is_victory,
+        join_step,
+        landing_cooldown,
+        disconnected,
+        queueing,
+        kits,
+        player_name,
+        has_interacted,
+        on_join,
+        on_rejoin,
+        rc_ref,
+    } = inputs;
     let join_step = join_step.clone();
     let player_name = player_name.clone();
     let landing_cooldown = landing_cooldown.clone();

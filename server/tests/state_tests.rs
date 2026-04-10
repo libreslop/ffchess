@@ -3,7 +3,7 @@
 #[cfg(test)]
 mod tests {
     use common::models::Piece;
-    use common::protocol::{GameError, ServerMessage};
+    use common::protocol::ServerMessage;
     use common::types::{DurationMs, KitId, ModeId, PieceId, PieceTypeId, Score, TimestampMs};
     use glam::IVec2;
     use server::state::ServerState;
@@ -14,7 +14,7 @@ mod tests {
     async fn test_player_spawn_and_kits() {
         let state = ServerState::new();
         let instance = state
-            .get_game(&ModeId::from("ffa"))
+            .get_joinable_game(&ModeId::from("ffa"))
             .await
             .expect("FFA game should exist");
         let (tx, _) = mpsc::unbounded_channel();
@@ -65,7 +65,7 @@ mod tests {
     async fn test_king_capture_elimination() {
         let state = ServerState::new();
         let instance = state
-            .get_game(&ModeId::from("ffa"))
+            .get_joinable_game(&ModeId::from("ffa"))
             .await
             .expect("FFA game should exist");
         let (tx, _) = mpsc::unbounded_channel();
@@ -150,7 +150,7 @@ mod tests {
     async fn test_duel_player_leave_win_hook() {
         let state = ServerState::new();
         let instance = state
-            .get_game(&ModeId::from("duel"))
+            .get_joinable_game(&ModeId::from("duel"))
             .await
             .expect("Duel game should exist");
         let (tx1, mut rx1) = mpsc::unbounded_channel();
@@ -176,9 +176,9 @@ mod tests {
             .try_recv()
             .expect("Remaining player should receive win message");
         match winner_msg {
-            ServerMessage::Error(GameError::Custom { title, message }) => {
+            ServerMessage::Victory { title, message, .. } => {
                 assert_eq!(title, "VICTORY");
-                assert_eq!(message, "Opponent disconnected. You win.");
+                assert_eq!(message, "Opponent disconnected");
             }
             other => panic!("Unexpected winner message: {:?}", other),
         }
@@ -189,7 +189,7 @@ mod tests {
     async fn test_duel_capture_king_win_hook_precedes_leave_hook() {
         let state = ServerState::new();
         let instance = state
-            .get_game(&ModeId::from("duel"))
+            .get_joinable_game(&ModeId::from("duel"))
             .await
             .expect("Duel game should exist");
         let (tx1, _rx1) = mpsc::unbounded_channel();
@@ -204,36 +204,28 @@ mod tests {
             .await
             .expect("P2 join should succeed");
 
-        let p1_king_id = {
-            let game = instance.game.read().await;
-            game.players.get(&p1_id).unwrap().king_id
-        };
-
-        let p2_queen_id = {
+        let (_p1_king_id, p2_king_id) = {
             let mut game = instance.game.write().await;
-            let q_id = PieceId::new();
-            game.pieces.insert(
-                q_id,
-                Piece {
-                    id: q_id,
-                    owner_id: Some(p2_id),
-                    piece_type: PieceTypeId::from("queen"),
-                    position: IVec2::new(10, 10),
-                    last_move_time: TimestampMs::from_millis(0),
-                    cooldown_ms: DurationMs::zero(),
-                },
-            );
-            q_id
-        };
+            let p1_king_id = game.players.get(&p1_id).unwrap().king_id;
+            let p2_king_id = game.players.get(&p2_id).unwrap().king_id;
+            game.pieces
+                .retain(|id, _| *id == p1_king_id || *id == p2_king_id);
 
-        {
-            let mut game = instance.game.write().await;
-            game.pieces.get_mut(&p1_king_id).unwrap().position = IVec2::new(11, 11);
-            game.pieces.get_mut(&p2_queen_id).unwrap().position = IVec2::new(10, 10);
-        }
+            let p1_king = game.pieces.get_mut(&p1_king_id).unwrap();
+            p1_king.position = IVec2::new(1, 1);
+            p1_king.last_move_time = TimestampMs::from_millis(0);
+            p1_king.cooldown_ms = DurationMs::zero();
+
+            let p2_king = game.pieces.get_mut(&p2_king_id).unwrap();
+            p2_king.position = IVec2::new(0, 0);
+            p2_king.last_move_time = TimestampMs::from_millis(0);
+            p2_king.cooldown_ms = DurationMs::zero();
+
+            (p1_king_id, p2_king_id)
+        };
 
         instance
-            .handle_move(p2_id, p2_queen_id, IVec2::new(11, 11))
+            .handle_move(p2_id, p2_king_id, IVec2::new(1, 1))
             .await
             .expect("Capture should succeed");
 
@@ -241,7 +233,7 @@ mod tests {
 
         let winner_msg = rx2.try_recv().expect("Capturer should receive win message");
         match winner_msg {
-            ServerMessage::Error(GameError::Custom { title, message }) => {
+            ServerMessage::Victory { title, message, .. } => {
                 assert_eq!(title, "VICTORY");
                 assert_eq!(message, "");
             }
