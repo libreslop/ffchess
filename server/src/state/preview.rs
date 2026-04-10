@@ -5,7 +5,7 @@ use crate::instance::GameInstance;
 use crate::time::now_ms;
 use crate::types::ConnectionId;
 use common::protocol::ServerMessage;
-use common::types::{DurationMs, ModeId, PlayerCount, PlayerId, SessionSecret, TimestampMs};
+use common::types::{ModeId, PlayerCount, PlayerId, SessionSecret, TimestampMs};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -333,22 +333,53 @@ impl ServerState {
         default_instance: Option<&Arc<GameInstance>>,
         latest_running: Option<&Arc<GameInstance>>,
     ) -> PreviewSelection {
-        if let Some(latest) = latest_running {
-            return PreviewSelection {
-                target_mode_id: Some(latest.mode_id().clone()),
-                empty_since: None,
-            };
-        }
-
+        let switch_delay = self
+            .config_manager
+            .modes
+            .get(mode_id)
+            .map(|mode| mode.preview_switch_delay_ms)
+            .unwrap_or_else(|| common::models::GameModeConfig::default_preview_switch_delay_ms());
         let current_players = match current_instance {
             Some(instance) => instance.player_count().await,
             None => PlayerCount::zero(),
         };
         let current_is_default = current_target_id.as_ref() == Some(mode_id);
 
-        if current_players > PlayerCount::zero() {
+        if current_target_id.is_some() && !current_is_default {
+            if current_players > PlayerCount::zero() {
+                return PreviewSelection {
+                    target_mode_id: current_target_id,
+                    empty_since: None,
+                };
+            }
+
+            match empty_since {
+                None => {
+                    return PreviewSelection {
+                        target_mode_id: current_target_id,
+                        empty_since: Some(now),
+                    };
+                }
+                Some(ts) if now - ts < switch_delay => {
+                    return PreviewSelection {
+                        target_mode_id: current_target_id,
+                        empty_since: Some(ts),
+                    };
+                }
+                Some(_) => {}
+            }
+
             return PreviewSelection {
-                target_mode_id: current_target_id,
+                target_mode_id: latest_running
+                    .map(|instance| instance.mode_id().clone())
+                    .or_else(|| default_instance.map(|instance| instance.mode_id().clone())),
+                empty_since: None,
+            };
+        }
+
+        if let Some(latest) = latest_running {
+            return PreviewSelection {
+                target_mode_id: Some(latest.mode_id().clone()),
                 empty_since: None,
             };
         }
@@ -360,27 +391,9 @@ impl ServerState {
             };
         }
 
-        if current_is_default {
-            return PreviewSelection {
-                target_mode_id: current_target_id,
-                empty_since: None,
-            };
-        }
-
-        let empty_grace = DurationMs::from_millis(5000);
-        match empty_since {
-            None => PreviewSelection {
-                target_mode_id: current_target_id,
-                empty_since: Some(now),
-            },
-            Some(ts) if now - ts < empty_grace => PreviewSelection {
-                target_mode_id: current_target_id,
-                empty_since: Some(ts),
-            },
-            Some(_) => PreviewSelection {
-                target_mode_id: default_instance.map(|instance| instance.mode_id().clone()),
-                empty_since: None,
-            },
+        PreviewSelection {
+            target_mode_id: current_target_id,
+            empty_since: None,
         }
     }
 

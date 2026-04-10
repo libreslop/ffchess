@@ -1,7 +1,9 @@
 //! Browser storage and environment helpers for the client.
 
 use common::types::{DurationMs, ModeId, PlayerId, SessionSecret, TimestampMs};
+use js_sys::{Function, Reflect};
 use uuid::Uuid;
+use wasm_bindgen::{JsCast, JsValue};
 
 /// Reads the stored player name from local storage.
 ///
@@ -172,8 +174,43 @@ pub fn request_fullscreen() {
     if document.fullscreen_element().is_some() {
         return;
     }
-    let Some(element) = document.document_element() else {
+    let Some(root) = document.document_element() else {
         return;
     };
-    let _ = element.request_fullscreen();
+    if root.request_fullscreen().is_ok() {
+        return;
+    }
+
+    // iOS Safari may expose only prefixed fullscreen APIs.
+    if try_prefixed_fullscreen(&root) {
+        return;
+    }
+    if let Some(body) = document.body() {
+        let body_element: web_sys::Element = body.into();
+        if try_prefixed_fullscreen(&body_element) {
+            return;
+        }
+    }
+
+    // Fallback for iOS when Fullscreen API is unavailable: collapse browser chrome.
+    let _ = window.scroll_to_with_x_and_y(0.0, 1.0);
+}
+
+fn try_prefixed_fullscreen(element: &web_sys::Element) -> bool {
+    for method in ["webkitRequestFullscreen", "webkitEnterFullscreen"] {
+        if call_method_no_args(element.as_ref(), method) {
+            return true;
+        }
+    }
+    false
+}
+
+fn call_method_no_args(target: &JsValue, method_name: &str) -> bool {
+    let Ok(method) = Reflect::get(target, &JsValue::from_str(method_name)) else {
+        return false;
+    };
+    let Some(function) = method.dyn_ref::<Function>() else {
+        return false;
+    };
+    function.call0(target).is_ok()
 }

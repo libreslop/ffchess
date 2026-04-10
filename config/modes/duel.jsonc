@@ -2,6 +2,7 @@
     "display_name": "Duel",
     "max_players": 2,
     "queue_players": 2,
+    "preview_switch_delay_ms": 5000,
     "board_size": "18",
     "camera_pan_limit": "fog_of_war_radius + 1",
     "fog_of_war_radius": "14",

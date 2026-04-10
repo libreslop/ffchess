@@ -201,6 +201,8 @@ pub struct GameModeConfig {
     pub max_players: PlayerCount,
     #[serde(default)]
     pub queue_players: PlayerCount,
+    #[serde(default = "GameModeConfig::default_preview_switch_delay_ms")]
+    pub preview_switch_delay_ms: DurationMs,
     pub board_size: ExprString,
     pub camera_pan_limit: ExprString,
     pub fog_of_war_radius: ExprString,
@@ -278,6 +280,11 @@ pub struct ModeSummary {
 }
 
 impl GameModeConfig {
+    /// Default delay before queue previews switch away from an ended game.
+    pub fn default_preview_switch_delay_ms() -> DurationMs {
+        DurationMs::from_millis(5000)
+    }
+
     /// Returns the required queue size for matchmaking modes.
     pub fn queue_requirement(&self) -> Option<PlayerCount> {
         (self.queue_players.as_u32() >= 2).then_some(self.queue_players)

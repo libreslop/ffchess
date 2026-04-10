@@ -2,7 +2,7 @@
 <html>
     <head>
         <meta charset="utf-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover">
         <title>FFchess: MMO battle chess</title>
         <meta name="description" content="Command your army in a real-time, multiplayer chess world. Scale your board, capture territories, and outsmart players in a dynamic, expanding battlefield.">
 
@@ -26,6 +26,8 @@
                 width: 100%; 
                 height: 100%; 
                 overflow: hidden; 
+                overscroll-behavior: none;
+                touch-action: none;
                 background-color: #f0f2f5; 
                 font-family: 'Arbutus', serif;
             }
@@ -40,6 +42,17 @@
                 font-family: inherit;
             }
         </style>
+        <script>
+            // Keep browser-level pinch/gesture zoom disabled; in-game zoom is handled in app logic.
+            for (const eventName of ["gesturestart", "gesturechange", "gestureend"]) {
+                document.addEventListener(eventName, (e) => e.preventDefault(), { passive: false });
+            }
+            document.addEventListener("wheel", (e) => {
+                if (e.ctrlKey || e.metaKey) {
+                    e.preventDefault();
+                }
+            }, { passive: false });
+        </script>
     </head>
     <body></body>
 </html>

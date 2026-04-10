@@ -47,9 +47,8 @@ pub fn join_screen(props: &JoinScreenProps) -> Html {
                                 <button
                                     onclick={Callback::from(move |_| on_select.emit(id.clone()))}
                                     style={format!(
-                                        "display: flex; width: 100%; justify-content: space-between; align-items: center; text-align: left; padding: 10px 12px; border: none; border-bottom: 1px solid rgba(255,255,255,0.08); background: {}; color: #fff; font-weight: {}; cursor: pointer;",
+                                        "display: flex; width: 100%; justify-content: space-between; align-items: center; text-align: left; padding: 10px 12px; border: none; border-bottom: 1px solid rgba(255,255,255,0.08); background: {}; color: #fff; font-weight: 500; cursor: pointer;",
                                         if selected { "rgba(255,255,255,0.08)" } else { "transparent" },
-                                        if selected { "700" } else { "500" },
                                     )}
                                 >
                                     <span>{ m.display_name.clone() }</span>
