@@ -4,10 +4,11 @@ use super::helpers::{MOVE_ANIM_MS, PieceAnim, apply_visible_ghosts, pm_visible};
 use crate::camera::{CameraManager, update_camera};
 use crate::canvas::Renderer;
 use crate::math::{Vec2, vec2};
-use crate::reducer::{GameAction, GameStateReducer, MsgSender, PendingMoveClear, Pmove};
+use crate::reducer::{GameAction, GameStateReducer, MsgSender, Pmove};
 use crate::utils::request_fullscreen;
 use common::logic::is_within_board;
-use common::types::{DurationMs, PieceId, PlayerId, Score, TimestampMs};
+use common::protocol::ClientMessage;
+use common::types::{PieceId, PlayerId, Score};
 use glam::IVec2;
 use gloo_events::EventListener;
 use gloo_render::{AnimationFrame, request_animation_frame};
@@ -586,6 +587,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
     let handle_input_end = {
         let canvas_ref = canvas_ref.clone();
         let reducer = props.reducer.clone();
+        let tx = props.tx.clone();
         let selected_piece_id = selected_piece_id.clone();
         let manager_ref = manager_ref.clone();
         let drag_start = drag_start.clone();
@@ -640,7 +642,6 @@ pub fn game_view(props: &GameViewProps) -> Html {
 
             if input.is_right_click {
                 selected_piece_id.set(None);
-                reducer.dispatch(GameAction::ClearPmQueue(PendingMoveClear::All));
                 return;
             }
 
@@ -655,7 +656,6 @@ pub fn game_view(props: &GameViewProps) -> Html {
                 if let Some(p) = proj_p {
                     if target == p.position {
                         selected_piece_id.set(None);
-                        reducer.dispatch(GameAction::ClearPmQueue(PendingMoveClear::Piece(sid)));
                         handled_action = true;
                     } else if let Some(other) = current_ghosts
                         .values()
@@ -680,12 +680,13 @@ pub fn game_view(props: &GameViewProps) -> Html {
                                 moving_owner: p.owner_id,
                             })
                         {
+                            let _ = tx.0.send(ClientMessage::MovePiece {
+                                piece_id: sid,
+                                target,
+                            });
                             reducer.dispatch(GameAction::AddPmove(Pmove {
                                 piece_id: sid,
                                 target,
-                                pending: false,
-                                old_last_move_time: TimestampMs::from_millis(0),
-                                old_cooldown_ms: DurationMs::zero(),
                             }));
                             handled_action = true;
                         }

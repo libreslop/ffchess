@@ -34,25 +34,7 @@ impl GameStateReducer {
             self.state.players.insert(player.id, player);
         }
 
-        for mut piece in params.pieces {
-            if let Some(local_player_id) = local_player_id
-                && piece.owner_id == Some(local_player_id)
-                && let Some(previous_piece) = self.state.pieces.get(&piece.id)
-            {
-                piece.last_move_time = previous_piece.last_move_time;
-                piece.cooldown_ms = previous_piece.cooldown_ms;
-            }
-
-            if let Some(pending_move) = self
-                .pm_queue
-                .iter()
-                .find(|pending_move| pending_move.piece_id == piece.id && pending_move.pending)
-                && piece.position != pending_move.target
-                && let Some(previous_piece) = self.state.pieces.get(&piece.id)
-            {
-                piece.position = previous_piece.position;
-            }
-
+        for piece in params.pieces {
             if let Some(matching_pending_index) = self.pm_queue.iter().rposition(|pending_move| {
                 pending_move.piece_id == piece.id && pending_move.target == piece.position
             }) {

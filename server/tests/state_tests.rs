@@ -7,6 +7,7 @@ mod tests {
     use common::types::{DurationMs, KitId, ModeId, PieceId, PieceTypeId, Score, TimestampMs};
     use glam::IVec2;
     use server::state::ServerState;
+    use server::time::now_ms;
     use tokio::sync::mpsc;
 
     #[tokio::test]
@@ -238,6 +239,133 @@ mod tests {
                 assert_eq!(message, "");
             }
             other => panic!("Unexpected winner message: {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    /// Verifies a move submitted during cooldown is queued and executed on a later tick.
+    async fn test_server_side_premove_executes_after_cooldown() {
+        let state = ServerState::new();
+        let instance = state
+            .get_joinable_game(&ModeId::from("duel"))
+            .await
+            .expect("Duel game should exist");
+        let (tx, _rx) = mpsc::unbounded_channel();
+
+        let (player_id, _) = instance
+            .add_player("P1".to_string(), KitId::from("Standard"), tx, None, None)
+            .await
+            .expect("P1 join should succeed");
+
+        let (king_id, start_position) = {
+            let mut game = instance.game.write().await;
+            let king_id = game.players.get(&player_id).expect("player exists").king_id;
+            game.pieces.retain(|id, _| *id == king_id);
+
+            let king = game.pieces.get_mut(&king_id).expect("king exists");
+            king.position = IVec2::new(0, 0);
+            king.last_move_time = now_ms();
+            king.cooldown_ms = DurationMs::from_millis(10_000);
+            (king_id, king.position)
+        };
+
+        let target = start_position + IVec2::new(1, 0);
+        instance
+            .handle_move(player_id, king_id, target)
+            .await
+            .expect("Move request should be accepted and queued");
+
+        {
+            let game = instance.game.read().await;
+            assert_eq!(
+                game.pieces.get(&king_id).expect("king exists").position,
+                start_position
+            );
+        }
+
+        {
+            let mut game = instance.game.write().await;
+            let king = game.pieces.get_mut(&king_id).expect("king exists");
+            king.last_move_time = TimestampMs::from_millis(0);
+        }
+        instance.handle_tick().await;
+
+        let game = instance.game.read().await;
+        assert_eq!(
+            game.pieces.get(&king_id).expect("king exists").position,
+            target
+        );
+    }
+
+    #[tokio::test]
+    /// Verifies chained premoves are queued server-side and executed in order.
+    async fn test_server_side_chained_premoves_execute_in_order() {
+        let state = ServerState::new();
+        let instance = state
+            .get_joinable_game(&ModeId::from("duel"))
+            .await
+            .expect("Duel game should exist");
+        let (tx, _rx) = mpsc::unbounded_channel();
+
+        let (player_id, _) = instance
+            .add_player("P1".to_string(), KitId::from("Standard"), tx, None, None)
+            .await
+            .expect("P1 join should succeed");
+
+        let king_id = {
+            let mut game = instance.game.write().await;
+            let king_id = game.players.get(&player_id).expect("player exists").king_id;
+            game.pieces.retain(|id, _| *id == king_id);
+
+            let king = game.pieces.get_mut(&king_id).expect("king exists");
+            king.position = IVec2::new(0, 0);
+            king.last_move_time = now_ms();
+            king.cooldown_ms = DurationMs::from_millis(10_000);
+            king_id
+        };
+
+        let first_target = IVec2::new(1, 0);
+        let second_target = IVec2::new(2, 0);
+
+        instance
+            .handle_move(player_id, king_id, first_target)
+            .await
+            .expect("First premove should be queued");
+        instance
+            .handle_move(player_id, king_id, second_target)
+            .await
+            .expect("Second premove should be queued");
+
+        {
+            let mut game = instance.game.write().await;
+            game.pieces
+                .get_mut(&king_id)
+                .expect("king exists")
+                .last_move_time = TimestampMs::from_millis(0);
+        }
+        instance.handle_tick().await;
+        {
+            let game = instance.game.read().await;
+            assert_eq!(
+                game.pieces.get(&king_id).expect("king exists").position,
+                first_target
+            );
+        }
+
+        {
+            let mut game = instance.game.write().await;
+            game.pieces
+                .get_mut(&king_id)
+                .expect("king exists")
+                .last_move_time = TimestampMs::from_millis(0);
+        }
+        instance.handle_tick().await;
+        {
+            let game = instance.game.read().await;
+            assert_eq!(
+                game.pieces.get(&king_id).expect("king exists").position,
+                second_target
+            );
         }
     }
 }

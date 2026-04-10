@@ -234,14 +234,6 @@ pub fn use_ws_connection_effect(
         let sender = MsgSender(client_tx);
         tx_handle.set(Some(sender.clone()));
 
-        let tick_sender = sender.clone();
-        let tick_reducer_ref = reducer_ref.clone();
-        let tick_ms = global_cfg.tick_interval_ms.max(10);
-        let interval = Interval::new(tick_ms, move || {
-            let handle = tick_reducer_ref.borrow().clone();
-            handle.dispatch(GameAction::Tick(tick_sender.clone()));
-        });
-
         let ping_sender = sender.clone();
         let ping_interval_ms = global_cfg.ping_interval_ms.max(500);
         let ping_interval = Interval::new(ping_interval_ms, move || {
@@ -322,7 +314,6 @@ pub fn use_ws_connection_effect(
             });
         }
         move || {
-            drop(interval);
             drop(ping_interval);
             abort_handle.abort();
         }

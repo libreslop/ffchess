@@ -3,20 +3,16 @@
 use common::models::{GameModeClientConfig, GameState, PieceConfig, ShopConfig};
 use common::protocol::{ClientMessage, GameError, VictoryFocusTarget};
 use common::types::{
-    DurationMs, PieceId, PieceTypeId, PlayerCount, PlayerId, QueuePosition, Score, SessionSecret,
-    ShopId, TimestampMs,
+    PieceId, PieceTypeId, PlayerCount, PlayerId, QueuePosition, Score, SessionSecret, ShopId,
 };
 use glam::IVec2;
 use std::collections::HashMap;
 
-/// Client-side pending move entry for prediction and reconciliation.
+/// Client-side requested move entry used for visuals until server state catches up.
 #[derive(Clone, PartialEq, Default, Debug)]
 pub struct Pmove {
     pub piece_id: PieceId,
     pub target: IVec2,
-    pub pending: bool,
-    pub old_last_move_time: TimestampMs,
-    pub old_cooldown_ms: DurationMs,
 }
 
 /// High-level client session phase used for UI and camera behavior.

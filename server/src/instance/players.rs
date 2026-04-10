@@ -241,14 +241,24 @@ impl GameInstance {
             .await
             .insert(player_id, now_ms());
         let mut rp = self.removed_pieces.write().await;
+        let mut removed_piece_ids = Vec::new();
         game.pieces.retain(|id, p| {
             if p.owner_id == Some(player_id) {
                 rp.push(*id);
+                removed_piece_ids.push(*id);
                 false
             } else {
                 true
             }
         });
+        drop(rp);
+
+        if !removed_piece_ids.is_empty() {
+            let mut queued_moves = self.queued_moves.write().await;
+            for piece_id in removed_piece_ids {
+                queued_moves.remove(&piece_id);
+            }
+        }
         true
     }
 }

@@ -9,9 +9,16 @@ use common::protocol::{GameError, ServerMessage, VictoryFocusTarget};
 use common::types::{
     ModeId, PieceId, PieceTypeId, PlayerCount, PlayerId, SessionSecret, ShopId, TimestampMs,
 };
-use std::collections::{HashMap, HashSet};
+use glam::IVec2;
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use tokio::sync::{RwLock, mpsc};
+
+/// Queued move request stored server-side for cooldown chaining.
+pub(super) struct QueuedMoveRequest {
+    pub player_id: PlayerId,
+    pub target: IVec2,
+}
 
 /// Live game instance state for a single mode.
 pub struct GameInstance {
@@ -31,6 +38,7 @@ pub struct GameInstance {
     pub last_started_at: RwLock<TimestampMs>,
     pub death_timestamps: RwLock<HashMap<PlayerId, TimestampMs>>,
     pub(super) hook_events: RwLock<HookEventBuffer>,
+    pub(super) queued_moves: RwLock<HashMap<PieceId, VecDeque<QueuedMoveRequest>>>,
 }
 
 impl GameInstance {
@@ -186,6 +194,7 @@ impl GameInstance {
             last_started_at: RwLock::new(now),
             death_timestamps: RwLock::new(HashMap::new()),
             hook_events: RwLock::new(HookEventBuffer::default()),
+            queued_moves: RwLock::new(HashMap::new()),
         }
     }
 
