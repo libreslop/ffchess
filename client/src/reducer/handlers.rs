@@ -22,12 +22,14 @@ impl GameStateReducer {
             if let Some(_) = local_player_id
                 && self.player_id == Some(player.id)
                 && !self.is_dead
-                && !self.is_victory
             {
                 self.last_score = player.score;
                 self.last_kills = player.kills;
                 self.last_captured = player.pieces_captured;
-                self.last_survival_secs = (now_ms - player.join_time).as_u64() / 1000;
+
+                if !self.is_victory {
+                    self.last_survival_secs = (now_ms - player.join_time).as_u64() / 1000;
+                }
             }
             self.state.players.insert(player.id, player);
         }

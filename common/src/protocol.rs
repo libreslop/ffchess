@@ -74,6 +74,7 @@ pub enum ClientMessage {
         player_id: Option<PlayerId>,
         session_secret: Option<SessionSecret>,
     },
+    Leave,
     MovePiece {
         piece_id: PieceId,
         target: IVec2,

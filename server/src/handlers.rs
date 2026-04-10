@@ -291,6 +291,34 @@ async fn handle_socket(socket: WebSocket, mode_id: ModeId, state: Arc<ServerStat
                             }
                         }
                     }
+                    ClientMessage::Leave => {
+                        if let Some(binding) = state.unbind_connection(conn_id).await {
+                            let (player_id, instance) = binding.into_parts();
+                            instance.remove_player(player_id).await;
+                            state.cleanup_private_games().await;
+                        } else if is_queue_mode && state.remove_from_queue(&mode_id, conn_id).await
+                        {
+                            broadcast_queue_state(&state, &mode_id).await;
+                        }
+
+                        if is_queue_mode {
+                            state
+                                .ensure_preview_connection(&mode_id, conn_id, tx.clone())
+                                .await;
+                        } else {
+                            lobby_instance
+                                .add_connection_channel(conn_id, tx.clone())
+                                .await;
+                            state
+                                .send_init(
+                                    &tx,
+                                    &lobby_instance,
+                                    PlayerId::nil(),
+                                    SessionSecret::nil(),
+                                )
+                                .await;
+                        }
+                    }
                     ClientMessage::MovePiece { piece_id, target } => {
                         if let Some(binding) = state.get_binding(conn_id).await
                             && let Err(e) = binding

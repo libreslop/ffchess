@@ -130,6 +130,76 @@ pub fn use_landing_cooldown_effect(
     });
 }
 
+/// Syncs browser URL navigation (back/forward/hash edits) with the selected mode and landing UI.
+#[hook]
+pub fn use_mode_url_navigation_effect(
+    current_mode_id: UseStateHandle<ModeId>,
+    fallback_mode_id: ModeId,
+    reducer_ref: Rc<RefCell<UseReducerHandle<GameStateReducer>>>,
+    join_step: UseStateHandle<JoinStep>,
+    rejoin_flow: UseStateHandle<RejoinFlow>,
+    tx_ref: Rc<RefCell<Option<MsgSender>>>,
+) {
+    let current_mode_id = current_mode_id.clone();
+    let reducer_ref = reducer_ref.clone();
+    let join_step = join_step.clone();
+    let rejoin_flow = rejoin_flow.clone();
+    let tx_ref = tx_ref.clone();
+
+    use_effect_with((), move |_| {
+        let apply_navigation = Rc::new({
+            let current_mode_id = current_mode_id.clone();
+            let reducer_ref = reducer_ref.clone();
+            let join_step = join_step.clone();
+            let rejoin_flow = rejoin_flow.clone();
+            let tx_ref = tx_ref.clone();
+            let fallback_mode_id = fallback_mode_id.clone();
+            move || {
+                let reducer = reducer_ref.borrow().clone();
+                let should_leave = reducer.phase == ClientPhase::Alive
+                    || reducer.queue_status.is_some()
+                    || reducer.active_player_id().is_some();
+                if should_leave && let Some(sender) = (*tx_ref.borrow()).as_ref() {
+                    let _ = sender.0.send(ClientMessage::Leave);
+                }
+
+                let window = web_sys::window().unwrap();
+                let hash = window
+                    .location()
+                    .hash()
+                    .unwrap_or_default()
+                    .trim_start_matches('#')
+                    .to_string();
+                let mode_id = if hash.is_empty() {
+                    fallback_mode_id.clone()
+                } else {
+                    ModeId::from(hash)
+                };
+
+                rejoin_flow.set(RejoinFlow::Inactive);
+                reducer.dispatch(GameAction::Reset);
+                join_step.set(JoinStep::EnterName);
+                current_mode_id.set(mode_id);
+            }
+        });
+
+        let window = web_sys::window().unwrap();
+        let on_hash = apply_navigation.clone();
+        let hash_listener = EventListener::new(&window, "hashchange", move |_| {
+            on_hash();
+        });
+        let on_pop = apply_navigation.clone();
+        let pop_listener = EventListener::new(&window, "popstate", move |_| {
+            on_pop();
+        });
+
+        move || {
+            drop(hash_listener);
+            drop(pop_listener);
+        }
+    });
+}
+
 /// Connects to the websocket when the current mode changes.
 #[hook]
 pub fn use_ws_connection_effect(
@@ -397,7 +467,7 @@ pub fn use_rejoin_cooldown_effect(
                 common::types::TimestampMs::from_millis(js_sys::Date::now() as i64),
                 cd_ms,
             );
-            let cooldown_sec = CooldownSeconds::from_seconds((cd_ms.as_u64() / 1000).max(1) as u32);
+            let cooldown_sec = CooldownSeconds::from_seconds((cd_ms.as_u64() / 1000) as u32);
             rejoin_cooldown.set(cooldown_sec);
             *rc_ref.borrow_mut() = cooldown_sec;
             let rc = rejoin_cooldown.clone();

@@ -8,8 +8,8 @@ use callbacks::{build_on_join, build_on_name_input, build_on_name_submit, build_
 use effects::{
     use_disconnected_overlay_effect, use_fatal_error_reset_effect, use_joining_reset_effect,
     use_keyboard_shortcuts_effect, use_landing_cooldown_effect, use_mode_refresh_effect,
-    use_player_name_sync_effect, use_preview_default_effect, use_rejoin_cooldown_effect,
-    use_rejoin_flow_reset_effect, use_ws_connection_effect,
+    use_mode_url_navigation_effect, use_player_name_sync_effect, use_preview_default_effect,
+    use_rejoin_cooldown_effect, use_rejoin_flow_reset_effect, use_ws_connection_effect,
 };
 use view::{AppViewProps, render_app};
 
@@ -87,6 +87,21 @@ pub fn app() -> Html {
     use_joining_reset_effect(is_joining.clone(), reducer.clone());
     use_fatal_error_reset_effect(reducer.clone());
 
+    let reducer_ref = use_mut_ref(|| reducer.clone());
+    *reducer_ref.borrow_mut() = reducer.clone();
+
+    let tx_ref = use_mut_ref(|| (*tx).clone());
+    *tx_ref.borrow_mut() = (*tx).clone();
+
+    use_mode_url_navigation_effect(
+        current_mode_id.clone(),
+        initial_mode_id.clone(),
+        reducer_ref.clone(),
+        join_step.clone(),
+        rejoin_flow.clone(),
+        tx_ref.clone(),
+    );
+
     let landing_cooldown = {
         let initial_mode_id = initial_mode_id.clone();
         use_state(move || {
@@ -103,8 +118,6 @@ pub fn app() -> Html {
     let lc_ref = use_mut_ref(|| *landing_cooldown);
     use_landing_cooldown_effect(landing_cooldown.clone(), lc_ref.clone());
 
-    let reducer_ref = use_mut_ref(|| reducer.clone());
-    *reducer_ref.borrow_mut() = reducer.clone();
     use_ws_connection_effect(
         current_mode_id.clone(),
         reducer_ref.clone(),
@@ -194,11 +207,9 @@ pub fn app() -> Html {
     );
 
     let on_select_mode = {
-        let current_mode_id = current_mode_id.clone();
         Callback::from(move |id: ModeId| {
             let window = web_sys::window().unwrap();
             let _ = window.location().set_hash(&format!("#{}", id.as_ref()));
-            current_mode_id.set(id);
         })
     };
 
