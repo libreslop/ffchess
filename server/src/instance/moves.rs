@@ -99,6 +99,12 @@ impl GameInstance {
         }
     }
 
+    /// Clears all server-queued premoves for a specific piece.
+    pub async fn clear_queued_moves(&self, piece_id: PieceId) {
+        let mut queued_moves = self.queued_moves.write().await;
+        queued_moves.remove(&piece_id);
+    }
+
     /// Returns true if a piece currently has queued server-side move requests.
     async fn piece_has_queued_moves(&self, piece_id: PieceId) -> bool {
         self.queued_moves

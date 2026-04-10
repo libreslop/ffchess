@@ -648,6 +648,25 @@ pub fn game_view(props: &GameViewProps) -> Html {
             let mut current_ghosts = reducer.state.pieces.clone();
             apply_visible_ghosts(&mut current_ghosts, &reducer.pm_queue, &reducer.state);
             let selected_id = *selected_piece_id;
+
+            // Check if clicking on an ACTUAL piece that has premoves (to clear them)
+            let actual_piece_at_target = reducer.state.pieces.values().find(|p| {
+                p.owner_id == Some(player_id)
+                    && p.position == target
+                    && reducer.pm_queue.iter().any(|pm| pm.piece_id == p.id)
+            });
+
+            if let Some(p) = actual_piece_at_target {
+                let _ = tx.0.send(ClientMessage::ClearPremoves { piece_id: p.id });
+                reducer.dispatch(GameAction::ClearPm(p.id));
+                if selected_id == Some(p.id) {
+                    selected_piece_id.set(None);
+                } else {
+                    selected_piece_id.set(Some(p.id));
+                }
+                return;
+            }
+
             let target_has_piece = current_ghosts.values().any(|p| p.position == target);
             let mut handled_action = false;
 

@@ -106,6 +106,9 @@ impl Reducible for GameStateReducer {
             GameAction::AddPmove(pm) => {
                 next.pm_queue.push(pm);
             }
+            GameAction::ClearPm(piece_id) => {
+                next.pm_queue.retain(|pm| pm.piece_id != piece_id);
+            }
             GameAction::Pong(t) => {
                 let now = js_sys::Date::now() as u64;
                 if now >= t {

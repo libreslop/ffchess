@@ -83,6 +83,9 @@ pub enum ClientMessage {
         shop_pos: IVec2,
         item_index: usize,
     },
+    ClearPremoves {
+        piece_id: PieceId,
+    },
     SetPreviewDefault {
         enabled: bool,
     },

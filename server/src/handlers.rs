@@ -342,6 +342,11 @@ async fn handle_socket(socket: WebSocket, mode_id: ModeId, state: Arc<ServerStat
                             let _ = tx.send(ServerMessage::Error(e));
                         }
                     }
+                    ClientMessage::ClearPremoves { piece_id } => {
+                        if let Some(binding) = state.get_binding(conn_id).await {
+                            binding.instance().clear_queued_moves(piece_id).await;
+                        }
+                    }
                     ClientMessage::SetPreviewDefault { enabled } => {
                         if is_queue_mode {
                             state

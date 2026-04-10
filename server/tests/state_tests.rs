@@ -368,4 +368,57 @@ mod tests {
             );
         }
     }
+
+    #[tokio::test]
+    /// Verifies that premoves can be cleared via ClearPremoves message.
+    async fn test_clear_premoves() {
+        let state = ServerState::new();
+        let instance = state
+            .get_joinable_game(&ModeId::from("duel"))
+            .await
+            .expect("Duel game should exist");
+        let (tx, _rx) = mpsc::unbounded_channel();
+
+        let (player_id, _) = instance
+            .add_player("P1".to_string(), KitId::from("Standard"), tx, None, None)
+            .await
+            .expect("P1 join should succeed");
+
+        let king_id = {
+            let mut game = instance.game.write().await;
+            let king_id = game.players.get(&player_id).expect("player exists").king_id;
+            game.pieces.retain(|id, _| *id == king_id);
+
+            let king = game.pieces.get_mut(&king_id).expect("king exists");
+            king.position = IVec2::new(0, 0);
+            king.last_move_time = now_ms();
+            king.cooldown_ms = DurationMs::from_millis(10_000);
+            king_id
+        };
+
+        let target = IVec2::new(1, 0);
+        instance
+            .handle_move(player_id, king_id, target)
+            .await
+            .expect("Move should be queued");
+
+        // Clear premoves
+        instance.clear_queued_moves(king_id).await;
+
+        // Reset cooldown
+        {
+            let mut game = instance.game.write().await;
+            let king = game.pieces.get_mut(&king_id).expect("king exists");
+            king.last_move_time = TimestampMs::from_millis(0);
+        }
+
+        instance.handle_tick().await;
+
+        // Should NOT have moved
+        let game = instance.game.read().await;
+        assert_eq!(
+            game.pieces.get(&king_id).expect("king exists").position,
+            IVec2::new(0, 0)
+        );
+    }
 }
