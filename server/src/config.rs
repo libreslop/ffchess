@@ -15,12 +15,24 @@ pub struct NamePool {
     pub nouns: Vec<String>,
 }
 
+/// Global server settings.
+#[derive(Default, serde::Deserialize, Clone)]
+pub struct ServerGlobalConfig {
+    #[serde(default = "default_sync_interval")]
+    pub sync_interval_ms: u32,
+}
+
+fn default_sync_interval() -> u32 {
+    10000
+}
+
 /// Loads and stores all runtime configuration.
 pub struct ConfigManager {
     pub pieces: HashMap<PieceTypeId, PieceConfig>,
     pub shops: HashMap<ShopId, ShopConfig>,
     pub modes: HashMap<ModeId, GameModeConfig>,
     pub name_pool: NamePool,
+    pub global: ServerGlobalConfig,
 }
 
 impl ConfigManager {
@@ -32,6 +44,7 @@ impl ConfigManager {
         let mut shops = HashMap::new();
         let mut modes = HashMap::new();
         let mut name_pool = NamePool::default();
+        let mut global = ServerGlobalConfig::default();
 
         // Try to find the config directory by going up if not found
         let mut actual_root = root_path.to_path_buf();
@@ -96,18 +109,22 @@ impl ConfigManager {
             modes.insert(ModeId::from(id), config);
         }
 
-        // Load server global name pool
+        // Load server global name pool and other settings
         let global_server = actual_root.join("global/server.jsonc");
         if global_server.exists()
             && let Ok(content) = std::fs::read_to_string(&global_server)
             && let Ok(parsed) = parse_to_serde_value(&content, &Default::default())
             && let Some(v) = parsed
             && let Ok(cfg) = serde_json::from_value::<serde_json::Value>(v)
-            && let Ok(pool) = serde_json::from_value::<NamePool>(
-                cfg.get("default_name").cloned().unwrap_or_default(),
-            )
         {
-            name_pool = pool;
+            if let Ok(pool) = serde_json::from_value::<NamePool>(
+                cfg.get("default_name").cloned().unwrap_or_default(),
+            ) {
+                name_pool = pool;
+            }
+            if let Ok(g) = serde_json::from_value::<ServerGlobalConfig>(cfg) {
+                global = g;
+            }
         }
 
         Self {
@@ -115,6 +132,7 @@ impl ConfigManager {
             shops,
             modes,
             name_pool,
+            global,
         }
     }
 }

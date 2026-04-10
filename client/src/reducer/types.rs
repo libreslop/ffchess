@@ -58,6 +58,8 @@ pub struct GameStateReducer {
     pub last_captured: u32,
     pub last_survival_secs: u64,
     pub ping_ms: u64,
+    pub clock_offset_ms: i64,
+    pub sync_interval_ms: u32,
     pub fps: u32,
     pub disconnected: bool,
     pub fatal_error: bool,

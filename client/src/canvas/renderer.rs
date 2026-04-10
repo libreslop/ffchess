@@ -52,6 +52,7 @@ impl Renderer {
             mode,
             shop_configs,
             disable_fog_of_war,
+            clock_offset_ms,
         } = params;
         let width = canvas_size.x;
         let height = canvas_size.y;
@@ -62,7 +63,7 @@ impl Renderer {
             .and_then(|p| state.pieces.get(&p.king_id));
 
         let has_king = player_king.is_some();
-        let king_pos = player_king.map(|k| k.position).unwrap_or(IVec2::ZERO);
+        let king_pos = player_king.map(|k| k.position).unwrap_or(common::types::BoardCoord(IVec2::ZERO));
         let piece_count = state
             .pieces
             .values()
@@ -173,7 +174,7 @@ impl Renderer {
 
         // Shops
         for shop in &state.shops {
-            if (shop.position - king_pos).abs().max_element() <= view_radius_squares + 2 {
+            if (shop.position.0 - king_pos.0).abs().max_element() <= view_radius_squares + 2 {
                 let color = shop_configs
                     .get(&shop.shop_id)
                     .and_then(|c| c.color.as_ref())
@@ -181,8 +182,8 @@ impl Renderer {
                     .unwrap_or("#fde047");
                 self.ctx.set_fill_style_str(color);
                 self.ctx.fill_rect(
-                    shop.position.x as f64 * tile_size + offset_x + 5.0 * zoom,
-                    shop.position.y as f64 * tile_size + offset_y + 5.0 * zoom,
+                    shop.position.0.x as f64 * tile_size + offset_x + 5.0 * zoom,
+                    shop.position.0.y as f64 * tile_size + offset_y + 5.0 * zoom,
                     tile_size - 10.0 * zoom,
                     tile_size - 10.0 * zoom,
                 );
@@ -192,7 +193,7 @@ impl Renderer {
         // Selected piece highlight
         if let Some(sid) = selected_piece_id
             && let Some(piece) = ghost_pieces.get(&sid)
-            && (piece.position - king_pos).abs().max_element() <= view_radius_squares + 2
+            && (piece.position.0 - king_pos.0).abs().max_element() <= view_radius_squares + 2
         {
             let highlight = if let Some(owner_id) = piece.owner_id {
                 if let Some(player) = state.players.get(&owner_id) {
@@ -205,8 +206,8 @@ impl Renderer {
             };
             self.ctx.set_fill_style_str(&highlight);
             self.ctx.fill_rect(
-                piece.position.x as f64 * tile_size + offset_x + 2.0,
-                piece.position.y as f64 * tile_size + offset_y + 2.0,
+                piece.position.0.x as f64 * tile_size + offset_x + 2.0,
+                piece.position.0.y as f64 * tile_size + offset_y + 2.0,
                 tile_size - 4.0,
                 tile_size - 4.0,
             );
@@ -219,10 +220,10 @@ impl Renderer {
         {
             self.ctx.set_fill_style_str("rgba(34, 197, 94, 0.2)");
             let range = 10;
-            for x in (piece.position.x - range)..(piece.position.x + range + 1) {
-                for y in (piece.position.y - range)..(piece.position.y + range + 1) {
+            for x in (piece.position.0.x - range)..(piece.position.0.x + range + 1) {
+                for y in (piece.position.0.y - range)..(piece.position.0.y + range + 1) {
                     let t = IVec2::new(x, y);
-                    if !is_within_board(t, state.board_size) {
+                    if !is_within_board(common::types::BoardCoord(t), state.board_size) {
                         continue;
                     }
 
@@ -238,7 +239,7 @@ impl Renderer {
                     if is_valid_move(common::logic::MoveValidationParams {
                         piece_config: config,
                         start: piece.position,
-                        end: t,
+                        end: common::types::BoardCoord(t),
                         is_capture,
                         board_size: state.board_size,
                         pieces: ghost_pieces,
@@ -277,13 +278,13 @@ impl Renderer {
                         break;
                     }
                     if prev.piece_id == pm.piece_id {
-                        start_pos = prev.target;
+                        start_pos = common::types::BoardCoord(prev.target);
                     }
                 }
                 self.ctx.begin_path();
                 self.ctx.move_to(
-                    start_pos.x as f64 * tile_size + offset_x + tile_size / 2.0,
-                    start_pos.y as f64 * tile_size + offset_y + tile_size / 2.0,
+                    start_pos.0.x as f64 * tile_size + offset_x + tile_size / 2.0,
+                    start_pos.0.y as f64 * tile_size + offset_y + tile_size / 2.0,
                 );
                 self.ctx.line_to(
                     pm.target.x as f64 * tile_size + offset_x + tile_size / 2.0,
@@ -295,7 +296,7 @@ impl Renderer {
 
         // Pieces
         for (id, ghost) in ghost_pieces {
-            if (ghost.position - king_pos).abs().max_element() <= view_radius_squares + 2 {
+            if (ghost.position.0 - king_pos.0).abs().max_element() <= view_radius_squares + 2 {
                 let pos_override = animated_positions.get(id).copied();
                 if let Some(real) = state.pieces.get(id) {
                     if real.position != ghost.position {
@@ -312,8 +313,8 @@ impl Renderer {
                                 is_ghost: true,
                                 pos_override: None,
                                 tile_size_px,
-                            },
-                            zoom,
+                                clock_offset_ms,
+                                },                            zoom,
                         );
 
                         // Draw real (server) piece solid
@@ -329,8 +330,8 @@ impl Renderer {
                                 is_ghost: false,
                                 pos_override,
                                 tile_size_px,
-                            },
-                            zoom,
+                                clock_offset_ms,
+                                },                            zoom,
                         );
                     } else {
                         // Piece is not moving or not ours
@@ -346,8 +347,8 @@ impl Renderer {
                                 is_ghost: false,
                                 pos_override,
                                 tile_size_px,
-                            },
-                            zoom,
+                                clock_offset_ms,
+                                },                            zoom,
                         );
                     }
                 }
@@ -358,7 +359,7 @@ impl Renderer {
         for (id, ghost_piece) in ghost_pieces {
             let piece = state.pieces.get(id).unwrap_or(ghost_piece);
             if piece.piece_type.is_king()
-                && (piece.position - king_pos).abs().max_element() <= view_radius_squares + 2
+                && (piece.position.0 - king_pos.0).abs().max_element() <= view_radius_squares + 2
             {
                 let pos_override = animated_positions.get(id).copied();
                 self.draw_piece_name(PieceNameDrawParams {
@@ -376,8 +377,8 @@ impl Renderer {
 
         // Fog of War Overlay
         if !fog_is_disabled && player_id != PlayerId::nil() && has_king {
-            let king_screen_x = king_pos.x as f64 * tile_size + offset_x + tile_size / 2.0;
-            let king_screen_y = king_pos.y as f64 * tile_size + offset_y + tile_size / 2.0;
+            let king_screen_x = king_pos.0.x as f64 * tile_size + offset_x + tile_size / 2.0;
+            let king_screen_y = king_pos.0.y as f64 * tile_size + offset_y + tile_size / 2.0;
 
             let gradient = self
                 .ctx

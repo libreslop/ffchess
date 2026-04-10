@@ -127,9 +127,13 @@ impl Renderer {
     ) {
         let pos = Self::piece_pos(params);
         #[cfg(target_arch = "wasm32")]
-        let now = common::types::TimestampMs::from_millis(js_sys::Date::now() as i64);
+        let now = common::types::TimestampMs::from_millis(
+            js_sys::Date::now() as i64 + params.clock_offset_ms,
+        );
         #[cfg(not(target_arch = "wasm32"))]
-        let now = common::types::TimestampMs::from_millis(chrono::Utc::now().timestamp_millis());
+        let now = common::types::TimestampMs::from_millis(
+            chrono::Utc::now().timestamp_millis() + params.clock_offset_ms,
+        );
 
         let elapsed = now - params.piece.last_move_time;
         if elapsed >= params.piece.cooldown_ms {
@@ -272,8 +276,8 @@ impl Renderer {
         let tile_size = params.tile_size_px * params.zoom;
         let pos = params.pos_override.unwrap_or_else(|| {
             vec2(
-                params.piece.position.x as f64,
-                params.piece.position.y as f64,
+                params.piece.position.0.x as f64,
+                params.piece.position.0.y as f64,
             )
         });
         if params.piece.piece_type.is_king()
@@ -461,8 +465,8 @@ impl Renderer {
     fn piece_pos(params: PieceDrawParams<'_>) -> Vec2 {
         params.pos_override.unwrap_or_else(|| {
             vec2(
-                params.piece.position.x as f64,
-                params.piece.position.y as f64,
+                params.piece.position.0.x as f64,
+                params.piece.position.0.y as f64,
             )
         })
     }

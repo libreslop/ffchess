@@ -48,6 +48,7 @@ pub async fn connect_ws(
                             mode,
                             pieces,
                             shops,
+                            sync_interval_ms,
                         } => {
                             if player_id != PlayerId::nil() {
                                 set_stored_id(&mode_id, player_id);
@@ -61,6 +62,7 @@ pub async fn connect_ws(
                                 mode,
                                 pieces,
                                 shops,
+                                sync_interval_ms,
                             }))
                         }
                         ServerMessage::UpdateState {
@@ -129,7 +131,7 @@ pub async fn connect_ws(
                             pieces_captured,
                             time_survived_secs,
                         },
-                        ServerMessage::Pong(t) => GameAction::Pong(t),
+                        ServerMessage::Pong(t, server_time) => GameAction::Pong(t, server_time),
                     });
                 }
             }

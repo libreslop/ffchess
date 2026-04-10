@@ -55,6 +55,7 @@ pub struct PieceDrawParams<'a> {
     pub is_ghost: bool,
     pub pos_override: Option<Vec2>,
     pub tile_size_px: f64,
+    pub clock_offset_ms: i64,
 }
 
 /// Parameters for drawing a piece name overlay.
@@ -86,4 +87,5 @@ pub struct RenderParams<'a> {
     pub mode: Option<&'a GameModeClientConfig>,
     pub shop_configs: &'a HashMap<ShopId, ShopConfig>,
     pub disable_fog_of_war: bool,
+    pub clock_offset_ms: i64,
 }

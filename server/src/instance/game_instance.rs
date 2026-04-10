@@ -7,7 +7,7 @@ use crate::types::ConnectionId;
 use common::models::{GameModeConfig, GameState, PieceConfig, ShopConfig};
 use common::protocol::{GameError, ServerMessage, VictoryFocusTarget};
 use common::types::{
-    ModeId, PieceId, PieceTypeId, PlayerCount, PlayerId, SessionSecret, ShopId, TimestampMs,
+    BoardCoord, ModeId, PieceId, PieceTypeId, PlayerCount, PlayerId, SessionSecret, ShopId, TimestampMs,
 };
 use glam::IVec2;
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -17,7 +17,7 @@ use tokio::sync::{RwLock, mpsc};
 /// Queued move request stored server-side for cooldown chaining.
 pub(super) struct QueuedMoveRequest {
     pub player_id: PlayerId,
-    pub target: IVec2,
+    pub target: BoardCoord,
 }
 
 /// Live game instance state for a single mode.

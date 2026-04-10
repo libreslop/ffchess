@@ -3,7 +3,7 @@
 use super::GameInstance;
 use common::models::{GameState, HookConfig, HookVictoryFocus, SupportedHook};
 use common::protocol::VictoryFocusTarget;
-use common::types::{PieceTypeId, PlayerId};
+use common::types::{BoardCoord, PieceTypeId, PlayerId};
 use glam::IVec2;
 
 /// A captured piece event deferred until the end of a tick.
@@ -12,7 +12,7 @@ struct CaptureEvent {
     capturer_id: Option<PlayerId>,
     captured_piece_type: PieceTypeId,
     captured_owner_id: Option<PlayerId>,
-    captured_position: IVec2,
+    captured_position: BoardCoord,
 }
 
 /// Gameplay events observed across one tick.
@@ -34,7 +34,7 @@ impl TickHookEvents {
         capturer_id: Option<PlayerId>,
         captured_piece_type: PieceTypeId,
         captured_owner_id: Option<PlayerId>,
-        captured_position: IVec2,
+        captured_position: BoardCoord,
     ) {
         self.captures.push(CaptureEvent {
             capturer_id,
@@ -93,7 +93,7 @@ impl HookEventBuffer {
         capturer_id: Option<PlayerId>,
         captured_piece_type: PieceTypeId,
         captured_owner_id: Option<PlayerId>,
-        captured_position: IVec2,
+        captured_position: BoardCoord,
     ) {
         self.target_buffer().record_capture(
             capturer_id,
@@ -170,7 +170,7 @@ impl GameInstance {
         capturer_id: Option<PlayerId>,
         captured_piece_type: PieceTypeId,
         captured_owner_id: Option<PlayerId>,
-        captured_position: IVec2,
+        captured_position: BoardCoord,
     ) {
         self.hook_events.write().await.record_capture(
             capturer_id,

@@ -3,7 +3,7 @@
 use super::GameInstance;
 use common::models::Shop;
 use common::protocol::GameError;
-use common::types::{DurationMs, PieceId, PlayerId, Score, TimestampMs};
+use common::types::{BoardCoord, DurationMs, PieceId, PlayerId, Score, TimestampMs};
 use glam::IVec2;
 
 impl GameInstance {
@@ -14,7 +14,7 @@ impl GameInstance {
     pub async fn handle_shop_buy(
         &self,
         player_id: PlayerId,
-        shop_pos: IVec2,
+        shop_pos: BoardCoord,
         item_index: usize,
     ) -> Result<(), GameError> {
         let mut game = self.game.write().await;
@@ -93,7 +93,7 @@ impl GameInstance {
 
         for add_type in &item.add_pieces {
             let p_id = PieceId::new();
-            let Some(p_pos) = crate::spawning::find_adjacent_free_pos(&game, shop_pos) else {
+            let Some(p_pos) = crate::spawning::find_adjacent_free_pos(&game, shop_pos.into()) else {
                 return Err(GameError::NoSpaceNearby);
             };
 
@@ -103,7 +103,7 @@ impl GameInstance {
                     id: p_id,
                     owner_id: Some(player_id),
                     piece_type: add_type.clone(),
-                    position: p_pos,
+                    position: common::BoardCoord(p_pos),
                     last_move_time: TimestampMs::from_millis(0),
                     cooldown_ms: DurationMs::zero(),
                 },
@@ -117,7 +117,7 @@ impl GameInstance {
             // Spawn a new one elsewhere
             let new_pos = crate::spawning::find_spawn_pos(&game);
             game.shops.push(Shop {
-                position: new_pos,
+                position: common::BoardCoord(new_pos),
                 uses_remaining: shop_config.default_uses,
                 shop_id: shop_id.clone(),
             });
@@ -136,7 +136,7 @@ impl GameInstance {
                 let pos = crate::spawning::find_spawn_pos(&game);
                 let shop_config = self.shop_configs.get(&shop_count.shop_id).unwrap();
                 game.shops.push(Shop {
-                    position: pos,
+                    position: common::BoardCoord(pos),
                     uses_remaining: shop_config.default_uses,
                     shop_id: shop_count.shop_id.clone(),
                 });

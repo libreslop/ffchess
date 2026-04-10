@@ -1,4 +1,5 @@
 {
+  "sync_interval_ms": 10000,
   "default_name": {
     "adjectives": [
       "Swift", "Brave", "Silent", "Iron", "Gold", "Shadow", "Grand", "Quick", "Old", "New",

@@ -1,52 +1,33 @@
-//! NPC spawning and movement logic for a game instance.
+//! Automated movement logic for NPC pieces.
 
 use super::GameInstance;
 use crate::time::now_ms;
 use common::logic::MoveValidationParams;
 use common::models::{GameState, Piece, PieceConfig};
-use common::types::{BoardSize, DurationMs, PieceId, PieceTypeId, TimestampMs};
+use common::types::{BoardSize, DurationMs, PieceId, PieceTypeId, TimestampMs, BoardCoord};
 use glam::IVec2;
 use rand::Rng;
 
-/// Candidate NPC move with capture metadata.
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
 struct NpcMove {
     target: IVec2,
     is_capture: bool,
 }
 
 impl GameInstance {
-    /// Advances NPC spawning and movement logic for the current tick.
+    /// Spawns new NPCs up to the limits defined in the mode configuration.
     ///
-    /// Returns nothing; this mutates game state.
-    pub async fn tick_npcs(&self) {
-        let mut game = self.game.write().await;
-        let board_size = game.board_size;
+    /// Checks current piece counts and uses `find_spawn_pos` to place new NPCs.
+    pub async fn spawn_npcs(&self) {
         let now = now_ms();
-
-        self.spawn_npcs(&mut game, now).await;
-
-        let npc_ids: Vec<PieceId> = game
-            .pieces
-            .iter()
-            .filter(|(_, piece)| piece.owner_id.is_none())
-            .map(|(piece_id, _)| *piece_id)
-            .collect();
-        for piece_id in npc_ids {
-            self.tick_npc(piece_id, now, board_size, &mut game).await;
-        }
-    }
-
-    /// Spawns NPCs up to each configured limit.
-    async fn spawn_npcs(&self, game: &mut GameState, now: TimestampMs) {
+        let mut game = self.game.write().await;
         for limit in &self.mode_config.npc_limits {
             let current_count = game
                 .pieces
                 .values()
-                .filter(|piece| {
-                    piece.owner_id.is_none() && piece.piece_type.as_ref() == limit.piece_id.as_ref()
-                })
+                .filter(|p| p.owner_id.is_none() && p.piece_type == limit.piece_id)
                 .count();
+
             let mut vars = std::collections::HashMap::new();
             vars.insert("player_count".to_string(), game.players.len() as f64);
             let max_npcs = common::logic::evaluate_expression(&limit.max_expr, &vars) as usize;
@@ -55,7 +36,7 @@ impl GameInstance {
                 continue;
             }
 
-            let spawn_pos = crate::spawning::find_spawn_pos(game);
+            let spawn_pos = crate::spawning::find_spawn_pos(&game);
             let piece_id = PieceId::new();
             let cooldown_ms = self
                 .piece_configs
@@ -68,7 +49,7 @@ impl GameInstance {
                     id: piece_id,
                     owner_id: None,
                     piece_type: limit.piece_id.clone(),
-                    position: spawn_pos,
+                    position: BoardCoord(spawn_pos),
                     last_move_time: self.initial_npc_last_move(now, cooldown_ms),
                     cooldown_ms,
                 },
@@ -76,8 +57,22 @@ impl GameInstance {
         }
     }
 
+    /// Advances all NPCs if they can move this tick.
+    pub async fn tick_npcs(&self) {
+        let now = now_ms();
+        let mut game = self.game.write().await;
+        let board_size = game.board_size;
+        let piece_ids: Vec<_> = game.pieces.keys().copied().collect();
+        for piece_id in piece_ids {
+            let is_npc = game.pieces.get(&piece_id).map(|p| p.owner_id.is_none()).unwrap_or(false);
+            if is_npc {
+                self.tick_npc(piece_id, now, board_size, &mut game).await;
+            }
+        }
+    }
+
     /// Advances one NPC if it can move this tick.
-    async fn tick_npc(
+    pub(super) async fn tick_npc(
         &self,
         piece_id: PieceId,
         now: TimestampMs,
@@ -98,15 +93,18 @@ impl GameInstance {
             return;
         };
 
-        if let Some(npc_move) = self.choose_npc_move(piece_config, position, board_size, game) {
-            if npc_move.is_capture {
-                self.capture_piece_at(npc_move.target, None, game).await;
-            }
-            self.update_piece_motion(piece_id, npc_move.target, now, piece_config, game);
+        let target = self.choose_npc_move(piece_config, position, board_size, game);
+        if let Some(npc_move) = target {
+            self.update_piece_motion(
+                piece_id,
+                npc_move.target,
+                now,
+                piece_config,
+                game,
+            );
         }
     }
 
-    /// Returns the current motion state for an NPC piece.
     fn npc_motion_state(
         &self,
         piece_id: PieceId,
@@ -115,7 +113,7 @@ impl GameInstance {
         let piece = game.pieces.get(&piece_id)?;
         Some((
             piece.piece_type.clone(),
-            piece.position,
+            piece.position.into(),
             piece.last_move_time,
             piece.cooldown_ms,
         ))
@@ -201,13 +199,13 @@ impl GameInstance {
 
         paths
             .iter()
-            .flat_map(|path| path.iter())
+            .flat_map(|path: &Vec<IVec2>| path.iter())
             .filter_map(|step| {
                 let target = position + *step;
                 common::logic::is_valid_move(MoveValidationParams {
                     piece_config,
-                    start: position,
-                    end: target,
+                    start: BoardCoord(position),
+                    end: BoardCoord(target),
                     is_capture,
                     board_size,
                     pieces: &game.pieces,
@@ -228,7 +226,7 @@ impl GameInstance {
         game: &mut GameState,
     ) {
         if let Some(piece) = game.pieces.get_mut(&piece_id) {
-            piece.position = target;
+            piece.position = BoardCoord(target);
             piece.last_move_time = now;
             piece.cooldown_ms = piece_config.cooldown_ms;
         }

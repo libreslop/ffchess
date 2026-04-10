@@ -143,7 +143,7 @@ impl GameInstance {
                         id: p_id,
                         owner_id: Some(player_id),
                         piece_type: p_type_id.clone(),
-                        position: p_pos,
+                        position: common::BoardCoord(p_pos),
                         last_move_time: TimestampMs::from_millis(0),
                         cooldown_ms: DurationMs::zero(),
                     },

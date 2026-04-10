@@ -1,7 +1,9 @@
 //! Shared rule helpers for move validation, board sizing, and shop pricing.
 
 use crate::models::{GameModeConfig, Piece, PieceConfig, ShopConfig, ShopGroupConfig};
-use crate::types::{BoardSize, DurationMs, ExprString, PieceId, PieceTypeId, PlayerId};
+use crate::types::{
+    BoardCoord, BoardSize, DurationMs, ExprString, PieceId, PieceTypeId, PlayerId,
+};
 use glam::IVec2;
 use std::collections::HashMap;
 
@@ -32,17 +34,17 @@ pub fn calculate_board_size(mode: &GameModeConfig, player_count: usize) -> Board
 ///
 /// `pos` is the tile coordinate, `board_size` is the board dimension.
 /// Returns `true` when the position is within the valid board range.
-pub fn is_within_board(pos: IVec2, board_size: BoardSize) -> bool {
+pub fn is_within_board(pos: BoardCoord, board_size: BoardSize) -> bool {
     let half = board_size.half();
     let limit_pos = board_size.limit_pos();
-    pos.x >= -half && pos.x < limit_pos && pos.y >= -half && pos.y < limit_pos
+    pos.0.x >= -half && pos.0.x < limit_pos && pos.0.y >= -half && pos.0.y < limit_pos
 }
 
 /// Inputs for validating a move on the board.
 pub struct MoveValidationParams<'a> {
     pub piece_config: &'a PieceConfig,
-    pub start: IVec2,
-    pub end: IVec2,
+    pub start: BoardCoord,
+    pub end: BoardCoord,
     pub is_capture: bool,
     pub board_size: BoardSize,
     pub pieces: &'a HashMap<PieceId, Piece>,
@@ -58,7 +60,7 @@ pub fn is_valid_move(params: MoveValidationParams<'_>) -> bool {
         return false;
     }
 
-    let diff = params.end - params.start;
+    let diff = params.end.0 - params.start.0;
     let paths = if params.is_capture {
         &params.piece_config.capture_paths
     } else {
@@ -84,7 +86,7 @@ pub fn is_valid_move(params: MoveValidationParams<'_>) -> bool {
             if step == diff {
                 // Check if path is blocked (intermediate squares)
                 for step in path.iter().take(i) {
-                    let intermediate_pos = params.start + *step;
+                    let intermediate_pos = BoardCoord(params.start.0 + *step);
                     if piece_at(params.pieces, intermediate_pos).is_some() {
                         return false; // Path blocked
                     }
@@ -144,6 +146,6 @@ where
 ///
 /// `pieces` is the active piece map and `pos` is the tile coordinate.
 /// Returns the piece reference when present.
-fn piece_at(pieces: &HashMap<PieceId, Piece>, pos: IVec2) -> Option<&Piece> {
+fn piece_at(pieces: &HashMap<PieceId, Piece>, pos: BoardCoord) -> Option<&Piece> {
     pieces.values().find(|p| p.position == pos)
 }

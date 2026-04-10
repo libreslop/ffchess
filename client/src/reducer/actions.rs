@@ -16,6 +16,7 @@ pub struct InitPayload {
     pub mode: GameModeClientConfig,
     pub pieces: HashMap<PieceTypeId, PieceConfig>,
     pub shops: HashMap<ShopId, ShopConfig>,
+    pub sync_interval_ms: u32,
 }
 
 /// Incremental world update payload.
@@ -47,7 +48,7 @@ pub enum GameAction {
     },
     AddPmove(Pmove),
     ClearPm(PieceId),
-    Pong(u64),
+    Pong(u64, common::types::TimestampMs),
     SetFPS(u32),
     SetDisconnected {
         disconnected: bool,

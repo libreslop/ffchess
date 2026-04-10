@@ -25,6 +25,7 @@ impl Reducible for GameStateReducer {
                     mode,
                     pieces,
                     shops,
+                    sync_interval_ms,
                 } = *payload;
                 next.player_id = Some(player_id);
                 next.session_secret = Some(session_secret);
@@ -32,6 +33,7 @@ impl Reducible for GameStateReducer {
                 next.mode = Some(mode);
                 next.piece_configs = pieces;
                 next.shop_configs = shops;
+                next.sync_interval_ms = sync_interval_ms;
                 next.pm_queue.clear();
                 next.error = None;
                 next.queue_status = None;
@@ -109,10 +111,20 @@ impl Reducible for GameStateReducer {
             GameAction::ClearPm(piece_id) => {
                 next.pm_queue.retain(|pm| pm.piece_id != piece_id);
             }
-            GameAction::Pong(t) => {
+            GameAction::Pong(t, server_time) => {
                 let now = js_sys::Date::now() as u64;
                 if now >= t {
                     next.ping_ms = now - t;
+                    let latency = (now - t) / 2;
+                    let sample_offset = server_time.as_i64() - (t + latency) as i64;
+
+                    if next.clock_offset_ms == 0 {
+                        next.clock_offset_ms = sample_offset;
+                    } else {
+                        // EMA with alpha = 0.2
+                        next.clock_offset_ms =
+                            (next.clock_offset_ms as f64 * 0.8 + sample_offset as f64 * 0.2) as i64;
+                    }
                 }
             }
             GameAction::SetFPS(fps) => {

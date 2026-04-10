@@ -3,8 +3,7 @@
 use crate::reducer::MsgSender;
 use common::models::{Piece, PieceConfig, ShopConfig};
 use common::protocol::ClientMessage;
-use common::types::{PieceTypeId, Score};
-use glam::IVec2;
+use common::types::{BoardCoord, PieceTypeId, Score};
 use std::collections::HashMap;
 use yew::prelude::*;
 
@@ -17,7 +16,7 @@ pub struct ShopUIProps {
     pub shop_config: ShopConfig,
     pub piece_configs: HashMap<PieceTypeId, PieceConfig>,
     pub tx: MsgSender,
-    pub shop_pos: IVec2,
+    pub shop_pos: BoardCoord,
 }
 
 #[function_component(ShopUI)]

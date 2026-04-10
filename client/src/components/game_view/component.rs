@@ -8,7 +8,7 @@ use crate::reducer::{GameAction, GameStateReducer, MsgSender, Pmove};
 use crate::utils::request_fullscreen;
 use common::logic::is_within_board;
 use common::protocol::ClientMessage;
-use common::types::{PieceId, PlayerId, Score};
+use common::types::{BoardCoord, PieceId, PlayerId, Score};
 use glam::IVec2;
 use gloo_events::EventListener;
 use gloo_render::{AnimationFrame, request_animation_frame};
@@ -144,7 +144,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
     let canvas_ref = use_node_ref();
     let selected_piece_id = use_state(|| None::<PieceId>);
     let manager_ref = use_mut_ref(CameraManager::new);
-    let piece_prev_positions = use_mut_ref(HashMap::<PieceId, IVec2>::new);
+    let piece_prev_positions = use_mut_ref(HashMap::<PieceId, BoardCoord>::new);
     let piece_anims = use_mut_ref(HashMap::<PieceId, PieceAnim>::new);
     let last_tap = use_mut_ref(|| None::<LastTap>);
     let touch_gesture_active = use_mut_ref(|| false);
@@ -355,6 +355,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
                 *selected_piece_id,
                 has_match_result,
                 shop_configs,
+                reducer.clock_offset_ms,
             ),
             move |(
                 _,
@@ -368,6 +369,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
                 sid,
                 has_match_result,
                 shop_configs,
+                clock_offset_ms,
             )| {
                 if let Some(renderer) = renderer_state.as_ref() {
                     let selected_piece_id = if *has_match_result { None } else { *sid };
@@ -390,9 +392,9 @@ pub fn game_view(props: &GameViewProps) -> Html {
                         let progress = ((now - anim.started_at) / MOVE_ANIM_MS).clamp(0.0, 1.0);
                         if progress < 1.0 {
                             let x =
-                                anim.start.x as f64 + (anim.end.x - anim.start.x) as f64 * progress;
+                                anim.start.0.x as f64 + (anim.end.0.x - anim.start.0.x) as f64 * progress;
                             let y =
-                                anim.start.y as f64 + (anim.end.y - anim.start.y) as f64 * progress;
+                                anim.start.0.y as f64 + (anim.end.0.y - anim.start.0.y) as f64 * progress;
                             animated_positions.insert(*id, vec2(x, y));
                             true
                         } else {
@@ -413,6 +415,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
                         mode: mode.as_ref(),
                         shop_configs,
                         disable_fog_of_war: *has_match_result,
+                        clock_offset_ms: *clock_offset_ms,
                     });
                 }
                 || ()
@@ -512,7 +515,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
             let board_size = reducer.state.board_size;
             let mut is_interactive = false;
 
-            if !input.is_right_click && is_within_board(target, board_size) {
+            if !input.is_right_click && is_within_board(BoardCoord(target), board_size) {
                 let mut ghosts = reducer.state.pieces.clone();
                 apply_visible_ghosts(&mut ghosts, &reducer.pm_queue, &reducer.state);
 
@@ -524,7 +527,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
                     && common::logic::is_valid_move(common::logic::MoveValidationParams {
                         piece_config: config,
                         start: piece.position,
-                        end: target,
+                        end: BoardCoord(target),
                         is_capture: ghosts.values().any(|p| p.position == target),
                         board_size,
                         pieces: &ghosts,
@@ -692,7 +695,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
                             && common::logic::is_valid_move(common::logic::MoveValidationParams {
                                 piece_config: config,
                                 start: p.position,
-                                end: target,
+                                end: BoardCoord(target),
                                 is_capture,
                                 board_size: reducer.state.board_size,
                                 pieces: &current_ghosts,
@@ -701,7 +704,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
                         {
                             let _ = tx.0.send(ClientMessage::MovePiece {
                                 piece_id: sid,
-                                target,
+                                target: BoardCoord(target),
                             });
                             reducer.dispatch(GameAction::AddPmove(Pmove {
                                 piece_id: sid,
@@ -794,8 +797,8 @@ pub fn game_view(props: &GameViewProps) -> Html {
         if let Some(p) = player_pieces.iter().find(|p| p.position == shop.position) {
             let tile_size = props.globals.tile_size_px;
             let piece_pos = vec2(
-                p.position.x as f64 * tile_size + tile_size / 2.0,
-                p.position.y as f64 * tile_size + tile_size / 2.0,
+                p.position.0.x as f64 * tile_size + tile_size / 2.0,
+                p.position.0.y as f64 * tile_size + tile_size / 2.0,
             );
             let dist_sq = (piece_pos - cam).length_squared();
             active_shops.push((shop, (*p).clone(), dist_sq));

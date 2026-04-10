@@ -4,7 +4,7 @@ use super::{GameInstance, game_instance::QueuedMoveRequest};
 use crate::time::now_ms;
 use common::models::GameState;
 use common::protocol::{GameError, ServerMessage};
-use common::types::{PieceId, PlayerId};
+use common::types::{BoardCoord, PieceId, PlayerId};
 use glam::IVec2;
 
 impl GameInstance {
@@ -16,7 +16,7 @@ impl GameInstance {
         &self,
         player_id: PlayerId,
         piece_id: PieceId,
-        target: IVec2,
+        target: BoardCoord,
     ) -> Result<(), GameError> {
         let should_queue = {
             let game = self.game.read().await;
@@ -120,7 +120,7 @@ impl GameInstance {
         game: &mut GameState,
         player_id: PlayerId,
         piece_id: PieceId,
-        target: IVec2,
+        target: BoardCoord,
         enforce_cooldown: bool,
     ) -> Result<(), GameError> {
         let (piece_type, start_pos, piece_owner) = {

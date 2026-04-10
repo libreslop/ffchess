@@ -8,7 +8,7 @@ use rand::Rng;
 ///
 /// `game` provides state, `pos` is the candidate tile. Returns `true` if free.
 pub fn is_free_position(game: &GameState, pos: IVec2) -> bool {
-    common::logic::is_within_board(pos, game.board_size)
+    common::logic::is_within_board(common::BoardCoord(pos), game.board_size)
         && !game.pieces.values().any(|p| p.position == pos)
         && !game.shops.iter().any(|s| s.position == pos)
 }

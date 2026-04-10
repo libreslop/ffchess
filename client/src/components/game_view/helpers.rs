@@ -2,15 +2,14 @@
 
 use crate::reducer::Pmove;
 use common::models::{GameState, Piece};
-use common::types::PieceId;
-use glam::IVec2;
+use common::types::{BoardCoord, PieceId};
 use std::collections::HashMap;
 
 /// Animation state for a piece transitioning between tiles.
 #[derive(Clone)]
 pub struct PieceAnim {
-    pub start: IVec2,
-    pub end: IVec2,
+    pub start: BoardCoord,
+    pub end: BoardCoord,
     pub started_at: f64,
 }
 
@@ -32,7 +31,7 @@ pub fn apply_visible_ghosts(
         }
 
         if let Some(p) = ghosts.get_mut(&pm.piece_id) {
-            p.position = pm.target;
+            p.position = BoardCoord(pm.target);
         }
     }
 }

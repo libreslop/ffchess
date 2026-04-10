@@ -355,7 +355,7 @@ async fn handle_socket(socket: WebSocket, mode_id: ModeId, state: Arc<ServerStat
                         }
                     }
                     ClientMessage::Ping(t) => {
-                        let _ = tx.send(ServerMessage::Pong(t));
+                        let _ = tx.send(ServerMessage::Pong(t, crate::time::now_ms()));
                     }
                 },
                 Err(e) => {

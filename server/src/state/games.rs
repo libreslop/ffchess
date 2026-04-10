@@ -51,6 +51,7 @@ impl ServerState {
             mode,
             pieces: instance.piece_config_snapshot(),
             shops: instance.shop_config_snapshot(),
+            sync_interval_ms: self.config_manager.global.sync_interval_ms,
         });
     }
 

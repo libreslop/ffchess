@@ -138,20 +138,20 @@ pub fn update_camera(manager: &mut CameraManager, params: CameraUpdateParams<'_>
             && let Some(king) = params.state.pieces.get(&p.king_id)
         {
             let tile_size = params.tile_size_px * manager.zoom;
-            let kpx = king.position.x as f64 * tile_size + tile_size / 2.0;
-            let kpy = king.position.y as f64 * tile_size + tile_size / 2.0;
+            let kpx = king.position.0.x as f64 * tile_size + tile_size / 2.0;
+            let kpy = king.position.0.y as f64 * tile_size + tile_size / 2.0;
             let king_pos = Vec2::new(kpx, kpy);
 
             if !manager.was_alive {
                 // Respawn or First Join: Set target to king and start panning
                 manager.target_camera = king_pos;
                 manager.target_zoom = 1.0;
-                manager.last_king_grid_pos = king.position;
+                manager.last_king_grid_pos = king.position.into();
                 manager.input_locked = true;
                 manager.was_alive = true;
                 changed = true;
             } else {
-                manager.last_king_grid_pos = king.position;
+                manager.last_king_grid_pos = king.position.into();
                 // We don't update target_camera here, allowing for free-panning
             }
 
@@ -194,8 +194,8 @@ pub fn update_camera(manager: &mut CameraManager, params: CameraUpdateParams<'_>
                     VictoryFocusTarget::BoardPosition(grid_pos) => {
                         let target_zoom = params.death_zoom;
                         let tile_size = params.tile_size_px * target_zoom;
-                        let desired_focus_x = grid_pos.x as f64 * tile_size + tile_size / 2.0;
-                        let desired_focus_y = grid_pos.y as f64 * tile_size + tile_size / 2.0;
+                        let desired_focus_x = grid_pos.0.x as f64 * tile_size + tile_size / 2.0;
+                        let desired_focus_y = grid_pos.0.y as f64 * tile_size + tile_size / 2.0;
                         manager.target_camera = Vec2::new(desired_focus_x, desired_focus_y);
                         manager.target_zoom = target_zoom.clamp(params.zoom_min, params.zoom_max);
                     }

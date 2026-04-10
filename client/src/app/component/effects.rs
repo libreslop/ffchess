@@ -235,6 +235,7 @@ pub fn use_ws_connection_effect(
         tx_handle.set(Some(sender.clone()));
 
         let ping_sender = sender.clone();
+        let _ = ping_sender.0.send(ClientMessage::Ping(js_sys::Date::now() as u64));
         let ping_interval_ms = global_cfg.ping_interval_ms.max(500);
         let ping_interval = Interval::new(ping_interval_ms, move || {
             let now = js_sys::Date::now() as u64;
