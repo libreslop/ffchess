@@ -46,7 +46,7 @@ pub fn end_screen(props: &EndScreenProps) -> Html {
             <div style="position: absolute; inset: 0; background: rgba(0,0,0,0.6); z-index: 90; animation: simpleFadeIn 0.3s ease-out;"></div>
             <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 100; text-align: center; width: 90%; max-width: 400px; color: #fff;">
                 <div style="animation: fadeIn 0.3s ease-out;">
-                    <h1 style={format!("color: {}; margin-top: 0; font-size: {}; letter-spacing: 4px; text-shadow: 3px 3px 0 rgba(0,0,0,0.6); text-transform: uppercase;", title_color, title_size)}>{title}</h1>
+                    <h1 style={format!("color: {}; margin-top: 0; margin-bottom: 8px; font-size: {}; letter-spacing: 4px; text-shadow: 3px 3px 0 rgba(0,0,0,0.6); text-transform: uppercase;", title_color, title_size)}>{title}</h1>
 
                     if let Some(message) = props.message.clone() {
                         if !message.trim().is_empty() {

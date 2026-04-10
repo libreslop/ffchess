@@ -34,7 +34,7 @@ fn calculate_board_size_clamps_minimum() {
         preview_switch_delay_ms: DurationMs::from_millis(5000),
         board_size: ExprString::from("0"),
         camera_pan_limit: ExprString::from("10"),
-        fog_of_war_radius: ExprString::from("10"),
+        fog_of_war_radius: Some(ExprString::from("10")),
         respawn_cooldown_ms: DurationMs::zero(),
         npc_limits: vec![NpcLimitConfig {
             piece_id: "pawn".into(),

@@ -160,7 +160,11 @@ pub fn update_camera(manager: &mut CameraManager, params: CameraUpdateParams<'_>
                 let mut vars = std::collections::HashMap::new();
                 vars.insert("player_piece_count".to_string(), params.piece_count as f64);
 
-                let fog_of_war_radius = evaluate_expression(&m.fog_of_war_radius, &vars);
+                let fog_of_war_radius = m
+                    .fog_of_war_radius
+                    .as_ref()
+                    .map(|expr| evaluate_expression(expr, &vars))
+                    .unwrap_or(0.0);
                 vars.insert("fog_of_war_radius".to_string(), fog_of_war_radius);
 
                 let limit_radius_tiles = evaluate_expression(&m.camera_pan_limit, &vars);

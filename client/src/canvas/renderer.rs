@@ -72,16 +72,19 @@ impl Renderer {
         let fog_of_war_radius = if let Some(m) = mode {
             let mut vars = HashMap::new();
             vars.insert("player_piece_count".to_string(), piece_count as f64);
-            evaluate_expression(&m.fog_of_war_radius, &vars)
+            m.fog_of_war_radius
+                .as_ref()
+                .map(|expr| evaluate_expression(expr, &vars))
         } else {
             let zoom_factor = (piece_count as f64).sqrt().max(1.0);
-            15.0 * zoom_factor
+            Some(15.0 * zoom_factor)
         };
+        let fog_is_disabled = disable_fog_of_war || fog_of_war_radius.is_none();
 
-        let view_radius_squares = if player_id == PlayerId::nil() || !has_king {
-            100
+        let view_radius_squares = if player_id == PlayerId::nil() || !has_king || fog_is_disabled {
+            state.board_size.as_i32()
         } else {
-            fog_of_war_radius as i32
+            fog_of_war_radius.unwrap_or(0.0).max(0.0) as i32
         };
         let view_radius_px = (view_radius_squares as f64 + 0.5) * tile_size;
 
@@ -372,7 +375,7 @@ impl Renderer {
         }
 
         // Fog of War Overlay
-        if !disable_fog_of_war && player_id != PlayerId::nil() && has_king {
+        if !fog_is_disabled && player_id != PlayerId::nil() && has_king {
             let king_screen_x = king_pos.x as f64 * tile_size + offset_x + tile_size / 2.0;
             let king_screen_y = king_pos.y as f64 * tile_size + offset_y + tile_size / 2.0;
 

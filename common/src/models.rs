@@ -188,7 +188,7 @@ pub struct GameModeClientConfig {
     #[serde(default)]
     pub queue_players: PlayerCount,
     pub camera_pan_limit: ExprString,
-    pub fog_of_war_radius: ExprString,
+    pub fog_of_war_radius: Option<ExprString>,
     pub respawn_cooldown_ms: DurationMs,
     pub kits: Vec<KitSummary>,
 }
@@ -205,7 +205,7 @@ pub struct GameModeConfig {
     pub preview_switch_delay_ms: DurationMs,
     pub board_size: ExprString,
     pub camera_pan_limit: ExprString,
-    pub fog_of_war_radius: ExprString,
+    pub fog_of_war_radius: Option<ExprString>,
     pub respawn_cooldown_ms: DurationMs,
     pub npc_limits: Vec<NpcLimitConfig>,
     pub shop_counts: Vec<ShopCountConfig>,

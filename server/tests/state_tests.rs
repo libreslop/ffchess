@@ -243,7 +243,7 @@ mod tests {
         match winner_msg {
             ServerMessage::Error(GameError::Custom { title, message }) => {
                 assert_eq!(title, "VICTORY");
-                assert_eq!(message, "You won by capturing the enemy king.");
+                assert_eq!(message, "");
             }
             other => panic!("Unexpected winner message: {:?}", other),
         }

@@ -63,7 +63,7 @@ async fn shop_purchase_deducts_score_and_adds_piece() {
         preview_switch_delay_ms: DurationMs::from_millis(5000),
         board_size: ExprString::from("20"),
         camera_pan_limit: ExprString::from("10"),
-        fog_of_war_radius: ExprString::from("10"),
+        fog_of_war_radius: Some(ExprString::from("10")),
         respawn_cooldown_ms: DurationMs::zero(),
         npc_limits: vec![NpcLimitConfig {
             piece_id: PieceTypeId::from("pawn"),
