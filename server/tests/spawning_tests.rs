@@ -1,7 +1,7 @@
 //! Tests for spawn position helpers.
 
 use common::models::{GameState, Piece, Shop};
-use common::types::{BoardSize, DurationMs, PieceId, PieceTypeId, PlayerId, ShopId, TimestampMs};
+use common::types::{BoardCoord, BoardSize, DurationMs, PieceId, PieceTypeId, PlayerId, ShopId, TimestampMs};
 use glam::IVec2;
 use rand::SeedableRng;
 use rand::rngs::StdRng;
@@ -33,7 +33,7 @@ fn test_is_free_position_checks_bounds_and_occupancy() {
             id: piece_id,
             owner_id: Some(PlayerId::new()),
             piece_type: PieceTypeId::from("pawn"),
-            position: pos,
+            position: BoardCoord(pos),
             last_move_time: TimestampMs::from_millis(0),
             cooldown_ms: DurationMs::zero(),
         },
@@ -42,7 +42,7 @@ fn test_is_free_position_checks_bounds_and_occupancy() {
 
     state.pieces.clear();
     state.shops.push(Shop {
-        position: pos,
+        position: BoardCoord(pos),
         uses_remaining: 1,
         shop_id: ShopId::from("shop"),
     });
@@ -74,7 +74,7 @@ fn test_find_adjacent_free_pos_returns_first_open_slot() {
                 id: piece_id,
                 owner_id: Some(PlayerId::new()),
                 piece_type: PieceTypeId::from("pawn"),
-                position: pos,
+                position: BoardCoord(pos),
                 last_move_time: TimestampMs::from_millis(0),
                 cooldown_ms: DurationMs::zero(),
             },

@@ -3,7 +3,7 @@
 use common::logic::{MoveValidationParams, is_valid_move, is_within_board};
 use common::models::{Piece, PieceConfig, ShopConfig, ShopGroupConfig, ShopItemConfig};
 use common::types::{
-    BoardSize, DurationMs, ExprString, PieceId, PieceTypeId, PlayerId, Score, ShopId, TimestampMs,
+    BoardCoord, BoardSize, DurationMs, ExprString, PieceId, PieceTypeId, PlayerId, Score, ShopId, TimestampMs,
 };
 use glam::IVec2;
 use std::collections::HashMap;
@@ -38,11 +38,11 @@ fn mock_pawn_config() -> PieceConfig {
 fn test_is_within_board() {
     let size = BoardSize::from(100);
     // Range is -50 to 49
-    assert!(is_within_board(IVec2::new(0, 0), size));
-    assert!(is_within_board(IVec2::new(-50, -50), size));
-    assert!(is_within_board(IVec2::new(49, 49), size));
-    assert!(!is_within_board(IVec2::new(-51, 0), size));
-    assert!(!is_within_board(IVec2::new(50, 50), size));
+    assert!(is_within_board(BoardCoord(IVec2::new(0, 0)), size));
+    assert!(is_within_board(BoardCoord(IVec2::new(-50, -50)), size));
+    assert!(is_within_board(BoardCoord(IVec2::new(49, 49)), size));
+    assert!(!is_within_board(BoardCoord(IVec2::new(-51, 0)), size));
+    assert!(!is_within_board(BoardCoord(IVec2::new(50, 50)), size));
 }
 
 #[test]
@@ -56,8 +56,8 @@ fn test_pawn_movement() {
     // Multi-directional movement (adjacent only)
     assert!(is_valid_move(MoveValidationParams {
         piece_config: &config,
-        start,
-        end: IVec2::new(0, -1),
+        start: BoardCoord(start),
+        end: BoardCoord(IVec2::new(0, -1)),
         is_capture: false,
         board_size: size,
         pieces: &pieces,
@@ -65,8 +65,8 @@ fn test_pawn_movement() {
     }));
     assert!(is_valid_move(MoveValidationParams {
         piece_config: &config,
-        start,
-        end: IVec2::new(0, 1),
+        start: BoardCoord(start),
+        end: BoardCoord(IVec2::new(0, 1)),
         is_capture: false,
         board_size: size,
         pieces: &pieces,
@@ -74,8 +74,8 @@ fn test_pawn_movement() {
     }));
     assert!(is_valid_move(MoveValidationParams {
         piece_config: &config,
-        start,
-        end: IVec2::new(-1, 0),
+        start: BoardCoord(start),
+        end: BoardCoord(IVec2::new(-1, 0)),
         is_capture: false,
         board_size: size,
         pieces: &pieces,
@@ -83,8 +83,8 @@ fn test_pawn_movement() {
     }));
     assert!(is_valid_move(MoveValidationParams {
         piece_config: &config,
-        start,
-        end: IVec2::new(1, 0),
+        start: BoardCoord(start),
+        end: BoardCoord(IVec2::new(1, 0)),
         is_capture: false,
         board_size: size,
         pieces: &pieces,
@@ -94,8 +94,8 @@ fn test_pawn_movement() {
     // Diagonal movement NOT allowed without capture
     assert!(!is_valid_move(MoveValidationParams {
         piece_config: &config,
-        start,
-        end: IVec2::new(1, 1),
+        start: BoardCoord(start),
+        end: BoardCoord(IVec2::new(1, 1)),
         is_capture: false,
         board_size: size,
         pieces: &pieces,
@@ -105,8 +105,8 @@ fn test_pawn_movement() {
     // Multi-directional captures (diagonal only) - should fail because target is empty
     assert!(!is_valid_move(MoveValidationParams {
         piece_config: &config,
-        start,
-        end: IVec2::new(1, -1),
+        start: BoardCoord(start),
+        end: BoardCoord(IVec2::new(1, -1)),
         is_capture: true,
         board_size: size,
         pieces: &pieces,
@@ -114,8 +114,8 @@ fn test_pawn_movement() {
     }));
     assert!(!is_valid_move(MoveValidationParams {
         piece_config: &config,
-        start,
-        end: IVec2::new(-1, -1),
+        start: BoardCoord(start),
+        end: BoardCoord(IVec2::new(-1, -1)),
         is_capture: true,
         board_size: size,
         pieces: &pieces,
@@ -123,8 +123,8 @@ fn test_pawn_movement() {
     }));
     assert!(!is_valid_move(MoveValidationParams {
         piece_config: &config,
-        start,
-        end: IVec2::new(1, 1),
+        start: BoardCoord(start),
+        end: BoardCoord(IVec2::new(1, 1)),
         is_capture: true,
         board_size: size,
         pieces: &pieces,
@@ -132,8 +132,8 @@ fn test_pawn_movement() {
     }));
     assert!(!is_valid_move(MoveValidationParams {
         piece_config: &config,
-        start,
-        end: IVec2::new(-1, 1),
+        start: BoardCoord(start),
+        end: BoardCoord(IVec2::new(-1, 1)),
         is_capture: true,
         board_size: size,
         pieces: &pieces,
@@ -149,15 +149,15 @@ fn test_pawn_movement() {
             id: target_id,
             owner_id: Some(PlayerId::new()), // Different owner
             piece_type: PieceTypeId::from("pawn"),
-            position: IVec2::new(1, 1),
+            position: BoardCoord(IVec2::new(1, 1)),
             last_move_time: TimestampMs::from_millis(0),
             cooldown_ms: DurationMs::zero(),
         },
     );
     assert!(is_valid_move(MoveValidationParams {
         piece_config: &config,
-        start,
-        end: IVec2::new(1, 1),
+        start: BoardCoord(start),
+        end: BoardCoord(IVec2::new(1, 1)),
         is_capture: true,
         board_size: size,
         pieces: &pieces,
@@ -167,8 +167,8 @@ fn test_pawn_movement() {
     // Adjacent captures NOT allowed
     assert!(!is_valid_move(MoveValidationParams {
         piece_config: &config,
-        start,
-        end: IVec2::new(0, -1),
+        start: BoardCoord(start),
+        end: BoardCoord(IVec2::new(0, -1)),
         is_capture: true,
         board_size: size,
         pieces: &pieces,
@@ -189,7 +189,7 @@ fn test_path_blocking() {
             id: blocker_id,
             owner_id: Some(PlayerId::new()),
             piece_type: PieceTypeId::from("pawn"),
-            position: IVec2::new(0, 1),
+            position: BoardCoord(IVec2::new(0, 1)),
             last_move_time: TimestampMs::from_millis(0),
             cooldown_ms: DurationMs::zero(),
         },
@@ -208,8 +208,8 @@ fn test_path_blocking() {
     // Blocked path
     assert!(!is_valid_move(MoveValidationParams {
         piece_config: &rook_config,
-        start,
-        end: IVec2::new(0, 2),
+        start: BoardCoord(start),
+        end: BoardCoord(IVec2::new(0, 2)),
         is_capture: false,
         board_size: size,
         pieces: &pieces,
@@ -218,8 +218,8 @@ fn test_path_blocking() {
     // Not blocked
     assert!(is_valid_move(MoveValidationParams {
         piece_config: &rook_config,
-        start,
-        end: IVec2::new(0, 1),
+        start: BoardCoord(start),
+        end: BoardCoord(IVec2::new(0, 1)),
         is_capture: true,
         board_size: size,
         pieces: &pieces,
@@ -257,7 +257,7 @@ fn test_select_shop_group_by_piece_type() {
         id: PieceId::new(),
         owner_id: Some(PlayerId::new()),
         piece_type: pawn_id,
-        position: IVec2::new(0, 0),
+        position: BoardCoord(IVec2::new(0, 0)),
         last_move_time: TimestampMs::from_millis(0),
         cooldown_ms: DurationMs::zero(),
     };

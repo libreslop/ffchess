@@ -6,7 +6,6 @@ use crate::types::{
     BoardCoord, BoardSize, KitId, PieceId, PieceTypeId, PlayerCount, PlayerId, QueuePosition,
     Score, SessionSecret, ShopId, TimestampMs,
 };
-use glam::IVec2;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 

@@ -4,7 +4,7 @@
 mod tests {
     use common::models::Piece;
     use common::protocol::ServerMessage;
-    use common::types::{DurationMs, KitId, ModeId, PieceId, PieceTypeId, Score, TimestampMs};
+    use common::types::{BoardCoord, DurationMs, KitId, ModeId, PieceId, PieceTypeId, Score, TimestampMs};
     use glam::IVec2;
     use server::state::ServerState;
     use server::time::now_ms;
@@ -107,7 +107,7 @@ mod tests {
                     id: q_id,
                     owner_id: Some(p2_id),
                     piece_type: PieceTypeId::from("queen"),
-                    position: IVec2::new(10, 10),
+                    position: BoardCoord(IVec2::new(10, 10)),
                     last_move_time: TimestampMs::from_millis(0),
                     cooldown_ms: DurationMs::zero(),
                 },
@@ -118,13 +118,13 @@ mod tests {
         // Move P1 king to (11, 11) and P2 queen to (10, 10)
         {
             let mut game = instance.game.write().await;
-            game.pieces.get_mut(&p1_king_id).unwrap().position = IVec2::new(11, 11);
-            game.pieces.get_mut(&p2_queen_id).unwrap().position = IVec2::new(10, 10);
+            game.pieces.get_mut(&p1_king_id).unwrap().position = BoardCoord(IVec2::new(11, 11));
+            game.pieces.get_mut(&p2_queen_id).unwrap().position = BoardCoord(IVec2::new(10, 10));
         }
 
         // P2 Queen captures P1 King
         instance
-            .handle_move(p2_id, p2_queen_id, IVec2::new(11, 11))
+            .handle_move(p2_id, p2_queen_id, BoardCoord(IVec2::new(11, 11)))
             .await
             .unwrap();
 
@@ -213,12 +213,12 @@ mod tests {
                 .retain(|id, _| *id == p1_king_id || *id == p2_king_id);
 
             let p1_king = game.pieces.get_mut(&p1_king_id).unwrap();
-            p1_king.position = IVec2::new(1, 1);
+            p1_king.position = BoardCoord(IVec2::new(1, 1));
             p1_king.last_move_time = TimestampMs::from_millis(0);
             p1_king.cooldown_ms = DurationMs::zero();
 
             let p2_king = game.pieces.get_mut(&p2_king_id).unwrap();
-            p2_king.position = IVec2::new(0, 0);
+            p2_king.position = BoardCoord(IVec2::new(0, 0));
             p2_king.last_move_time = TimestampMs::from_millis(0);
             p2_king.cooldown_ms = DurationMs::zero();
 
@@ -226,7 +226,7 @@ mod tests {
         };
 
         instance
-            .handle_move(p2_id, p2_king_id, IVec2::new(1, 1))
+            .handle_move(p2_id, p2_king_id, BoardCoord(IVec2::new(1, 1)))
             .await
             .expect("Capture should succeed");
 
@@ -263,13 +263,13 @@ mod tests {
             game.pieces.retain(|id, _| *id == king_id);
 
             let king = game.pieces.get_mut(&king_id).expect("king exists");
-            king.position = IVec2::new(0, 0);
+            king.position = BoardCoord(IVec2::new(0, 0));
             king.last_move_time = now_ms();
             king.cooldown_ms = DurationMs::from_millis(10_000);
             (king_id, king.position)
         };
 
-        let target = start_position + IVec2::new(1, 0);
+        let target = BoardCoord(start_position.0 + IVec2::new(1, 0));
         instance
             .handle_move(player_id, king_id, target)
             .await
@@ -318,14 +318,14 @@ mod tests {
             game.pieces.retain(|id, _| *id == king_id);
 
             let king = game.pieces.get_mut(&king_id).expect("king exists");
-            king.position = IVec2::new(0, 0);
+            king.position = BoardCoord(IVec2::new(0, 0));
             king.last_move_time = now_ms();
             king.cooldown_ms = DurationMs::from_millis(10_000);
             king_id
         };
 
-        let first_target = IVec2::new(1, 0);
-        let second_target = IVec2::new(2, 0);
+        let first_target = BoardCoord(IVec2::new(1, 0));
+        let second_target = BoardCoord(IVec2::new(2, 0));
 
         instance
             .handle_move(player_id, king_id, first_target)
@@ -390,13 +390,13 @@ mod tests {
             game.pieces.retain(|id, _| *id == king_id);
 
             let king = game.pieces.get_mut(&king_id).expect("king exists");
-            king.position = IVec2::new(0, 0);
+            king.position = BoardCoord(IVec2::new(0, 0));
             king.last_move_time = now_ms();
             king.cooldown_ms = DurationMs::from_millis(10_000);
             king_id
         };
 
-        let target = IVec2::new(1, 0);
+        let target = BoardCoord(IVec2::new(1, 0));
         instance
             .handle_move(player_id, king_id, target)
             .await
@@ -418,7 +418,7 @@ mod tests {
         let game = instance.game.read().await;
         assert_eq!(
             game.pieces.get(&king_id).expect("king exists").position,
-            IVec2::new(0, 0)
+            BoardCoord(IVec2::new(0, 0))
         );
     }
 }

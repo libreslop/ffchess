@@ -1,4 +1,4 @@
-use crate::types::{DurationMs, ExprString, KitId, ModeId, PlayerCount, Score};
+use crate::types::{DurationMs, ExprString, KitId, ModeId, PlayerCount};
 use serde::{Deserialize, Serialize};
 
 /// Minimal kit info sent to clients.
