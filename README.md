@@ -1,70 +1,54 @@
-# FFchess (MMO battle chess)
+# ffchess - Multi-Player Multi-Piece Chess
 
-Command your army in a real-time, multiplayer chess world. Scale the board, capture territory, and outmaneuver opponents in a data-driven battlefield.
+**ffchess** is a fast-paced, multi-player, data-driven chess variant. Unlike traditional chess, this game features a dynamic, resizing board where players can bring their own starting kits, capture NPCs to earn score, and buy new pieces or upgrades from interactive shops.
 
-## Features
-- Dynamic board sizing per mode using expressions (typically keyed off `player_count`).
-- Config-driven pieces, shops, and kits (JSONC in `config/`).
-- Per-piece cooldowns defined by piece config; client predicts cooldown locally and server validates.
-- King-centric elimination: lose your King, lose your army.
-- Fog-of-war radius and camera limits driven by mode config (client-side rendering today).
-- Shop economy for recruiting and upgrading pieces, with per-piece shop groups.
-- Mode list and mode switching without a page reload (hash-based mode selection).
-- NPCs with expression-based spawn limits; server pauses NPC ticks when no players are viewing for ~5 seconds.
-- Session secrets to prevent player ID hijacking on rejoin.
+## Key Features
 
-## Tech Stack
-- Backend: Rust, Axum, WebSockets, Tokio.
-- Frontend: Rust, Yew, WebAssembly, HTML5 Canvas.
-- Shared: `common` crate with types, protocol, and gameplay logic.
+-   **Multi-Player Sandbox**: Play with up to 20+ players on a single, shared board.
+-   **Dynamic Board Size**: The world expands and contracts based on the number of active players.
+-   **Data-Driven Design**: Pieces, shops, and game modes are fully configurable via JSONC files.
+-   **Real-Time Combat**: Pieces move on independent cooldowns—no more waiting for turns!
+-   **In-Game Economy**: Capture pieces to gain score, then visit shops to recruit new units or upgrade existing ones.
+-   **Customizable Hooks**: Game modes can define custom triggers, such as "Eliminate owner on King capture."
+-   **NPC AI**: Autonomous pieces roam the board, providing constant interaction even in low-population games.
 
-## How to Run
+## Technology Stack
+
+-   **Server**: Built with **Rust** using `tokio` for high-performance asynchronous networking and state management.
+-   **Client**: A high-performance **WebAssembly** application built with Rust and `yew`/`gloo`.
+-   **Common**: Shared logic and protocols between client and server, ensuring a single source of truth for movement rules and data models.
+-   **Communication**: Real-time communication via **WebSockets** with a custom JSON-based protocol.
+
+## Getting Started
 
 ### Prerequisites
-- Rust (latest stable)
-- Trunk (for the frontend)
-- `wasm32-unknown-unknown` target: `rustup target add wasm32-unknown-unknown`
 
-### 1. Build the Client
-```bash
-cd client
-trunk build
-cd ..
-```
+-   [Rust](https://www.rust-lang.org/tools/install) (latest stable version)
+-   [Trunk](https://trunkrs.dev/) (for building the WebAssembly client)
 
-### 2. Start the Server
-```bash
-cargo run -p server
-```
-The server starts on `0.0.0.0:8080` by default and serves `client/dist` (resolved via a small path helper).
+### Build and Run
 
-Override the port:
-```bash
-PORT=3000 cargo run -p server
-```
+1.  **Build the Client**:
+    ```bash
+    cd client
+    trunk build --release
+    cd ..
+    ```
+    This compiles the Rust client to WebAssembly and places the static assets in `client/dist`.
 
-### 3. Development Mode (Hot Reload)
-```bash
-cd client
-trunk serve
-```
-Then run the server in a separate terminal. The client runs on `localhost:8081` and proxies API requests to `localhost:8080`.
+2.  **Run the Server**:
+    ```bash
+    cargo run -p server --release
+    ```
+    The server will start at `http://localhost:3000` (by default), serving both the WebSocket API and the static client files from the `dist` directory.
 
-## Configuration Overview
-- Global server config: `config/global/server.jsonc` (default name pool).
-- Global client config: `config/global/client.jsonc` (render/heartbeat intervals, camera tuning, UI timings).
-- Modes: `config/modes/*.jsonc` (board size, fog radius, respawn cooldown, kits, shop counts, NPC limits).
-- Pieces: `config/pieces/*.jsonc` (move/capture paths, cooldowns, score values, glyphs).
-- Shops: `config/shops/*.jsonc` (item groups, price expressions, add/replace pieces).
+## Documentation
 
-## Testing
-- Full workspace tests:
-  ```bash
-  cargo test --workspace
-  ```
-- Linting:
-  ```bash
-  cargo check --workspace
-  cargo clippy -p server
-  cargo clippy -p client
-  ```
+Comprehensive documentation for all project systems can be found in the [`docs/`](docs/README.md) folder:
+
+-   [**Configuration Guide**](docs/README.md#configuration-guide): How to define pieces, shops, and modes.
+-   [**Logic and Flow**](docs/README.md#logic-and-flow): Detailed technical descriptions of the game loop, movement, and NPC AI.
+
+## License
+
+AGPLv3
