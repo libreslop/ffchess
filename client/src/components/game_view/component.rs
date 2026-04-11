@@ -391,10 +391,10 @@ pub fn game_view(props: &GameViewProps) -> Html {
 
                         let progress = ((now - anim.started_at) / MOVE_ANIM_MS).clamp(0.0, 1.0);
                         if progress < 1.0 {
-                            let x =
-                                anim.start.0.x as f64 + (anim.end.0.x - anim.start.0.x) as f64 * progress;
-                            let y =
-                                anim.start.0.y as f64 + (anim.end.0.y - anim.start.0.y) as f64 * progress;
+                            let x = anim.start.0.x as f64
+                                + (anim.end.0.x - anim.start.0.x) as f64 * progress;
+                            let y = anim.start.0.y as f64
+                                + (anim.end.0.y - anim.start.0.y) as f64 * progress;
                             animated_positions.insert(*id, vec2(x, y));
                             true
                         } else {

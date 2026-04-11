@@ -22,6 +22,7 @@ impl GameInstance {
         let last_viewed = *self.last_viewed_at.read().await;
         if now - last_viewed < DurationMs::from_millis(5000) {
             self.process_queued_moves().await;
+            self.spawn_npcs().await;
             self.tick_npcs().await;
         }
 

@@ -4,7 +4,6 @@ use super::GameInstance;
 use common::models::Shop;
 use common::protocol::GameError;
 use common::types::{BoardCoord, DurationMs, PieceId, PlayerId, Score, TimestampMs};
-use glam::IVec2;
 
 impl GameInstance {
     /// Processes a purchase at a shop and applies its effects.
@@ -93,7 +92,8 @@ impl GameInstance {
 
         for add_type in &item.add_pieces {
             let p_id = PieceId::new();
-            let Some(p_pos) = crate::spawning::find_adjacent_free_pos(&game, shop_pos.into()) else {
+            let Some(p_pos) = crate::spawning::find_adjacent_free_pos(&game, shop_pos.into())
+            else {
                 return Err(GameError::NoSpaceNearby);
             };
 

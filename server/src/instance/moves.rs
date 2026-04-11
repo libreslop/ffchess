@@ -5,7 +5,6 @@ use crate::time::now_ms;
 use common::models::GameState;
 use common::protocol::{GameError, ServerMessage};
 use common::types::{BoardCoord, PieceId, PlayerId};
-use glam::IVec2;
 
 impl GameInstance {
     /// Validates and applies a move for a player's piece.

@@ -7,9 +7,9 @@ use crate::types::ConnectionId;
 use common::models::{GameModeConfig, GameState, PieceConfig, ShopConfig};
 use common::protocol::{GameError, ServerMessage, VictoryFocusTarget};
 use common::types::{
-    BoardCoord, ModeId, PieceId, PieceTypeId, PlayerCount, PlayerId, SessionSecret, ShopId, TimestampMs,
+    BoardCoord, ModeId, PieceId, PieceTypeId, PlayerCount, PlayerId, SessionSecret, ShopId,
+    TimestampMs,
 };
-use glam::IVec2;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use tokio::sync::{RwLock, mpsc};

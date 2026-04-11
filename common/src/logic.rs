@@ -1,9 +1,7 @@
 //! Shared rule helpers for move validation, board sizing, and shop pricing.
 
 use crate::models::{GameModeConfig, Piece, PieceConfig, ShopConfig, ShopGroupConfig};
-use crate::types::{
-    BoardCoord, BoardSize, DurationMs, ExprString, PieceId, PieceTypeId, PlayerId,
-};
+use crate::types::{BoardCoord, BoardSize, DurationMs, ExprString, PieceId, PieceTypeId, PlayerId};
 use glam::IVec2;
 use std::collections::HashMap;
 

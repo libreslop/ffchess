@@ -4,7 +4,7 @@ use super::GameInstance;
 use crate::time::now_ms;
 use common::logic::MoveValidationParams;
 use common::models::{GameState, Piece, PieceConfig};
-use common::types::{BoardSize, DurationMs, PieceId, PieceTypeId, TimestampMs, BoardCoord};
+use common::types::{BoardCoord, BoardSize, DurationMs, PieceId, PieceTypeId, TimestampMs};
 use glam::IVec2;
 use rand::Rng;
 
@@ -64,7 +64,11 @@ impl GameInstance {
         let board_size = game.board_size;
         let piece_ids: Vec<_> = game.pieces.keys().copied().collect();
         for piece_id in piece_ids {
-            let is_npc = game.pieces.get(&piece_id).map(|p| p.owner_id.is_none()).unwrap_or(false);
+            let is_npc = game
+                .pieces
+                .get(&piece_id)
+                .map(|p| p.owner_id.is_none())
+                .unwrap_or(false);
             if is_npc {
                 self.tick_npc(piece_id, now, board_size, &mut game).await;
             }
@@ -98,10 +102,12 @@ impl GameInstance {
             self.update_piece_motion(
                 piece_id,
                 npc_move.target,
+                npc_move.is_capture,
                 now,
                 piece_config,
                 game,
-            );
+            )
+            .await;
         }
     }
 
@@ -217,14 +223,19 @@ impl GameInstance {
     }
 
     /// Updates one piece's position and cooldown after a completed move.
-    fn update_piece_motion(
+    async fn update_piece_motion(
         &self,
         piece_id: PieceId,
         target: IVec2,
+        is_capture: bool,
         now: TimestampMs,
         piece_config: &PieceConfig,
         game: &mut GameState,
     ) {
+        if is_capture {
+            self.capture_piece_at(target, None, game).await;
+        }
+
         if let Some(piece) = game.pieces.get_mut(&piece_id) {
             piece.position = BoardCoord(target);
             piece.last_move_time = now;

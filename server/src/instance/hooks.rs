@@ -4,7 +4,6 @@ use super::GameInstance;
 use common::models::{GameState, HookConfig, HookVictoryFocus, SupportedHook};
 use common::protocol::VictoryFocusTarget;
 use common::types::{BoardCoord, PieceTypeId, PlayerId};
-use glam::IVec2;
 
 /// A captured piece event deferred until the end of a tick.
 #[derive(Debug, Clone)]

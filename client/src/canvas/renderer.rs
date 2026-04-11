@@ -63,7 +63,9 @@ impl Renderer {
             .and_then(|p| state.pieces.get(&p.king_id));
 
         let has_king = player_king.is_some();
-        let king_pos = player_king.map(|k| k.position).unwrap_or(common::types::BoardCoord(IVec2::ZERO));
+        let king_pos = player_king
+            .map(|k| k.position)
+            .unwrap_or(common::types::BoardCoord(IVec2::ZERO));
         let piece_count = state
             .pieces
             .values()
@@ -314,7 +316,8 @@ impl Renderer {
                                 pos_override: None,
                                 tile_size_px,
                                 clock_offset_ms,
-                                },                            zoom,
+                            },
+                            zoom,
                         );
 
                         // Draw real (server) piece solid
@@ -331,7 +334,8 @@ impl Renderer {
                                 pos_override,
                                 tile_size_px,
                                 clock_offset_ms,
-                                },                            zoom,
+                            },
+                            zoom,
                         );
                     } else {
                         // Piece is not moving or not ours
@@ -348,7 +352,8 @@ impl Renderer {
                                 pos_override,
                                 tile_size_px,
                                 clock_offset_ms,
-                                },                            zoom,
+                            },
+                            zoom,
                         );
                     }
                 }
