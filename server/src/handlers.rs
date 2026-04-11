@@ -130,7 +130,7 @@ async fn broadcast_queue_state(state: &Arc<ServerState>, mode_id: &ModeId) {
     };
     let queued_players = PlayerCount::new(entries.len() as u32);
     for (idx, entry) in entries.iter().enumerate() {
-        let _ = entry.tx().send(ServerMessage::QueueState {
+        let _ = entry.tx().try_send(ServerMessage::QueueState {
             position_in_queue: QueuePosition::new((idx + 1) as u32),
             queued_players,
             required_players,
@@ -153,7 +153,7 @@ async fn handle_socket(socket: WebSocket, mode_id: ModeId, state: Arc<ServerStat
     let is_queue_mode = state.queue_target_players(&mode_id).is_some();
 
     let (mut sender, mut receiver) = socket.split();
-    let (tx, mut rx) = mpsc::unbounded_channel::<ServerMessage>();
+    let (tx, mut rx) = mpsc::channel::<ServerMessage>(100);
 
     let send_task = tokio::spawn(async move {
         while let Some(msg) = rx.recv().await {
@@ -178,7 +178,14 @@ async fn handle_socket(socket: WebSocket, mode_id: ModeId, state: Arc<ServerStat
             .await;
     }
 
+    let mut last_message_at = crate::time::now_ms();
     while let Some(Ok(msg)) = receiver.next().await {
+        let now = crate::time::now_ms();
+        if now - last_message_at < common::types::DurationMs::from_millis(50) {
+            continue;
+        }
+        last_message_at = now;
+
         if let Message::Text(text) = msg {
             match serde_json::from_str::<ClientMessage>(&text) {
                 Ok(client_msg) => match client_msg {
@@ -189,6 +196,14 @@ async fn handle_socket(socket: WebSocket, mode_id: ModeId, state: Arc<ServerStat
                         session_secret: secret,
                     } => {
                         name = name.trim().to_string();
+                        if name.len() > 32 {
+                            let _ = tx.try_send(ServerMessage::Error(GameError::Custom {
+                                title: "Invalid Name".to_string(),
+                                message: "Name must be 32 characters or less".to_string(),
+                            }));
+                            continue;
+                        }
+
                         if name.is_empty() {
                             name = generate_name(&state);
                         }
@@ -242,7 +257,7 @@ async fn handle_socket(socket: WebSocket, mode_id: ModeId, state: Arc<ServerStat
                                                     .await;
                                             }
                                             Err(e) => {
-                                                let _ = tx.send(ServerMessage::Error(e));
+                                                let _ = tx.try_send(ServerMessage::Error(e));
                                             }
                                         }
                                     }
@@ -250,7 +265,7 @@ async fn handle_socket(socket: WebSocket, mode_id: ModeId, state: Arc<ServerStat
                                     broadcast_queue_state(&state, &mode_id).await;
                                 }
                                 None => {
-                                    let _ = tx.send(ServerMessage::Error(GameError::Internal(
+                                    let _ = tx.try_send(ServerMessage::Error(GameError::Internal(
                                         "Matchmaking mode is not configured".to_string(),
                                     )));
                                 }
@@ -261,7 +276,7 @@ async fn handle_socket(socket: WebSocket, mode_id: ModeId, state: Arc<ServerStat
                         if let Some(pid) = pid
                             && lobby_instance.has_active_player_session(pid).await
                         {
-                            let _ = tx.send(ServerMessage::Error(GameError::Custom {
+                            let _ = tx.try_send(ServerMessage::Error(GameError::Custom {
                                 title: "Duplicate Session".to_string(),
                                 message: "You are already playing in another tab".to_string(),
                             }));
@@ -284,7 +299,7 @@ async fn handle_socket(socket: WebSocket, mode_id: ModeId, state: Arc<ServerStat
                                     .await;
                             }
                             Err(e) => {
-                                let _ = tx.send(ServerMessage::Error(e));
+                                let _ = tx.try_send(ServerMessage::Error(e));
                                 lobby_instance
                                     .add_connection_channel(conn_id, tx.clone())
                                     .await;
@@ -326,7 +341,7 @@ async fn handle_socket(socket: WebSocket, mode_id: ModeId, state: Arc<ServerStat
                                 .handle_move(binding.player_id(), piece_id, target)
                                 .await
                         {
-                            let _ = tx.send(ServerMessage::Error(e));
+                            let _ = tx.try_send(ServerMessage::Error(e));
                         }
                     }
                     ClientMessage::BuyPiece {
@@ -339,7 +354,7 @@ async fn handle_socket(socket: WebSocket, mode_id: ModeId, state: Arc<ServerStat
                                 .handle_shop_buy(binding.player_id(), shop_pos, item_index)
                                 .await
                         {
-                            let _ = tx.send(ServerMessage::Error(e));
+                            let _ = tx.try_send(ServerMessage::Error(e));
                         }
                     }
                     ClientMessage::ClearPremoves { piece_id } => {
@@ -355,7 +370,7 @@ async fn handle_socket(socket: WebSocket, mode_id: ModeId, state: Arc<ServerStat
                         }
                     }
                     ClientMessage::Ping(t) => {
-                        let _ = tx.send(ServerMessage::Pong(t, crate::time::now_ms()));
+                        let _ = tx.try_send(ServerMessage::Pong(t, crate::time::now_ms()));
                     }
                 },
                 Err(e) => {

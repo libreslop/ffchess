@@ -21,12 +21,12 @@ pub async fn connect_ws(
     ws_url: String,
     mode_id: ModeId,
     listener_reducer_ref: Rc<RefCell<UseReducerHandle<GameStateReducer>>>,
-    current_ws_tx: Rc<RefCell<Option<mpsc::UnboundedSender<Message>>>>,
+    current_ws_tx: Rc<RefCell<Option<mpsc::Sender<Message>>>>,
 ) {
     loop {
         if let Ok(ws) = WebSocket::open(&ws_url) {
             let (mut write, mut read) = ws.split();
-            let (internal_tx, mut internal_rx) = mpsc::unbounded_channel::<Message>();
+            let (internal_tx, mut internal_rx) = mpsc::channel::<Message>(100);
             *current_ws_tx.borrow_mut() = Some(internal_tx);
 
             spawn_local(async move {

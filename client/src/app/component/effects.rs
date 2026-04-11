@@ -177,7 +177,7 @@ pub fn use_mode_url_navigation_effect(
                     || reducer.queue_status.is_some()
                     || reducer.active_player_id().is_some();
                 if should_leave && let Some(sender) = (*tx_ref.borrow()).as_ref() {
-                    let _ = sender.0.send(ClientMessage::Leave);
+                    let _ = sender.0.try_send(ClientMessage::Leave);
                 }
 
                 let window = web_sys::window().unwrap();
@@ -230,24 +230,22 @@ pub fn use_ws_connection_effect(
     let global_cfg = global_cfg.clone();
     use_effect_with((*current_mode_id).clone(), move |mode_id| {
         reducer_ref.borrow().clone().dispatch(GameAction::Reset);
-        let (client_tx, mut client_rx) = mpsc::unbounded_channel::<ClientMessage>();
+        let (client_tx, mut client_rx) = mpsc::channel::<ClientMessage>(100);
         let sender = MsgSender(client_tx);
         tx_handle.set(Some(sender.clone()));
 
         let ping_sender = sender.clone();
         let _ = ping_sender
             .0
-            .send(ClientMessage::Ping(js_sys::Date::now() as u64));
+            .try_send(ClientMessage::Ping(js_sys::Date::now() as u64));
         let ping_interval_ms = global_cfg.ping_interval_ms.max(500);
         let ping_interval = Interval::new(ping_interval_ms, move || {
             let now = js_sys::Date::now() as u64;
-            let _ = ping_sender.0.send(ClientMessage::Ping(now));
+            let _ = ping_sender.0.try_send(ClientMessage::Ping(now));
         });
 
         let listener_reducer_ref = reducer_ref.clone();
-        let current_ws_tx = Rc::new(std::cell::RefCell::new(
-            None::<mpsc::UnboundedSender<Message>>,
-        ));
+        let current_ws_tx = Rc::new(std::cell::RefCell::new(None::<mpsc::Sender<Message>>));
 
         let sender_ws_tx = current_ws_tx.clone();
         let sender_reducer_ref = reducer_ref.clone();
@@ -257,7 +255,7 @@ pub fn use_ws_connection_effect(
                 let current_reducer = sender_reducer_ref.borrow().clone();
                 if let Some(tx) = maybe_tx {
                     if tx
-                        .send(Message::Text(serde_json::to_string(&msg).unwrap()))
+                        .try_send(Message::Text(serde_json::to_string(&msg).unwrap()))
                         .is_err()
                         && !current_reducer.disconnected
                         && !current_reducer.fatal_error
@@ -444,7 +442,7 @@ pub fn use_preview_default_effect(
                     return;
                 }
                 *last_sent = Some(should_force);
-                let _ = sender.0.send(ClientMessage::SetPreviewDefault {
+                let _ = sender.0.try_send(ClientMessage::SetPreviewDefault {
                     enabled: should_force,
                 });
             }

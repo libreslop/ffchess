@@ -17,7 +17,7 @@ impl GameInstance {
         &self,
         name: String,
         kit_name: KitId,
-        tx: mpsc::UnboundedSender<ServerMessage>,
+        tx: mpsc::Sender<ServerMessage>,
         pid: Option<PlayerId>,
         provided_secret: Option<SessionSecret>,
     ) -> Result<(PlayerId, SessionSecret), GameError> {
@@ -31,25 +31,26 @@ impl GameInstance {
             return Err(GameError::Internal("Kit missing king piece".to_string()));
         }
 
+        let now = now_ms();
         let player_id = pid.unwrap_or_default();
 
         let mut secrets = self.session_secrets.write().await;
-        let session_secret = if let Some(stored_secret) = secrets.get(&player_id) {
+        let session_secret = if let Some((stored_secret, last_use)) = secrets.get_mut(&player_id) {
             if Some(*stored_secret) != provided_secret {
                 return Err(GameError::Custom {
                     title: "SESSION ERROR".to_string(),
                     message: "Invalid session secret for this player ID.".to_string(),
                 });
             }
+            *last_use = now;
             *stored_secret
         } else {
             let new_secret = SessionSecret::new();
-            secrets.insert(player_id, new_secret);
+            secrets.insert(player_id, (new_secret, now));
             new_secret
         };
         drop(secrets);
 
-        let now = now_ms();
         let respawn_ms = self.mode_config.respawn_cooldown_ms;
         if respawn_ms > DurationMs::zero() {
             let deaths = self.death_timestamps.read().await;
@@ -181,6 +182,10 @@ impl GameInstance {
     ///
     /// `player_id` identifies the player to remove. Returns nothing.
     pub async fn remove_player(&self, player_id: PlayerId) {
+        self.remove_player_locked(player_id).await;
+    }
+
+    async fn remove_player_locked(&self, player_id: PlayerId) {
         let stats = {
             let game = self.game.read().await;
             game.players
@@ -193,7 +198,7 @@ impl GameInstance {
             let duration = (now_ms - join_time).as_u64() / 1000;
             let channels = self.player_channels.read().await;
             if let Some(tx) = channels.get(&player_id) {
-                let _ = tx.send(ServerMessage::GameOver {
+                let _ = tx.try_send(ServerMessage::GameOver {
                     final_score: score,
                     kills,
                     pieces_captured,
@@ -202,11 +207,40 @@ impl GameInstance {
             }
         }
 
-        let mut game = self.game.write().await;
-        self.player_channels.write().await.remove(&player_id);
-        self.victory_players.write().await.remove(&player_id);
-        if self.remove_player_state(player_id, &mut game).await {
-            self.record_player_leave_event().await;
+        let (_removed, removed_piece_ids) = {
+            let mut game = self.game.write().await;
+            self.player_channels.write().await.remove(&player_id);
+            let (removed_internal, pieces) = self.remove_player_state(player_id, &mut game).await;
+            if removed_internal {
+                self.record_player_leave_event().await;
+            }
+            (removed_internal, pieces)
+        };
+
+        if !removed_piece_ids.is_empty() {
+            let mut queued_moves = self.queued_moves.write().await;
+            for piece_id in removed_piece_ids {
+                queued_moves.remove(&piece_id);
+            }
+        }
+    }
+
+    /// Removes a player from the game without locking player_channels (caller must hold it).
+    pub(super) async fn remove_player_only_state(&self, player_id: PlayerId) {
+        let (_removed, removed_piece_ids) = {
+            let mut game = self.game.write().await;
+            let (removed_internal, pieces) = self.remove_player_state(player_id, &mut game).await;
+            if removed_internal {
+                self.record_player_leave_event().await;
+            }
+            (removed_internal, pieces)
+        };
+
+        if !removed_piece_ids.is_empty() {
+            let mut queued_moves = self.queued_moves.write().await;
+            for piece_id in removed_piece_ids {
+                queued_moves.remove(&piece_id);
+            }
         }
     }
 
@@ -214,11 +248,21 @@ impl GameInstance {
     ///
     /// Used when a player is leaving via the join flow.
     pub async fn detach_player(&self, player_id: PlayerId) {
-        let mut game = self.game.write().await;
-        self.player_channels.write().await.remove(&player_id);
-        self.victory_players.write().await.remove(&player_id);
-        if self.remove_player_state(player_id, &mut game).await {
-            self.record_player_leave_event().await;
+        let (_removed, removed_piece_ids) = {
+            let mut game = self.game.write().await;
+            self.player_channels.write().await.remove(&player_id);
+            let (removed_internal, pieces) = self.remove_player_state(player_id, &mut game).await;
+            if removed_internal {
+                self.record_player_leave_event().await;
+            }
+            (removed_internal, pieces)
+        };
+
+        if !removed_piece_ids.is_empty() {
+            let mut queued_moves = self.queued_moves.write().await;
+            for piece_id in removed_piece_ids {
+                queued_moves.remove(&piece_id);
+            }
         }
     }
 
@@ -229,9 +273,9 @@ impl GameInstance {
         &self,
         player_id: PlayerId,
         game: &mut GameState,
-    ) -> bool {
+    ) -> (bool, Vec<PieceId>) {
         if game.players.remove(&player_id).is_none() {
-            return false;
+            return (false, Vec::new());
         }
 
         self.victory_players.write().await.remove(&player_id);
@@ -240,25 +284,19 @@ impl GameInstance {
             .write()
             .await
             .insert(player_id, now_ms());
-        let mut rp = self.removed_pieces.write().await;
+        let mut _rp = self.removed_pieces.write().await;
         let mut removed_piece_ids = Vec::new();
         game.pieces.retain(|id, p| {
             if p.owner_id == Some(player_id) {
-                rp.push(*id);
+                _rp.push(*id);
                 removed_piece_ids.push(*id);
                 false
             } else {
                 true
             }
         });
-        drop(rp);
+        drop(_rp);
 
-        if !removed_piece_ids.is_empty() {
-            let mut queued_moves = self.queued_moves.write().await;
-            for piece_id in removed_piece_ids {
-                queued_moves.remove(&piece_id);
-            }
-        }
-        true
+        (true, removed_piece_ids)
     }
 }

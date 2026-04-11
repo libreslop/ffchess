@@ -44,7 +44,7 @@ pub fn shop_ui(props: &ShopUIProps) -> Html {
                         let shop_pos = props.shop_pos;
                         let tx = props.tx.clone();
                         let on_buy = Callback::from(move |_| {
-                            let _ = tx.0.send(ClientMessage::BuyPiece {
+                            let _ = tx.0.try_send(ClientMessage::BuyPiece {
                                 shop_pos,
                                 item_index: idx,
                             });

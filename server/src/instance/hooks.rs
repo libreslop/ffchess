@@ -196,18 +196,18 @@ impl GameInstance {
             return;
         }
 
-        let mut game = self.game.write().await;
         let mut victory_message = None;
 
-        for hook in &self.mode_config.hooks {
-            if let Some(new_message) = self.apply_hook(hook, &hook_events, &mut game).await
-                && victory_message.is_none()
-            {
-                victory_message = Some(new_message);
+        {
+            let mut game = self.game.write().await;
+            for hook in &self.mode_config.hooks {
+                if let Some(new_message) = self.apply_hook(hook, &hook_events, &mut game).await
+                    && victory_message.is_none()
+                {
+                    victory_message = Some(new_message);
+                }
             }
         }
-
-        drop(game);
 
         if let Some(message) = victory_message {
             self.send_victory_to_player(
@@ -250,9 +250,21 @@ impl GameInstance {
         hook_events: &TickHookEvents,
         game: &mut GameState,
     ) {
+        let mut all_removed_piece_ids = Vec::new();
         for player_id in hook_events.captured_players(hook) {
             if game.players.contains_key(&player_id) {
-                self.remove_player_state(player_id, game).await;
+                let (removed, piece_ids) = self.remove_player_state(player_id, game).await;
+                if removed {
+                    self.record_player_leave_event().await;
+                    all_removed_piece_ids.extend(piece_ids);
+                }
+            }
+        }
+
+        if !all_removed_piece_ids.is_empty() {
+            let mut queued_moves = self.queued_moves.write().await;
+            for piece_id in all_removed_piece_ids {
+                queued_moves.remove(&piece_id);
             }
         }
     }

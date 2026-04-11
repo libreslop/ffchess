@@ -27,9 +27,9 @@ pub struct GameInstance {
     pub(super) piece_configs: Arc<HashMap<PieceTypeId, PieceConfig>>,
     pub(super) shop_configs: Arc<HashMap<ShopId, ShopConfig>>,
     pub game: RwLock<GameState>,
-    pub connection_channels: RwLock<HashMap<ConnectionId, mpsc::UnboundedSender<ServerMessage>>>,
-    pub player_channels: RwLock<HashMap<PlayerId, mpsc::UnboundedSender<ServerMessage>>>,
-    pub session_secrets: RwLock<HashMap<PlayerId, SessionSecret>>,
+    pub connection_channels: RwLock<HashMap<ConnectionId, mpsc::Sender<ServerMessage>>>,
+    pub player_channels: RwLock<HashMap<PlayerId, mpsc::Sender<ServerMessage>>>,
+    pub session_secrets: RwLock<HashMap<PlayerId, (SessionSecret, TimestampMs)>>,
     pub victory_players: RwLock<HashSet<PlayerId>>,
     pub removed_pieces: RwLock<Vec<PieceId>>,
     pub removed_players: RwLock<Vec<PlayerId>>,
@@ -93,7 +93,7 @@ impl GameInstance {
     pub async fn add_connection_channel(
         &self,
         conn_id: ConnectionId,
-        tx: mpsc::UnboundedSender<ServerMessage>,
+        tx: mpsc::Sender<ServerMessage>,
     ) {
         self.connection_channels.write().await.insert(conn_id, tx);
     }
@@ -137,7 +137,7 @@ impl GameInstance {
     pub async fn send_custom_to_player(&self, player_id: PlayerId, title: String, message: String) {
         let channels = self.player_channels.read().await;
         if let Some(tx) = channels.get(&player_id) {
-            let _ = tx.send(ServerMessage::Error(GameError::Custom { title, message }));
+            let _ = tx.try_send(ServerMessage::Error(GameError::Custom { title, message }));
         }
     }
 
@@ -152,7 +152,7 @@ impl GameInstance {
         self.victory_players.write().await.insert(player_id);
         let channels = self.player_channels.read().await;
         if let Some(tx) = channels.get(&player_id) {
-            let _ = tx.send(ServerMessage::Victory {
+            let _ = tx.try_send(ServerMessage::Victory {
                 title,
                 message,
                 focus_target,
@@ -202,10 +202,26 @@ impl GameInstance {
     ///
     /// `msg` is cloned per recipient. Returns nothing.
     pub async fn broadcast(&self, msg: ServerMessage) {
-        let player_channels = self.player_channels.read().await;
-        let connection_channels = self.connection_channels.read().await;
-        for tx in player_channels.values().chain(connection_channels.values()) {
-            let _ = tx.send(msg.clone());
+        let mut to_remove_players = Vec::new();
+        {
+            let mut player_channels = self.player_channels.write().await;
+            player_channels.retain(|id, tx| {
+                if tx.try_send(msg.clone()).is_err() {
+                    to_remove_players.push(*id);
+                    false
+                } else {
+                    true
+                }
+            });
+        }
+
+        for player_id in to_remove_players {
+            self.remove_player_only_state(player_id).await;
+        }
+
+        {
+            let mut connection_channels = self.connection_channels.write().await;
+            connection_channels.retain(|_, tx| tx.try_send(msg.clone()).is_ok());
         }
     }
 

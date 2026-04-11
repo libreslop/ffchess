@@ -36,6 +36,10 @@ impl GameInstance {
                 now - *timestamp_ms <= DurationMs::from_millis(10 * 60 * 1000)
             });
 
+            // Cleanup session secrets (older than 5 minutes)
+            let mut ss = self.session_secrets.write().await;
+            ss.retain(|_, (_, last_use)| now - *last_use <= DurationMs::from_millis(5 * 60 * 1000));
+
             let mut cm = self.color_manager.write().await;
             cm.cleanup(now.as_i64() / 1000, 24 * 60 * 60);
         }
@@ -75,15 +79,17 @@ impl GameInstance {
             std::mem::take(&mut *rp)
         };
 
-        let game = self.game.read().await;
-        self.broadcast(ServerMessage::UpdateState {
-            players: game.players.values().cloned().collect(),
-            pieces: game.pieces.values().cloned().collect(),
-            shops: game.shops.clone(),
-            removed_pieces,
-            removed_players,
-            board_size: game.board_size,
-        })
-        .await;
+        let update_msg = {
+            let game = self.game.read().await;
+            ServerMessage::UpdateState {
+                players: game.players.values().cloned().collect(),
+                pieces: game.pieces.values().cloned().collect(),
+                shops: game.shops.clone(),
+                removed_pieces,
+                removed_players,
+                board_size: game.board_size,
+            }
+        };
+        self.broadcast(update_msg).await;
     }
 }

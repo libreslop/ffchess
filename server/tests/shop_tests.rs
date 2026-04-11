@@ -88,7 +88,7 @@ async fn shop_purchase_deducts_score_and_adds_piece() {
         Arc::new(HashMap::from([(shop_id.clone(), shop_config.clone())])),
     );
 
-    let (tx, _) = mpsc::unbounded_channel();
+    let (tx, _) = mpsc::channel(100);
     let (player_id, _) = instance
         .add_player("Tester".to_string(), KitId::from("basic"), tx, None, None)
         .await

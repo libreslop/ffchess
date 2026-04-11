@@ -13,7 +13,7 @@ use uuid::Uuid;
 #[derive(Clone)]
 pub struct MatchQueueEntry {
     conn_id: ConnectionId,
-    tx: mpsc::UnboundedSender<ServerMessage>,
+    tx: mpsc::Sender<ServerMessage>,
     name: String,
     kit_name: KitId,
 }
@@ -22,7 +22,7 @@ impl MatchQueueEntry {
     /// Creates a new matchmaking queue entry.
     pub fn new(
         conn_id: ConnectionId,
-        tx: mpsc::UnboundedSender<ServerMessage>,
+        tx: mpsc::Sender<ServerMessage>,
         name: String,
         kit_name: KitId,
     ) -> Self {
@@ -40,7 +40,7 @@ impl MatchQueueEntry {
     }
 
     /// Returns the channel sender for this queued client.
-    pub fn tx(&self) -> &mpsc::UnboundedSender<ServerMessage> {
+    pub fn tx(&self) -> &mpsc::Sender<ServerMessage> {
         &self.tx
     }
 
@@ -55,14 +55,7 @@ impl MatchQueueEntry {
     }
 
     /// Consumes the entry into its owned components.
-    pub fn into_parts(
-        self,
-    ) -> (
-        ConnectionId,
-        mpsc::UnboundedSender<ServerMessage>,
-        String,
-        KitId,
-    ) {
+    pub fn into_parts(self) -> (ConnectionId, mpsc::Sender<ServerMessage>, String, KitId) {
         (self.conn_id, self.tx, self.name, self.kit_name)
     }
 }

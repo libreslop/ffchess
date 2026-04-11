@@ -31,7 +31,7 @@ impl ServerState {
     /// Sends an Init snapshot to a client with the public-mode identity.
     pub async fn send_init(
         &self,
-        tx: &tokio::sync::mpsc::UnboundedSender<ServerMessage>,
+        tx: &tokio::sync::mpsc::Sender<ServerMessage>,
         instance: &Arc<GameInstance>,
         player_id: PlayerId,
         session_secret: SessionSecret,
@@ -44,7 +44,7 @@ impl ServerState {
             .unwrap_or_else(|| instance.client_mode_config());
         let mut state = instance.game.read().await.clone();
         state.mode_id = instance.public_mode_id().clone();
-        let _ = tx.send(ServerMessage::Init {
+        let _ = tx.try_send(ServerMessage::Init {
             player_id,
             session_secret,
             state: Box::new(state),

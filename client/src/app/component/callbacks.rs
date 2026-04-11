@@ -67,7 +67,7 @@ pub fn build_on_join(
             is_joining.set(true);
             let stored_id = get_stored_id(&mode_id);
             let stored_secret = get_stored_secret(&mode_id);
-            let _ = sender.0.send(ClientMessage::Join {
+            let _ = sender.0.try_send(ClientMessage::Join {
                 name: (*player_name).clone(),
                 kit_name,
                 player_id: stored_id,

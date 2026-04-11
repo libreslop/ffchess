@@ -84,7 +84,7 @@ impl GameStateReducer {
 
 /// Channel sender wrapper for client messages.
 #[derive(Clone)]
-pub struct MsgSender(pub tokio::sync::mpsc::UnboundedSender<ClientMessage>);
+pub struct MsgSender(pub tokio::sync::mpsc::Sender<ClientMessage>);
 
 impl PartialEq for MsgSender {
     /// Treats all message senders as equal for Yew props diffing.

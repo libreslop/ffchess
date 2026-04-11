@@ -14,7 +14,7 @@ use tokio::sync::mpsc;
 pub(super) struct ModePreviewState {
     target_mode_id: Option<ModeId>,
     empty_since: Option<TimestampMs>,
-    watchers: HashMap<ConnectionId, mpsc::UnboundedSender<ServerMessage>>,
+    watchers: HashMap<ConnectionId, mpsc::Sender<ServerMessage>>,
     default_only: HashSet<ConnectionId>,
 }
 
@@ -45,7 +45,7 @@ impl ModePreviewState {
 
 /// Captures the state needed to evaluate a preview switch.
 struct PreviewSnapshot {
-    dynamic_watchers: HashMap<ConnectionId, mpsc::UnboundedSender<ServerMessage>>,
+    dynamic_watchers: HashMap<ConnectionId, mpsc::Sender<ServerMessage>>,
     target_mode_id: Option<ModeId>,
     empty_since: Option<TimestampMs>,
 }
@@ -78,7 +78,7 @@ impl ServerState {
         &self,
         mode_id: &ModeId,
         conn_id: ConnectionId,
-        tx: mpsc::UnboundedSender<ServerMessage>,
+        tx: mpsc::Sender<ServerMessage>,
     ) {
         let current_target = {
             let mut previews = self.preview_state.write().await;
@@ -120,7 +120,7 @@ impl ServerState {
         &self,
         mode_id: &ModeId,
         conn_id: ConnectionId,
-        tx: mpsc::UnboundedSender<ServerMessage>,
+        tx: mpsc::Sender<ServerMessage>,
     ) {
         let already_watching = {
             let previews = self.preview_state.read().await;
@@ -256,7 +256,7 @@ impl ServerState {
         &self,
         mode_id: &ModeId,
         conn_id: ConnectionId,
-        tx: mpsc::UnboundedSender<ServerMessage>,
+        tx: mpsc::Sender<ServerMessage>,
         enabled: bool,
     ) {
         if enabled && let Some(binding) = self.unbind_connection(conn_id).await {

@@ -660,7 +660,8 @@ pub fn game_view(props: &GameViewProps) -> Html {
             });
 
             if let Some(p) = actual_piece_at_target {
-                let _ = tx.0.send(ClientMessage::ClearPremoves { piece_id: p.id });
+                let _ =
+                    tx.0.try_send(ClientMessage::ClearPremoves { piece_id: p.id });
                 reducer.dispatch(GameAction::ClearPm(p.id));
                 if selected_id == Some(p.id) {
                     selected_piece_id.set(None);
@@ -702,7 +703,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
                                 moving_owner: p.owner_id,
                             })
                         {
-                            let _ = tx.0.send(ClientMessage::MovePiece {
+                            let _ = tx.0.try_send(ClientMessage::MovePiece {
                                 piece_id: sid,
                                 target: BoardCoord(target),
                             });

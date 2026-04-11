@@ -3,7 +3,8 @@
 use common::logic::{MoveValidationParams, is_valid_move, is_within_board};
 use common::models::{Piece, PieceConfig, ShopConfig, ShopGroupConfig, ShopItemConfig};
 use common::types::{
-    BoardCoord, BoardSize, DurationMs, ExprString, PieceId, PieceTypeId, PlayerId, Score, ShopId, TimestampMs,
+    BoardCoord, BoardSize, DurationMs, ExprString, PieceId, PieceTypeId, PlayerId, Score, ShopId,
+    TimestampMs,
 };
 use glam::IVec2;
 use std::collections::HashMap;

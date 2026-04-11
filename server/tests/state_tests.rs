@@ -4,7 +4,9 @@
 mod tests {
     use common::models::Piece;
     use common::protocol::ServerMessage;
-    use common::types::{BoardCoord, DurationMs, KitId, ModeId, PieceId, PieceTypeId, Score, TimestampMs};
+    use common::types::{
+        BoardCoord, DurationMs, KitId, ModeId, PieceId, PieceTypeId, Score, TimestampMs,
+    };
     use glam::IVec2;
     use server::state::ServerState;
     use server::time::now_ms;
@@ -18,7 +20,7 @@ mod tests {
             .get_joinable_game(&ModeId::from("ffa"))
             .await
             .expect("FFA game should exist");
-        let (tx, _) = mpsc::unbounded_channel();
+        let (tx, _) = mpsc::channel(100);
 
         let (p1, _) = instance
             .add_player(
@@ -69,26 +71,15 @@ mod tests {
             .get_joinable_game(&ModeId::from("ffa"))
             .await
             .expect("FFA game should exist");
-        let (tx, _) = mpsc::unbounded_channel();
+        let (tx1, _rx1) = mpsc::channel(100);
+        let (tx2, _rx2) = mpsc::channel(100);
 
         let (p1_id, _) = instance
-            .add_player(
-                "P1".to_string(),
-                KitId::from("Standard"),
-                tx.clone(),
-                None,
-                None,
-            )
+            .add_player("P1".to_string(), KitId::from("Standard"), tx1, None, None)
             .await
             .expect("Initial join should succeed");
         let (p2_id, _) = instance
-            .add_player(
-                "P2".to_string(),
-                KitId::from("Standard"),
-                tx.clone(),
-                None,
-                None,
-            )
+            .add_player("P2".to_string(), KitId::from("Standard"), tx2, None, None)
             .await
             .expect("Initial join should succeed");
 
@@ -154,8 +145,8 @@ mod tests {
             .get_joinable_game(&ModeId::from("duel"))
             .await
             .expect("Duel game should exist");
-        let (tx1, mut rx1) = mpsc::unbounded_channel();
-        let (tx2, mut rx2) = mpsc::unbounded_channel();
+        let (tx1, mut rx1) = mpsc::channel(100);
+        let (tx2, mut rx2) = mpsc::channel(100);
 
         let (p1_id, _) = instance
             .add_player("P1".to_string(), KitId::from("Standard"), tx1, None, None)
@@ -193,8 +184,8 @@ mod tests {
             .get_joinable_game(&ModeId::from("duel"))
             .await
             .expect("Duel game should exist");
-        let (tx1, _rx1) = mpsc::unbounded_channel();
-        let (tx2, mut rx2) = mpsc::unbounded_channel();
+        let (tx1, _rx1) = mpsc::channel(100);
+        let (tx2, mut rx2) = mpsc::channel(100);
 
         let (p1_id, _) = instance
             .add_player("P1".to_string(), KitId::from("Standard"), tx1, None, None)
@@ -250,7 +241,7 @@ mod tests {
             .get_joinable_game(&ModeId::from("duel"))
             .await
             .expect("Duel game should exist");
-        let (tx, _rx) = mpsc::unbounded_channel();
+        let (tx, _rx) = mpsc::channel(100);
 
         let (player_id, _) = instance
             .add_player("P1".to_string(), KitId::from("Standard"), tx, None, None)
@@ -305,7 +296,7 @@ mod tests {
             .get_joinable_game(&ModeId::from("duel"))
             .await
             .expect("Duel game should exist");
-        let (tx, _rx) = mpsc::unbounded_channel();
+        let (tx, _rx) = mpsc::channel(100);
 
         let (player_id, _) = instance
             .add_player("P1".to_string(), KitId::from("Standard"), tx, None, None)
@@ -377,7 +368,7 @@ mod tests {
             .get_joinable_game(&ModeId::from("duel"))
             .await
             .expect("Duel game should exist");
-        let (tx, _rx) = mpsc::unbounded_channel();
+        let (tx, _rx) = mpsc::channel(100);
 
         let (player_id, _) = instance
             .add_player("P1".to_string(), KitId::from("Standard"), tx, None, None)

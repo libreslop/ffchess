@@ -1,7 +1,9 @@
 //! Tests for spawn position helpers.
 
 use common::models::{GameState, Piece, Shop};
-use common::types::{BoardCoord, BoardSize, DurationMs, PieceId, PieceTypeId, PlayerId, ShopId, TimestampMs};
+use common::types::{
+    BoardCoord, BoardSize, DurationMs, PieceId, PieceTypeId, PlayerId, ShopId, TimestampMs,
+};
 use glam::IVec2;
 use rand::SeedableRng;
 use rand::rngs::StdRng;

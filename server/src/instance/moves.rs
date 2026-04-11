@@ -28,12 +28,11 @@ impl GameInstance {
         };
 
         if should_queue || self.piece_has_queued_moves(piece_id).await {
-            self.queued_moves
-                .write()
-                .await
-                .entry(piece_id)
-                .or_default()
-                .push_back(QueuedMoveRequest { player_id, target });
+            let mut queued_moves = self.queued_moves.write().await;
+            let queue = queued_moves.entry(piece_id).or_default();
+            if queue.len() < 100 {
+                queue.push_back(QueuedMoveRequest { player_id, target });
+            }
             return Ok(());
         }
 
@@ -93,7 +92,7 @@ impl GameInstance {
         let player_channels = self.player_channels.read().await;
         for (player_id, error) in move_errors {
             if let Some(tx) = player_channels.get(&player_id) {
-                let _ = tx.send(ServerMessage::Error(error));
+                let _ = tx.try_send(ServerMessage::Error(error));
             }
         }
     }
