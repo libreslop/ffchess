@@ -5,14 +5,6 @@ use common::models::{GameState, Piece};
 use common::types::{BoardCoord, PieceId};
 use std::collections::HashMap;
 
-/// Animation state for a piece transitioning between tiles.
-#[derive(Clone)]
-pub struct PieceAnim {
-    pub start: BoardCoord,
-    pub end: BoardCoord,
-    pub started_at: f64,
-}
-
 /// Duration of a single move animation in milliseconds.
 pub const MOVE_ANIM_MS: f64 = 200.0;
 
