@@ -84,6 +84,8 @@ impl QueuePresetPieceConfig {
 /// Piece placement set for a single queued player slot.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct QueuePresetPlayerConfig {
+    #[serde(default)]
+    pub board_rotation_deg: i32,
     pub pieces: Vec<QueuePresetPieceConfig>,
 }
 

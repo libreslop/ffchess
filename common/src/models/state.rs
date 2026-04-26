@@ -27,6 +27,8 @@ pub struct Player {
     pub join_time: TimestampMs,
     pub king_id: PieceId,
     pub color: ColorHex, // Hex color code
+    #[serde(default)]
+    pub board_rotation_deg: i32,
 }
 
 /// Shop state on the board.

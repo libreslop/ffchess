@@ -85,6 +85,7 @@ pub struct RenderParams<'a> {
     pub zoom: f64,
     pub tile_size_px: f64,
     pub mode: Option<&'a GameModeClientConfig>,
+    pub board_rotated_180: bool,
     pub shop_configs: &'a HashMap<ShopId, ShopConfig>,
     pub disable_fog_of_war: bool,
     pub clock_offset_ms: i64,

@@ -61,6 +61,7 @@ pub struct CameraUpdateParams<'a> {
     pub pan_lerp_dead: f64,
     pub tile_size_px: f64,
     pub death_zoom: f64,
+    pub board_rotated_180: bool,
 }
 
 /// Advances the camera state by one tick using inputs and game state.
@@ -88,7 +89,7 @@ pub fn update_camera(manager: &mut CameraManager, params: CameraUpdateParams<'_>
 
             // Mouse position relative to canvas center
             // When dead, anchor zoom to canvas center so the death focus stays accurate.
-            let mouse_delta = if params.phase == ClientPhase::Dead {
+            let mut mouse_delta = if params.phase == ClientPhase::Dead {
                 Vec2::ZERO
             } else {
                 Vec2::new(
@@ -96,6 +97,9 @@ pub fn update_camera(manager: &mut CameraManager, params: CameraUpdateParams<'_>
                     manager.mouse_pos.y - rect.top() - (canvas.height() as f64 / 2.0),
                 )
             };
+            if params.board_rotated_180 {
+                mouse_delta = -mouse_delta;
+            }
 
             // To keep the point under the mouse fixed in world space:
             // The world position under the mouse is: W = (M - Offset) / Zoom

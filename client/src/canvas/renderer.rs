@@ -2,6 +2,7 @@
 
 use super::color::hex_to_rgba;
 use super::types::{PieceDrawParams, PieceNameDrawParams, PieceSvgCache, RenderParams, Renderer};
+use crate::math::Vec2;
 use common::logic::{evaluate_expression, is_valid_move, is_within_board};
 use common::models::PieceConfig;
 use common::types::{PieceTypeId, PlayerId};
@@ -50,6 +51,7 @@ impl Renderer {
             zoom,
             tile_size_px,
             mode,
+            board_rotated_180,
             shop_configs,
             disable_fog_of_war,
             clock_offset_ms,
@@ -97,9 +99,30 @@ impl Renderer {
 
         // Offset mapping world -> screen
         let canvas_center = canvas_size * 0.5;
-        let offset = canvas_center - camera_pos;
+        let offset = if board_rotated_180 {
+            canvas_center + camera_pos
+        } else {
+            canvas_center - camera_pos
+        };
         let offset_x = offset.x;
         let offset_y = offset.y;
+        let map_grid = |g: IVec2| {
+            if board_rotated_180 {
+                IVec2::new(-g.x - 1, -g.y - 1)
+            } else {
+                g
+            }
+        };
+        let map_grid_f = |p: Vec2| {
+            if board_rotated_180 {
+                -p - Vec2::new(1.0, 1.0)
+            } else {
+                p
+            }
+        };
+        let map_line = |v: i32| {
+            if board_rotated_180 { -v } else { v }
+        };
 
         let half = state.board_size.half();
         let limit_pos = state.board_size.limit_pos();
@@ -114,16 +137,10 @@ impl Renderer {
         self.ctx
             .fill_rect(board_left, board_top, board_dim, board_dim);
 
-        // Calculate visible range for optimizations
-        let v_start_x = ((-offset_x) / tile_size).floor() as i32;
-        let v_end_x = ((width - offset_x) / tile_size).ceil() as i32;
-        let v_start_y = ((-offset_y) / tile_size).floor() as i32;
-        let v_end_y = ((height - offset_y) / tile_size).ceil() as i32;
-
-        let start_x = v_start_x.clamp(-half, limit_pos);
-        let end_x = v_end_x.clamp(-half, limit_pos);
-        let start_y = v_start_y.clamp(-half, limit_pos);
-        let end_y = v_end_y.clamp(-half, limit_pos);
+        let start_x = -half;
+        let end_x = limit_pos;
+        let start_y = -half;
+        let end_y = limit_pos;
 
         // Checkerboard
         self.ctx.set_fill_style_str("#f1f5f9");
@@ -131,9 +148,10 @@ impl Renderer {
             for y in start_y..end_y {
                 // Proper checkerboard for centered system
                 if (x.rem_euclid(2) + y.rem_euclid(2)) % 2 != 0 {
+                    let mapped = map_grid(IVec2::new(x, y));
                     self.ctx.fill_rect(
-                        x as f64 * tile_size + offset_x,
-                        y as f64 * tile_size + offset_y,
+                        mapped.x as f64 * tile_size + offset_x,
+                        mapped.y as f64 * tile_size + offset_y,
                         tile_size,
                         tile_size,
                     );
@@ -147,23 +165,29 @@ impl Renderer {
         self.ctx.begin_path();
 
         for x in start_x..=end_x {
+            let mapped_x = map_line(x);
+            let mapped_start_y = map_line(start_y);
+            let mapped_end_y = map_line(end_y);
             self.ctx.move_to(
-                x as f64 * tile_size + offset_x,
-                start_y as f64 * tile_size + offset_y,
+                mapped_x as f64 * tile_size + offset_x,
+                mapped_start_y as f64 * tile_size + offset_y,
             );
             self.ctx.line_to(
-                x as f64 * tile_size + offset_x,
-                end_y as f64 * tile_size + offset_y,
+                mapped_x as f64 * tile_size + offset_x,
+                mapped_end_y as f64 * tile_size + offset_y,
             );
         }
         for y in start_y..=end_y {
+            let mapped_y = map_line(y);
+            let mapped_start_x = map_line(start_x);
+            let mapped_end_x = map_line(end_x);
             self.ctx.move_to(
-                start_x as f64 * tile_size + offset_x,
-                y as f64 * tile_size + offset_y,
+                mapped_start_x as f64 * tile_size + offset_x,
+                mapped_y as f64 * tile_size + offset_y,
             );
             self.ctx.line_to(
-                end_x as f64 * tile_size + offset_x,
-                y as f64 * tile_size + offset_y,
+                mapped_end_x as f64 * tile_size + offset_x,
+                mapped_y as f64 * tile_size + offset_y,
             );
         }
         self.ctx.stroke();
@@ -182,10 +206,11 @@ impl Renderer {
                     .and_then(|c| c.color.as_ref())
                     .map(|s| s.as_ref())
                     .unwrap_or("#fde047");
+                let mapped = map_grid(shop.position.0);
                 self.ctx.set_fill_style_str(color);
                 self.ctx.fill_rect(
-                    shop.position.0.x as f64 * tile_size + offset_x + 5.0 * zoom,
-                    shop.position.0.y as f64 * tile_size + offset_y + 5.0 * zoom,
+                    mapped.x as f64 * tile_size + offset_x + 5.0 * zoom,
+                    mapped.y as f64 * tile_size + offset_y + 5.0 * zoom,
                     tile_size - 10.0 * zoom,
                     tile_size - 10.0 * zoom,
                 );
@@ -206,10 +231,11 @@ impl Renderer {
             } else {
                 "rgba(59, 130, 246, 0.2)".to_string()
             };
+            let mapped = map_grid(piece.position.0);
             self.ctx.set_fill_style_str(&highlight);
             self.ctx.fill_rect(
-                piece.position.0.x as f64 * tile_size + offset_x + 2.0,
-                piece.position.0.y as f64 * tile_size + offset_y + 2.0,
+                mapped.x as f64 * tile_size + offset_x + 2.0,
+                mapped.y as f64 * tile_size + offset_y + 2.0,
                 tile_size - 4.0,
                 tile_size - 4.0,
             );
@@ -247,9 +273,10 @@ impl Renderer {
                         pieces: ghost_pieces,
                         moving_owner: piece.owner_id,
                     }) {
+                        let mapped = map_grid(t);
                         self.ctx.fill_rect(
-                            x as f64 * tile_size + offset_x + 2.0,
-                            y as f64 * tile_size + offset_y + 2.0,
+                            mapped.x as f64 * tile_size + offset_x + 2.0,
+                            mapped.y as f64 * tile_size + offset_y + 2.0,
                             tile_size - 4.0,
                             tile_size - 4.0,
                         );
@@ -283,14 +310,16 @@ impl Renderer {
                         start_pos = common::types::BoardCoord(prev.target);
                     }
                 }
+                let mapped_start = map_grid(start_pos.0);
+                let mapped_target = map_grid(pm.target);
                 self.ctx.begin_path();
                 self.ctx.move_to(
-                    start_pos.0.x as f64 * tile_size + offset_x + tile_size / 2.0,
-                    start_pos.0.y as f64 * tile_size + offset_y + tile_size / 2.0,
+                    mapped_start.x as f64 * tile_size + offset_x + tile_size / 2.0,
+                    mapped_start.y as f64 * tile_size + offset_y + tile_size / 2.0,
                 );
                 self.ctx.line_to(
-                    pm.target.x as f64 * tile_size + offset_x + tile_size / 2.0,
-                    pm.target.y as f64 * tile_size + offset_y + tile_size / 2.0,
+                    mapped_target.x as f64 * tile_size + offset_x + tile_size / 2.0,
+                    mapped_target.y as f64 * tile_size + offset_y + tile_size / 2.0,
                 );
                 self.ctx.stroke();
             }
@@ -299,7 +328,11 @@ impl Renderer {
         // Pieces
         for (id, ghost) in ghost_pieces {
             if (ghost.position.0 - king_pos.0).abs().max_element() <= view_radius_squares + 2 {
-                let pos_override = animated_positions.get(id).copied();
+                let static_pos = map_grid_f(Vec2::new(
+                    ghost.position.0.x as f64,
+                    ghost.position.0.y as f64,
+                ));
+                let pos_override = animated_positions.get(id).copied().map(map_grid_f);
                 if let Some(real) = state.pieces.get(id) {
                     if real.position != ghost.position {
                         // Draw ghost (predicted) piece faded
@@ -313,7 +346,7 @@ impl Renderer {
                                 state,
                                 draw_name: false,
                                 is_ghost: true,
-                                pos_override: None,
+                                pos_override: Some(static_pos),
                                 tile_size_px,
                                 clock_offset_ms,
                             },
@@ -321,6 +354,10 @@ impl Renderer {
                         );
 
                         // Draw real (server) piece solid
+                        let real_static_pos = map_grid_f(Vec2::new(
+                            real.position.0.x as f64,
+                            real.position.0.y as f64,
+                        ));
                         self.draw_piece(
                             PieceDrawParams {
                                 piece: real,
@@ -331,7 +368,7 @@ impl Renderer {
                                 state,
                                 draw_name: false,
                                 is_ghost: false,
-                                pos_override,
+                                pos_override: pos_override.or(Some(real_static_pos)),
                                 tile_size_px,
                                 clock_offset_ms,
                             },
@@ -349,7 +386,7 @@ impl Renderer {
                                 state,
                                 draw_name: false,
                                 is_ghost: false,
-                                pos_override,
+                                pos_override: pos_override.or(Some(static_pos)),
                                 tile_size_px,
                                 clock_offset_ms,
                             },
@@ -366,7 +403,15 @@ impl Renderer {
             if piece.piece_type.is_king()
                 && (piece.position.0 - king_pos.0).abs().max_element() <= view_radius_squares + 2
             {
-                let pos_override = animated_positions.get(id).copied();
+                let static_pos = map_grid_f(Vec2::new(
+                    piece.position.0.x as f64,
+                    piece.position.0.y as f64,
+                ));
+                let pos_override = animated_positions
+                    .get(id)
+                    .copied()
+                    .map(map_grid_f)
+                    .or(Some(static_pos));
                 self.draw_piece_name(PieceNameDrawParams {
                     piece,
                     offset_x,
@@ -382,8 +427,9 @@ impl Renderer {
 
         // Fog of War Overlay
         if !fog_is_disabled && player_id != PlayerId::nil() && has_king {
-            let king_screen_x = king_pos.0.x as f64 * tile_size + offset_x + tile_size / 2.0;
-            let king_screen_y = king_pos.0.y as f64 * tile_size + offset_y + tile_size / 2.0;
+            let mapped_king = map_grid(king_pos.0);
+            let king_screen_x = mapped_king.x as f64 * tile_size + offset_x + tile_size / 2.0;
+            let king_screen_y = mapped_king.y as f64 * tile_size + offset_y + tile_size / 2.0;
 
             let gradient = self
                 .ctx

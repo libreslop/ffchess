@@ -7,6 +7,7 @@ use crate::math::{Vec2, vec2};
 use crate::reducer::{GameAction, GameStateReducer, MsgSender, Pmove};
 use crate::utils::request_fullscreen;
 use common::logic::is_within_board;
+use common::models::GameState;
 use common::protocol::ClientMessage;
 use common::types::{BoardCoord, PieceId, PlayerId, Score};
 use glam::IVec2;
@@ -128,12 +129,28 @@ fn screen_to_grid(
     canvas: &HtmlCanvasElement,
     camera: Vec2,
     tile_size: f64,
+    board_rotated_180: bool,
 ) -> IVec2 {
     let screen_pos = pos - vec2(rect.left(), rect.top());
     let canvas_center = vec2(canvas.width() as f64 / 2.0, canvas.height() as f64 / 2.0);
-    let world_pos = screen_pos + camera - canvas_center;
+    let world_pos = if board_rotated_180 {
+        camera + canvas_center - screen_pos
+    } else {
+        screen_pos + camera - canvas_center
+    };
     let grid = (world_pos / tile_size).floor();
     IVec2::new(grid.x as i32, grid.y as i32)
+}
+
+/// Returns true when this local player should view the board rotated by 180 degrees.
+fn local_board_rotated_180(state: &GameState, player_id: Option<PlayerId>) -> bool {
+    let Some(player_id) = player_id.filter(|id| *id != PlayerId::nil()) else {
+        return false;
+    };
+    let Some(player) = state.players.get(&player_id) else {
+        return false;
+    };
+    player.board_rotation_deg.rem_euclid(360) == 180
 }
 
 #[function_component(GameView)]
@@ -285,6 +302,10 @@ pub fn game_view(props: &GameViewProps) -> Html {
                             pan_lerp_dead: globals.pan_lerp_dead,
                             tile_size_px: globals.tile_size_px,
                             death_zoom: globals.death_zoom,
+                            board_rotated_180: local_board_rotated_180(
+                                &reducer_state.state,
+                                reducer_state.player_id,
+                            ),
                         },
                     );
 
@@ -413,6 +434,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
                         zoom: **zoom,
                         tile_size_px: globals.tile_size_px,
                         mode: mode.as_ref(),
+                        board_rotated_180: local_board_rotated_180(state, *player_id),
                         shop_configs,
                         disable_fog_of_war: *has_match_result,
                         clock_offset_ms: *clock_offset_ms,
@@ -510,7 +532,14 @@ pub fn game_view(props: &GameViewProps) -> Html {
             let rect = canvas.get_bounding_client_rect();
             let zoom = manager.zoom;
             let tile_size = tile_size_px * zoom;
-            let target = screen_to_grid(input.pos, &rect, &canvas, manager.camera, tile_size);
+            let target = screen_to_grid(
+                input.pos,
+                &rect,
+                &canvas,
+                manager.camera,
+                tile_size,
+                local_board_rotated_180(&reducer.state, reducer.player_id),
+            );
 
             let board_size = reducer.state.board_size;
             let mut is_interactive = false;
@@ -567,7 +596,15 @@ pub fn game_view(props: &GameViewProps) -> Html {
                 let delta = input.pos - start.pos;
                 if delta.x.abs().max(delta.y.abs()) > 0.1 {
                     *did_pan.borrow_mut() = true;
-                    manager.camera -= delta;
+                    let board_rotated_180 =
+                        local_board_rotated_180(&reducer.state, reducer.player_id);
+                    if board_rotated_180 {
+                        manager.camera += delta;
+                        manager.velocity = delta;
+                    } else {
+                        manager.camera -= delta;
+                        manager.velocity = -delta;
+                    }
 
                     let player_id_val = reducer.player_id.unwrap_or_else(PlayerId::nil);
                     let is_alive = reducer.state.players.contains_key(&player_id_val)
@@ -577,7 +614,6 @@ pub fn game_view(props: &GameViewProps) -> Html {
                         manager.target_camera = manager.camera;
                     }
                     cam_state.set(manager.camera);
-                    manager.velocity = -delta;
                     drag_start.set(Some(DragStart {
                         pos: input.pos,
                         allow_panning: true,
@@ -640,7 +676,14 @@ pub fn game_view(props: &GameViewProps) -> Html {
             let manager = manager_ref.borrow_mut();
             let zoom = manager.zoom;
             let tile_size = tile_size_px * zoom;
-            let target = screen_to_grid(input.pos, &rect, &canvas, manager.camera, tile_size);
+            let target = screen_to_grid(
+                input.pos,
+                &rect,
+                &canvas,
+                manager.camera,
+                tile_size,
+                local_board_rotated_180(&reducer.state, reducer.player_id),
+            );
             let player_id = reducer.player_id.unwrap_or_else(PlayerId::nil);
 
             if input.is_right_click {
@@ -893,6 +936,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
                 let cam_state = cam_state.clone();
                 let zoom_state = zoom_state.clone();
                 let latest_state = latest_state.clone();
+                let reducer = props.reducer.clone();
                 let zoom_min = props.globals.camera_zoom_min;
                 let zoom_max = props.globals.camera_zoom_max;
                 let drag_start = drag_start.clone();
@@ -919,7 +963,15 @@ pub fn game_view(props: &GameViewProps) -> Html {
                             mgr.mouse_pos = center;
                             if let Some(prev_center) = mgr.last_touch_center {
                                 let pan = center - prev_center;
-                                mgr.camera -= pan;
+                                let board_rotated_180 = local_board_rotated_180(
+                                    &reducer.state,
+                                    reducer.player_id,
+                                );
+                                if board_rotated_180 {
+                                    mgr.camera += pan;
+                                } else {
+                                    mgr.camera -= pan;
+                                }
                                 mgr.target_camera = mgr.camera;
                             }
                             mgr.last_touch_center = Some(center);
@@ -933,7 +985,10 @@ pub fn game_view(props: &GameViewProps) -> Html {
                                 let screen_pos = center - vec2(rect.left(), rect.top());
                                 let canvas_center =
                                     vec2(canvas.width() as f64 / 2.0, canvas.height() as f64 / 2.0);
-                                let mouse_delta = screen_pos - canvas_center;
+                                let mut mouse_delta = screen_pos - canvas_center;
+                                if local_board_rotated_180(&reducer.state, reducer.player_id) {
+                                    mouse_delta = -mouse_delta;
+                                }
                                 let ratio = new_zoom / old_zoom;
                                 mgr.camera = (mgr.camera + mouse_delta) * ratio - mouse_delta;
                                 mgr.target_camera = mgr.camera;

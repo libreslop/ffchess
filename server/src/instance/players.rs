@@ -85,11 +85,14 @@ impl GameInstance {
             self.prune_out_of_bounds(&mut game).await;
         }
 
-        let king_id = if self.queue_layout.is_some() {
+        let (king_id, board_rotation_deg) = if self.queue_layout.is_some() {
             self.spawn_from_queue_layout(&mut game, player_id)?
         } else {
-            self.spawn_from_kit(&mut game, player_id, &kit.pieces)
-                .await?
+            (
+                self.spawn_from_kit(&mut game, player_id, &kit.pieces)
+                    .await?,
+                0,
+            )
         };
 
         let player = Player {
@@ -101,6 +104,7 @@ impl GameInstance {
             join_time: now,
             king_id,
             color,
+            board_rotation_deg,
         };
 
         game.players.insert(player_id, player);
@@ -119,7 +123,7 @@ impl GameInstance {
         &self,
         game: &mut GameState,
         player_id: PlayerId,
-    ) -> Result<PieceId, GameError> {
+    ) -> Result<(PieceId, i32), GameError> {
         let queue_layout = self
             .queue_layout
             .as_ref()
@@ -169,7 +173,9 @@ impl GameInstance {
             );
         }
 
-        king_id.ok_or_else(|| GameError::Internal("Queue preset missing king piece".to_string()))
+        let king_id = king_id
+            .ok_or_else(|| GameError::Internal("Queue preset missing king piece".to_string()))?;
+        Ok((king_id, player_layout.board_rotation_deg))
     }
 
     async fn spawn_from_kit(

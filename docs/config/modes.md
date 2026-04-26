@@ -67,6 +67,7 @@ The `mode_id` is automatically derived from the filename stem (e.g., `ffa.jsonc`
 
 | Attribute | Type | Description |
 |-----------|------|-------------|
+| `board_rotation_deg` | `i32` | Client-only board rotation for this player slot. Use `0` or `180`. |
 | `pieces` | `Array<QueueLayoutPiece>` | Pieces to spawn for this player slot. |
 
 ### Queue Layout Piece (`QueueLayoutPiece`)
