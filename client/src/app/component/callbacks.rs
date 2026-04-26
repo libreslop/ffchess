@@ -64,15 +64,17 @@ pub fn build_on_join(
         }
         if let Some(sender) = (*tx).as_ref() {
             let mode_id = (*current_mode_id).clone();
-            is_joining.set(true);
             let stored_id = get_stored_id(&mode_id);
             let stored_secret = get_stored_secret(&mode_id);
-            let _ = sender.0.try_send(ClientMessage::Join {
+            let join_result = sender.0.try_send(ClientMessage::Join {
                 name: (*player_name).clone(),
                 kit_name,
                 player_id: stored_id,
                 session_secret: stored_secret,
             });
+            is_joining.set(join_result.is_ok());
+        } else {
+            is_joining.set(false);
         }
     })
 }
@@ -94,6 +96,8 @@ pub fn build_on_name_submit(
     landing_cooldown: UseStateHandle<CooldownSeconds>,
     reducer: UseReducerHandle<GameStateReducer>,
     has_interacted: UseStateHandle<bool>,
+    single_kit: Option<KitId>,
+    on_join: Callback<KitId>,
 ) -> Callback<SubmitEvent> {
     Callback::from(move |e: SubmitEvent| {
         e.prevent_default();
@@ -103,6 +107,11 @@ pub fn build_on_name_submit(
         }
         let name = (*player_name).trim().to_string();
         set_stored_name(&name);
-        join_step.set(JoinStep::SelectKit);
+        if let Some(kit_id) = single_kit.clone() {
+            join_step.set(JoinStep::SelectKit);
+            on_join.emit(kit_id);
+        } else {
+            join_step.set(JoinStep::SelectKit);
+        }
     })
 }

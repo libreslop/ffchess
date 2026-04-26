@@ -1,5 +1,5 @@
 {
-    "display_name": "Classic Queue",
+    "display_name": "Bullet",
     "max_players": 2,
     "queue_players": 2,
     "preview_switch_delay_ms": 5000,
@@ -12,7 +12,7 @@
     "kits": [
         {
             "name": "Classic",
-            "description": "Standard 8x8 preset setup",
+            "description": "Standard chess pieces",
             "pieces": [
                 "king",
                 "queen",

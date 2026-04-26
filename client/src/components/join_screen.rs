@@ -30,7 +30,7 @@ pub struct JoinScreenProps {
 /// `props` supplies the join state and callbacks. Returns rendered HTML.
 pub fn join_screen(props: &JoinScreenProps) -> Html {
     let mobile = is_mobile();
-    let is_disabled = props.is_loading || props.error.is_some() || props.queue_status.is_some();
+    let is_disabled = props.is_loading || props.queue_status.is_some();
 
     html! {
         <>

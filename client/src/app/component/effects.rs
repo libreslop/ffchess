@@ -31,6 +31,7 @@ pub struct KeyboardShortcutEffectInputs {
     pub disconnected: bool,
     pub queueing: bool,
     pub kits: Vec<KitSummary>,
+    pub single_kit: Option<KitId>,
     pub player_name: UseStateHandle<String>,
     pub has_interacted: UseStateHandle<bool>,
     pub on_join: Callback<KitId>,
@@ -506,6 +507,7 @@ pub fn use_keyboard_shortcuts_effect(inputs: KeyboardShortcutEffectInputs) {
         disconnected,
         queueing,
         kits,
+        single_kit,
         player_name,
         has_interacted,
         on_join,
@@ -530,12 +532,14 @@ pub fn use_keyboard_shortcuts_effect(inputs: KeyboardShortcutEffectInputs) {
             disconnected,
             queueing,
             kits.clone(),
+            single_kit.clone(),
         ),
-        move |&(joined, dead, victory, step, lc, disc, queueing, ref kits)| {
+        move |&(joined, dead, victory, step, lc, disc, queueing, ref kits, ref single_kit)| {
             let on_join = on_join.clone();
             let on_rejoin = on_rejoin.clone();
             let rc_ref = rc_ref.clone();
             let kits = kits.clone();
+            let single_kit = single_kit.clone();
 
             let listener = EventListener::new(&web_sys::window().unwrap(), "keydown", move |e| {
                 let e = e.dyn_ref::<web_sys::KeyboardEvent>().unwrap();
@@ -545,7 +549,12 @@ pub fn use_keyboard_shortcuts_effect(inputs: KeyboardShortcutEffectInputs) {
                         if step.is_enter_name() && lc.is_zero() && !disc {
                             let name = (*player_name).trim().to_string();
                             set_stored_name(&name);
-                            join_step.set(JoinStep::SelectKit);
+                            if let Some(kit_id) = single_kit.clone() {
+                                join_step.set(JoinStep::SelectKit);
+                                on_join.emit(kit_id);
+                            } else {
+                                join_step.set(JoinStep::SelectKit);
+                            }
                             has_interacted.set(true);
                         }
                     } else if (dead || victory) && rc_ref.borrow().is_zero() && !disc {

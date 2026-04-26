@@ -134,6 +134,12 @@ pub fn app() -> Html {
         has_interacted.clone(),
         current_mode_id.clone(),
     );
+    let kits = reducer
+        .mode
+        .as_ref()
+        .map(|m| m.kits.clone())
+        .unwrap_or_default();
+    let single_kit = (kits.len() == 1).then(|| kits[0].name.clone());
     let on_name_input = build_on_name_input(player_name.clone());
     let on_name_submit = build_on_name_submit(
         join_step.clone(),
@@ -141,6 +147,8 @@ pub fn app() -> Html {
         landing_cooldown.clone(),
         reducer.clone(),
         has_interacted.clone(),
+        single_kit.clone(),
+        on_join.clone(),
     );
 
     let player_id = reducer.player_id.unwrap_or_else(PlayerId::nil);
@@ -184,11 +192,6 @@ pub fn app() -> Html {
         rejoin_flow.clone(),
     );
 
-    let kits = reducer
-        .mode
-        .as_ref()
-        .map(|m| m.kits.clone())
-        .unwrap_or_default();
     let disconnected = reducer.disconnected;
     let queueing = reducer.queue_status.is_some();
     use_keyboard_shortcuts_effect(KeyboardShortcutEffectInputs {
@@ -200,6 +203,7 @@ pub fn app() -> Html {
         disconnected,
         queueing,
         kits,
+        single_kit,
         player_name: player_name.clone(),
         has_interacted: has_interacted.clone(),
         on_join: on_join.clone(),
