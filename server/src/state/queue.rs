@@ -156,9 +156,9 @@ impl ServerState {
             private_mode,
             mode_id.clone(),
             self.config_manager
-                .queue_layouts
+                .modes
                 .get(mode_id)
-                .cloned()
+                .and_then(|mode| mode.queue_layout.clone())
                 .map(Arc::new),
             self.piece_configs.clone(),
             self.shop_configs.clone(),

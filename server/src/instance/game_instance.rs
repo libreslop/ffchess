@@ -2,10 +2,9 @@
 
 use super::hooks::HookEventBuffer;
 use crate::colors::ColorManager;
-use crate::config::QueuePresetLayoutConfig;
 use crate::time::now_ms;
 use crate::types::ConnectionId;
-use common::models::{GameModeConfig, GameState, PieceConfig, ShopConfig};
+use common::models::{GameModeConfig, GameState, PieceConfig, QueuePresetLayoutConfig, ShopConfig};
 use common::protocol::{GameError, ServerMessage, VictoryFocusTarget};
 use common::types::{
     BoardCoord, ModeId, PieceId, PieceTypeId, PlayerCount, PlayerId, SessionSecret, ShopId,

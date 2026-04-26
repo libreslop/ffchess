@@ -22,6 +22,7 @@ The `mode_id` is automatically derived from the filename stem (e.g., `ffa.jsonc`
 | `npc_limits` | `Array<NpcLimit>` | List of limits for different NPC types. | No | - |
 | `shop_counts` | `Array<ShopCount>` | Number of shops of each type to spawn. | No | - |
 | `kits` | `Array<Kit>` | Starting piece kits available for selection. | No | - |
+| `queue_layout` | `QueueLayout` | Fixed spawn layout for queued matches; if set, players spawn from this preset instead of kit-random spawn. | Yes | `null` |
 | `hooks` | `Array<Hook>` | Custom gameplay event hooks. | No | - |
 
 ### NPC Limit (`NpcLimit`)
@@ -55,6 +56,25 @@ The `mode_id` is automatically derived from the filename stem (e.g., `ffa.jsonc`
 | `action` | `String` | The action to perform when triggered (e.g., `EliminateOwner`). | No |
 | `victory_title` | `String` | Custom title shown when this hook leads to victory. | Yes |
 | `victory_message` | `String` | Custom message shown when this hook leads to victory. | Yes |
+
+### Queue Layout (`QueueLayout`)
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `players` | `Array<QueueLayoutPlayer>` | Spawn slots in join order for a queue match. |
+
+### Queue Layout Player (`QueueLayoutPlayer`)
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `pieces` | `Array<QueueLayoutPiece>` | Pieces to spawn for this player slot. |
+
+### Queue Layout Piece (`QueueLayoutPiece`)
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `piece_id` | `String` | Piece type ID to spawn. |
+| `position` | `[i32, i32]` | Absolute board coordinate to place the piece at. |
 
 ### Expressions
 

@@ -67,6 +67,32 @@ pub struct ShopCountConfig {
     pub count: u32,
 }
 
+/// One piece placement in a queue-mode preset layout.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct QueuePresetPieceConfig {
+    pub piece_id: PieceTypeId,
+    pub position: [i32; 2],
+}
+
+impl QueuePresetPieceConfig {
+    /// Returns the configured board coordinate for this piece.
+    pub fn board_coord(&self) -> crate::types::BoardCoord {
+        crate::types::BoardCoord(IVec2::new(self.position[0], self.position[1]))
+    }
+}
+
+/// Piece placement set for a single queued player slot.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct QueuePresetPlayerConfig {
+    pub pieces: Vec<QueuePresetPieceConfig>,
+}
+
+/// Fixed queue spawn layout embedded in a mode config.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct QueuePresetLayoutConfig {
+    pub players: Vec<QueuePresetPlayerConfig>,
+}
+
 /// Full server mode configuration.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct GameModeConfig {
@@ -84,6 +110,8 @@ pub struct GameModeConfig {
     pub npc_limits: Vec<NpcLimitConfig>,
     pub shop_counts: Vec<ShopCountConfig>,
     pub kits: Vec<KitConfig>,
+    #[serde(default)]
+    pub queue_layout: Option<QueuePresetLayoutConfig>,
     pub hooks: Vec<HookConfig>,
 }
 
