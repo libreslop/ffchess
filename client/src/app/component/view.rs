@@ -79,7 +79,7 @@ pub fn render_app(props: AppViewProps) -> Html {
             if props.show_disconnected {
                 <DisconnectedScreen
                     show={true}
-                    disconnected={reducer.disconnected && !reducer.fatal_error && is_joined && !has_match_result}
+                    disconnected={reducer.disconnected && !reducer.fatal_error && (is_joined || props.queue_status.is_some()) && !has_match_result}
                     title={reducer.disconnected_title.clone()}
                     msg={reducer.disconnected_msg.clone()}
                 />

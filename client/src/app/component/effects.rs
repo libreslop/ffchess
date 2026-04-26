@@ -357,11 +357,14 @@ pub fn use_disconnected_overlay_effect(
     show_disconnected: UseStateHandle<bool>,
     reducer: UseReducerHandle<GameStateReducer>,
     is_joined: bool,
+    is_queueing: bool,
     has_match_result: bool,
 ) {
     let show_disconnected = show_disconnected.clone();
-    let should_show =
-        reducer.disconnected && !reducer.fatal_error && is_joined && !has_match_result;
+    let should_show = reducer.disconnected
+        && !reducer.fatal_error
+        && (is_joined || is_queueing)
+        && !has_match_result;
     use_effect_with(should_show, move |&should| {
         if should {
             show_disconnected.set(true);

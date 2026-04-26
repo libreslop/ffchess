@@ -156,6 +156,7 @@ pub fn app() -> Html {
     let is_victory = reducer.is_victory;
     let has_match_result = is_dead || is_victory;
     let is_joined = reducer.phase == ClientPhase::Alive || has_match_result;
+    let is_queueing = reducer.queue_status.is_some();
     let force_join_overlay = rejoin_flow.forces_join_overlay(has_match_result);
 
     use_player_name_sync_effect(player_name.clone(), reducer.clone());
@@ -163,6 +164,7 @@ pub fn app() -> Html {
         show_disconnected.clone(),
         reducer.clone(),
         is_joined,
+        is_queueing,
         has_match_result,
     );
     use_rejoin_flow_reset_effect(rejoin_flow.clone(), reducer.clone(), has_match_result);
@@ -193,7 +195,7 @@ pub fn app() -> Html {
     );
 
     let disconnected = reducer.disconnected;
-    let queueing = reducer.queue_status.is_some();
+    let queueing = is_queueing;
     use_keyboard_shortcuts_effect(KeyboardShortcutEffectInputs {
         is_joined,
         is_dead,
