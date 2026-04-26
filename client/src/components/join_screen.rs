@@ -127,10 +127,12 @@ pub fn join_screen(props: &JoinScreenProps) -> Html {
                     </div>
                 }
             </div>
-            <a href="https://github.com/libreslop/ffchess" target="_blank" rel="noopener noreferrer"
-               style="position: absolute; bottom: 12px; left: 12px; z-index: 100; opacity: 0.5; display: block;">
-                <img src="/assets/static/img/github.svg" alt="GitHub" style="width: 24px; height: 24px; filter: invert(1); display: block;" />
-            </a>
+            if props.join_step.is_enter_name() {
+                <a href="https://github.com/libreslop/ffchess" target="_blank" rel="noopener noreferrer"
+                   style="position: absolute; bottom: 12px; left: 12px; z-index: 100; opacity: 0.5; display: block;">
+                    <img src="/assets/static/img/github.svg" alt="GitHub" style="width: 24px; height: 24px; filter: invert(1); display: block;" />
+                </a>
+            }
         </>
     }
 }
