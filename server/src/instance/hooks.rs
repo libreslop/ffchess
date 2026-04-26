@@ -255,7 +255,8 @@ impl GameInstance {
             if game.players.contains_key(&player_id) {
                 let (removed, piece_ids) = self.remove_player_state(player_id, game).await;
                 if removed {
-                    self.record_player_leave_event().await;
+                    // Elimination-by-capture is not a disconnect/leave event.
+                    // Keeping this out of OnPlayerLeave avoids delayed "opponent disconnected" wins.
                     all_removed_piece_ids.extend(piece_ids);
                 }
             }

@@ -234,6 +234,75 @@ mod tests {
     }
 
     #[tokio::test]
+    /// Verifies king-capture victory does not trigger a delayed leave-based victory message.
+    async fn test_duel_capture_king_does_not_emit_delayed_leave_victory() {
+        let state = ServerState::new();
+        let instance = state
+            .get_joinable_game(&ModeId::from("duel"))
+            .await
+            .expect("Duel game should exist");
+        let (tx1, _rx1) = mpsc::channel(100);
+        let (tx2, mut rx2) = mpsc::channel(100);
+
+        let (p1_id, _) = instance
+            .add_player("P1".to_string(), KitId::from("Standard"), tx1, None, None)
+            .await
+            .expect("P1 join should succeed");
+        let (p2_id, _) = instance
+            .add_player("P2".to_string(), KitId::from("Standard"), tx2, None, None)
+            .await
+            .expect("P2 join should succeed");
+
+        let p2_king_id = {
+            let mut game = instance.game.write().await;
+            let p1_king_id = game.players.get(&p1_id).unwrap().king_id;
+            let p2_king_id = game.players.get(&p2_id).unwrap().king_id;
+            game.pieces
+                .retain(|id, _| *id == p1_king_id || *id == p2_king_id);
+
+            let p1_king = game.pieces.get_mut(&p1_king_id).unwrap();
+            p1_king.position = BoardCoord(IVec2::new(1, 1));
+            p1_king.last_move_time = TimestampMs::from_millis(0);
+            p1_king.cooldown_ms = DurationMs::zero();
+
+            let p2_king = game.pieces.get_mut(&p2_king_id).unwrap();
+            p2_king.position = BoardCoord(IVec2::new(0, 0));
+            p2_king.last_move_time = TimestampMs::from_millis(0);
+            p2_king.cooldown_ms = DurationMs::zero();
+            p2_king_id
+        };
+
+        instance
+            .handle_move(p2_id, p2_king_id, BoardCoord(IVec2::new(1, 1)))
+            .await
+            .expect("Capture should succeed");
+
+        instance.handle_tick().await;
+
+        let mut first_tick_victories = Vec::<String>::new();
+        while let Ok(msg) = rx2.try_recv() {
+            if let ServerMessage::Victory { message, .. } = msg {
+                first_tick_victories.push(message);
+            }
+        }
+        assert_eq!(first_tick_victories, vec!["".to_string()]);
+
+        instance.handle_tick().await;
+
+        let mut second_tick_victories = Vec::<String>::new();
+        while let Ok(msg) = rx2.try_recv() {
+            if let ServerMessage::Victory { message, .. } = msg {
+                second_tick_victories.push(message);
+            }
+        }
+        assert!(
+            second_tick_victories.is_empty(),
+            "No follow-up victory messages expected, got: {:?}",
+            second_tick_victories
+        );
+    }
+
+    #[tokio::test]
     /// Verifies a move submitted during cooldown is queued and executed on a later tick.
     async fn test_server_side_premove_executes_after_cooldown() {
         let state = ServerState::new();
