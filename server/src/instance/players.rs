@@ -85,75 +85,12 @@ impl GameInstance {
             self.prune_out_of_bounds(&mut game).await;
         }
 
-        let spawn_pos = crate::spawning::find_spawn_pos(&game);
-
-        // Clear NPCs near spawn
-        {
-            let mut rp = self.removed_pieces.write().await;
-            game.pieces.retain(|id, p| {
-                if p.owner_id.is_none() && (p.position - spawn_pos).as_vec2().length() <= 15.0 {
-                    rp.push(*id);
-                    false
-                } else {
-                    true
-                }
-            });
-        }
-
-        let mut king_id = None;
-
-        {
-            let mut rng = rand::thread_rng();
-            for p_type_id in &kit.pieces {
-                let p_id = PieceId::new();
-                let p_pos = if p_type_id.is_king() {
-                    king_id = Some(p_id);
-                    if crate::spawning::is_free_position(&game, spawn_pos) {
-                        spawn_pos
-                    } else {
-                        crate::spawning::find_random_nearby_free_pos(
-                            &game,
-                            spawn_pos,
-                            &mut rng,
-                            -2..=2,
-                            10,
-                        )
-                        .unwrap_or_else(|| crate::spawning::find_spawn_pos(&game))
-                    }
-                } else {
-                    crate::spawning::find_random_nearby_free_pos(
-                        &game,
-                        spawn_pos,
-                        &mut rng,
-                        -2..=2,
-                        10,
-                    )
-                    .or_else(|| {
-                        if crate::spawning::is_free_position(&game, spawn_pos) {
-                            Some(spawn_pos)
-                        } else {
-                            None
-                        }
-                    })
-                    .unwrap_or_else(|| crate::spawning::find_spawn_pos(&game))
-                };
-
-                game.pieces.insert(
-                    p_id,
-                    Piece {
-                        id: p_id,
-                        owner_id: Some(player_id),
-                        piece_type: p_type_id.clone(),
-                        position: common::BoardCoord(p_pos),
-                        last_move_time: TimestampMs::from_millis(0),
-                        cooldown_ms: DurationMs::zero(),
-                    },
-                );
-            }
-        }
-
-        let king_id =
-            king_id.ok_or_else(|| GameError::Internal("Kit missing king piece".to_string()))?;
+        let king_id = if self.queue_layout.is_some() {
+            self.spawn_from_queue_layout(&mut game, player_id)?
+        } else {
+            self.spawn_from_kit(&mut game, player_id, &kit.pieces)
+                .await?
+        };
 
         let player = Player {
             id: player_id,
@@ -176,6 +113,130 @@ impl GameInstance {
         self.death_timestamps.write().await.remove(&player_id);
 
         Ok((player_id, session_secret))
+    }
+
+    fn spawn_from_queue_layout(
+        &self,
+        game: &mut GameState,
+        player_id: PlayerId,
+    ) -> Result<PieceId, GameError> {
+        let queue_layout = self
+            .queue_layout
+            .as_ref()
+            .ok_or_else(|| GameError::Internal("Queue layout missing".to_string()))?;
+        let spawn_slot = game.players.len();
+        let player_layout =
+            queue_layout
+                .players
+                .get(spawn_slot)
+                .ok_or_else(|| GameError::Custom {
+                    title: "Match Full".to_string(),
+                    message: "No more spawn slots are available in this match.".to_string(),
+                })?;
+
+        let mut king_id = None;
+        for layout_piece in &player_layout.pieces {
+            let p_id = PieceId::new();
+            let p_pos = layout_piece.board_coord();
+
+            if !common::logic::is_within_board(p_pos, game.board_size) {
+                return Err(GameError::Internal(format!(
+                    "Queue preset position {} is outside board size {}",
+                    p_pos, game.board_size
+                )));
+            }
+            if game.pieces.values().any(|piece| piece.position == p_pos) {
+                return Err(GameError::Internal(format!(
+                    "Queue preset position {} is occupied",
+                    p_pos
+                )));
+            }
+
+            if layout_piece.piece_id.is_king() {
+                king_id = Some(p_id);
+            }
+
+            game.pieces.insert(
+                p_id,
+                Piece {
+                    id: p_id,
+                    owner_id: Some(player_id),
+                    piece_type: layout_piece.piece_id.clone(),
+                    position: p_pos,
+                    last_move_time: TimestampMs::from_millis(0),
+                    cooldown_ms: DurationMs::zero(),
+                },
+            );
+        }
+
+        king_id.ok_or_else(|| GameError::Internal("Queue preset missing king piece".to_string()))
+    }
+
+    async fn spawn_from_kit(
+        &self,
+        game: &mut GameState,
+        player_id: PlayerId,
+        kit_pieces: &[common::types::PieceTypeId],
+    ) -> Result<PieceId, GameError> {
+        let spawn_pos = crate::spawning::find_spawn_pos(game);
+
+        // Clear NPCs near spawn to avoid unfair immediate collisions.
+        {
+            let mut rp = self.removed_pieces.write().await;
+            game.pieces.retain(|id, p| {
+                if p.owner_id.is_none() && (p.position - spawn_pos).as_vec2().length() <= 15.0 {
+                    rp.push(*id);
+                    false
+                } else {
+                    true
+                }
+            });
+        }
+
+        let mut king_id = None;
+        let mut rng = rand::thread_rng();
+        for p_type_id in kit_pieces {
+            let p_id = PieceId::new();
+            let p_pos = if p_type_id.is_king() {
+                king_id = Some(p_id);
+                if crate::spawning::is_free_position(game, spawn_pos) {
+                    spawn_pos
+                } else {
+                    crate::spawning::find_random_nearby_free_pos(
+                        game,
+                        spawn_pos,
+                        &mut rng,
+                        -2..=2,
+                        10,
+                    )
+                    .unwrap_or_else(|| crate::spawning::find_spawn_pos(game))
+                }
+            } else {
+                crate::spawning::find_random_nearby_free_pos(game, spawn_pos, &mut rng, -2..=2, 10)
+                    .or_else(|| {
+                        if crate::spawning::is_free_position(game, spawn_pos) {
+                            Some(spawn_pos)
+                        } else {
+                            None
+                        }
+                    })
+                    .unwrap_or_else(|| crate::spawning::find_spawn_pos(game))
+            };
+
+            game.pieces.insert(
+                p_id,
+                Piece {
+                    id: p_id,
+                    owner_id: Some(player_id),
+                    piece_type: p_type_id.clone(),
+                    position: common::BoardCoord(p_pos),
+                    last_move_time: TimestampMs::from_millis(0),
+                    cooldown_ms: DurationMs::zero(),
+                },
+            );
+        }
+
+        king_id.ok_or_else(|| GameError::Internal("Kit missing king piece".to_string()))
     }
 
     /// Removes a player from the game and emits a final score message.

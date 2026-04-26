@@ -46,6 +46,11 @@ impl ServerState {
             let instance = Arc::new(GameInstance::new(
                 mode_config.clone(),
                 mode_id.clone(),
+                config_manager
+                    .queue_layouts
+                    .get(mode_id)
+                    .cloned()
+                    .map(Arc::new),
                 piece_configs.clone(),
                 shop_configs.clone(),
             ));

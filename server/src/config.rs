@@ -1,7 +1,8 @@
 //! Loads JSON/JSONC configuration for pieces, shops, and modes.
 
 use common::models::{GameModeConfig, PieceConfig, ShopConfig};
-use common::types::{ModeId, PieceTypeId, ShopId};
+use common::types::{BoardCoord, ModeId, PieceTypeId, ShopId};
+use glam::IVec2;
 use jsonc_parser::parse_to_serde_value;
 use serde::de::DeserializeOwned;
 use std::collections::HashMap;
@@ -26,11 +27,38 @@ fn default_sync_interval() -> u32 {
     10000
 }
 
+/// One piece placement in a queue-mode preset layout.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct QueuePresetPieceConfig {
+    pub piece_id: PieceTypeId,
+    pub position: [i32; 2],
+}
+
+impl QueuePresetPieceConfig {
+    /// Returns the configured board coordinate for this piece.
+    pub fn board_coord(&self) -> BoardCoord {
+        BoardCoord(IVec2::new(self.position[0], self.position[1]))
+    }
+}
+
+/// Piece placement set for a single queued player slot.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct QueuePresetPlayerConfig {
+    pub pieces: Vec<QueuePresetPieceConfig>,
+}
+
+/// Fixed queue spawn layout keyed by mode id.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct QueuePresetLayoutConfig {
+    pub players: Vec<QueuePresetPlayerConfig>,
+}
+
 /// Loads and stores all runtime configuration.
 pub struct ConfigManager {
     pub pieces: HashMap<PieceTypeId, PieceConfig>,
     pub shops: HashMap<ShopId, ShopConfig>,
     pub modes: HashMap<ModeId, GameModeConfig>,
+    pub queue_layouts: HashMap<ModeId, QueuePresetLayoutConfig>,
     pub name_pool: NamePool,
     pub global: ServerGlobalConfig,
 }
@@ -43,6 +71,7 @@ impl ConfigManager {
         let mut pieces = HashMap::new();
         let mut shops = HashMap::new();
         let mut modes = HashMap::new();
+        let mut queue_layouts = HashMap::new();
         let mut name_pool = NamePool::default();
         let mut global = ServerGlobalConfig::default();
 
@@ -109,6 +138,26 @@ impl ConfigManager {
             modes.insert(ModeId::from(id), config);
         }
 
+        // Load queue preset layouts
+        let queue_layouts_dir = actual_root.join("queue_layouts");
+        if queue_layouts_dir.exists() {
+            for entry in WalkDir::new(queue_layouts_dir)
+                .into_iter()
+                .filter_map(|e| e.ok())
+                .filter(|e| {
+                    e.path()
+                        .extension()
+                        .is_some_and(|ext| ext == "json" || ext == "jsonc")
+                })
+            {
+                let content = std::fs::read_to_string(entry.path())
+                    .expect("Failed to read queue layout config");
+                let id = file_stem(entry.path());
+                let config: QueuePresetLayoutConfig = parse_jsonc(&content, entry.path());
+                queue_layouts.insert(ModeId::from(id), config);
+            }
+        }
+
         // Load server global name pool and other settings
         let global_server = actual_root.join("global/server.jsonc");
         if global_server.exists()
@@ -131,6 +180,7 @@ impl ConfigManager {
             pieces,
             shops,
             modes,
+            queue_layouts,
             name_pool,
             global,
         }
@@ -152,6 +202,18 @@ fn parse_jsonc_with_id<T: DeserializeOwned>(content: &str, path: &Path, id: &str
     } else {
         panic!("Expected object in config {:?}", path);
     }
+
+    serde_json::from_value(value)
+        .map_err(|e| format!("Failed to deserialize config {:?}: {}", path, e))
+        .unwrap()
+}
+
+/// Parses a JSONC file into a deserialized value without injecting an id.
+fn parse_jsonc<T: DeserializeOwned>(content: &str, path: &Path) -> T {
+    let value = parse_to_serde_value(content, &Default::default())
+        .map_err(|e| format!("Failed to parse config {:?}: {}", path, e))
+        .unwrap()
+        .unwrap_or_else(|| panic!("Failed to parse config {:?}: empty document", path));
 
     serde_json::from_value(value)
         .map_err(|e| format!("Failed to deserialize config {:?}: {}", path, e))

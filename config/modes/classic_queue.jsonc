@@ -1,0 +1,59 @@
+{
+    "display_name": "Classic Queue",
+    "max_players": 2,
+    "queue_players": 2,
+    "preview_switch_delay_ms": 5000,
+    "board_size": "8",
+    "camera_pan_limit": "8",
+    "fog_of_war_radius": null,
+    "respawn_cooldown_ms": 0,
+    "npc_limits": [],
+    "shop_counts": [],
+    "kits": [
+        {
+            "name": "Classic",
+            "description": "Standard 8x8 preset setup",
+            "pieces": [
+                "king",
+                "queen",
+                "rook",
+                "rook",
+                "bishop",
+                "bishop",
+                "knight",
+                "knight",
+                "pawn_northbound",
+                "pawn_northbound",
+                "pawn_northbound",
+                "pawn_northbound",
+                "pawn_northbound",
+                "pawn_northbound",
+                "pawn_northbound",
+                "pawn_northbound"
+            ]
+        }
+    ],
+    "hooks": [
+        {
+            "trigger": "OnCapture",
+            "target_piece_id": "king",
+            "action": "EliminateOwner"
+        },
+        {
+            "trigger": "OnCapturePieceActive",
+            "target_piece_id": "king",
+            "action": "WinCapturer",
+            "victory_focus": "CaptureSquare",
+            "title": "VICTORY",
+            "message": ""
+        },
+        {
+            "trigger": "OnPlayerLeave",
+            "players_left": 1,
+            "action": "WinRemaining",
+            "victory_focus": "KeepCurrent",
+            "title": "VICTORY",
+            "message": "Opponent disconnected"
+        }
+    ]
+}

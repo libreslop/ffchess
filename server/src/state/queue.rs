@@ -155,6 +155,11 @@ impl ServerState {
         let match_instance = Arc::new(GameInstance::new(
             private_mode,
             mode_id.clone(),
+            self.config_manager
+                .queue_layouts
+                .get(mode_id)
+                .cloned()
+                .map(Arc::new),
             self.piece_configs.clone(),
             self.shop_configs.clone(),
         ));

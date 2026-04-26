@@ -2,6 +2,7 @@
 
 use super::hooks::HookEventBuffer;
 use crate::colors::ColorManager;
+use crate::config::QueuePresetLayoutConfig;
 use crate::time::now_ms;
 use crate::types::ConnectionId;
 use common::models::{GameModeConfig, GameState, PieceConfig, ShopConfig};
@@ -24,6 +25,7 @@ pub(super) struct QueuedMoveRequest {
 pub struct GameInstance {
     pub(super) mode_config: GameModeConfig,
     pub(super) public_mode_id: ModeId,
+    pub(super) queue_layout: Option<Arc<QueuePresetLayoutConfig>>,
     pub(super) piece_configs: Arc<HashMap<PieceTypeId, PieceConfig>>,
     pub(super) shop_configs: Arc<HashMap<ShopId, ShopConfig>>,
     pub game: RwLock<GameState>,
@@ -168,6 +170,7 @@ impl GameInstance {
     pub fn new(
         mode_config: GameModeConfig,
         public_mode_id: ModeId,
+        queue_layout: Option<Arc<QueuePresetLayoutConfig>>,
         piece_configs: Arc<HashMap<PieceTypeId, PieceConfig>>,
         shop_configs: Arc<HashMap<ShopId, ShopConfig>>,
     ) -> Self {
@@ -176,6 +179,7 @@ impl GameInstance {
         Self {
             mode_config: mode_config.clone(),
             public_mode_id,
+            queue_layout,
             piece_configs,
             shop_configs,
             game: RwLock::new(GameState {
