@@ -6,71 +6,13 @@ use crate::time::now_ms;
 use crate::types::ConnectionId;
 use common::protocol::ServerMessage;
 use common::types::{ModeId, PlayerCount, PlayerId, SessionSecret, TimestampMs};
-use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
-/// Tracks preview watchers and the active preview target for a matchmaking mode.
-pub(super) struct ModePreviewState {
-    target_mode_id: Option<ModeId>,
-    empty_since: Option<TimestampMs>,
-    watchers: HashMap<ConnectionId, mpsc::Sender<ServerMessage>>,
-    default_only: HashSet<ConnectionId>,
-}
+mod types;
 
-impl ModePreviewState {
-    fn new() -> Self {
-        Self {
-            target_mode_id: None,
-            empty_since: None,
-            watchers: HashMap::new(),
-            default_only: HashSet::new(),
-        }
-    }
-
-    fn snapshot(&self) -> PreviewSnapshot {
-        let dynamic_watchers = self
-            .watchers
-            .iter()
-            .filter(|(conn_id, _)| !self.default_only.contains(*conn_id))
-            .map(|(conn_id, tx)| (*conn_id, tx.clone()))
-            .collect::<HashMap<_, _>>();
-        PreviewSnapshot {
-            dynamic_watchers,
-            target_mode_id: self.target_mode_id.clone(),
-            empty_since: self.empty_since,
-        }
-    }
-}
-
-/// Captures the state needed to evaluate a preview switch.
-struct PreviewSnapshot {
-    dynamic_watchers: HashMap<ConnectionId, mpsc::Sender<ServerMessage>>,
-    target_mode_id: Option<ModeId>,
-    empty_since: Option<TimestampMs>,
-}
-
-/// Represents the selected preview target and empty timer state.
-struct PreviewSelection {
-    target_mode_id: Option<ModeId>,
-    empty_since: Option<TimestampMs>,
-}
-
-/// Captures the current target state while evaluating preview selection.
-struct CurrentPreviewState<'a> {
-    target_mode_id: Option<ModeId>,
-    empty_since: Option<TimestampMs>,
-    instance: Option<&'a Arc<GameInstance>>,
-}
-
-/// Bundles all inputs required to compute the next preview selection.
-struct PreviewSelectionInput<'a> {
-    mode_id: &'a ModeId,
-    now: TimestampMs,
-    current: CurrentPreviewState<'a>,
-    default_instance: Option<&'a Arc<GameInstance>>,
-    latest_running: Option<&'a Arc<GameInstance>>,
-}
+pub(in crate::state) use types::ModePreviewState;
+use types::{CurrentPreviewState, PreviewSelection, PreviewSelectionInput};
 
 impl ServerState {
     /// Registers a preview watcher for a matchmaking mode.
@@ -85,7 +27,7 @@ impl ServerState {
             let preview = previews
                 .entry(mode_id.clone())
                 .or_insert_with(ModePreviewState::new);
-            preview.watchers.insert(conn_id, tx.clone());
+            preview.insert_watcher(conn_id, tx.clone());
             preview.target_mode_id.clone()
         };
 
@@ -126,7 +68,7 @@ impl ServerState {
             let previews = self.preview_state.read().await;
             previews
                 .get(mode_id)
-                .map(|preview| preview.watchers.contains_key(&conn_id))
+                .map(|preview| preview.has_watcher(conn_id))
                 .unwrap_or(false)
         };
 
@@ -142,10 +84,10 @@ impl ServerState {
             let Some(preview) = previews.get_mut(mode_id) else {
                 return;
             };
-            preview.watchers.remove(&conn_id);
-            let was_default = preview.default_only.remove(&conn_id);
+            preview.remove_watcher(conn_id);
+            let was_default = preview.clear_default_only(conn_id);
             let target_id = preview.target_mode_id.clone();
-            if preview.watchers.is_empty() {
+            if preview.is_empty() {
                 previews.remove(mode_id);
             }
             (target_id, was_default)
@@ -181,7 +123,7 @@ impl ServerState {
             let Some(preview) = previews.get(mode_id) else {
                 return;
             };
-            if preview.watchers.is_empty() {
+            if preview.is_empty() {
                 return;
             }
             preview.snapshot()
@@ -274,7 +216,7 @@ impl ServerState {
             };
             (
                 preview.target_mode_id.clone(),
-                preview.default_only.contains(&conn_id),
+                preview.is_default_only(conn_id),
             )
         };
 
@@ -285,11 +227,7 @@ impl ServerState {
         {
             let mut previews = self.preview_state.write().await;
             if let Some(preview) = previews.get_mut(mode_id) {
-                if enabled {
-                    preview.default_only.insert(conn_id);
-                } else {
-                    preview.default_only.remove(&conn_id);
-                }
+                preview.mark_default_only(conn_id, enabled);
             }
         }
 

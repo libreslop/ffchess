@@ -49,6 +49,7 @@ fn calculate_board_size_clamps_minimum() {
             description: "Basic".to_string(),
             pieces: vec![],
         }],
+        queue_layout: None,
         hooks: vec![],
     };
 

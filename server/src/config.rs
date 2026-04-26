@@ -5,7 +5,8 @@ use common::types::{ModeId, PieceTypeId, ShopId};
 use jsonc_parser::parse_to_serde_value;
 use serde::de::DeserializeOwned;
 use std::collections::HashMap;
-use std::path::Path;
+use std::hash::Hash;
+use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
 /// Name parts used for generating default player names.
@@ -40,92 +41,27 @@ impl ConfigManager {
     ///
     /// `root_path` points to the config folder. Returns a populated `ConfigManager`.
     pub fn load(root_path: &Path) -> Self {
-        let mut pieces = HashMap::new();
-        let mut shops = HashMap::new();
-        let mut modes = HashMap::new();
-        let mut name_pool = NamePool::default();
-        let mut global = ServerGlobalConfig::default();
+        let actual_root = resolve_config_root(root_path);
+        let pieces = load_id_mapped_configs(
+            &actual_root.join("pieces"),
+            "piece",
+            parse_jsonc_with_id,
+            PieceTypeId::from,
+        );
+        let shops = load_id_mapped_configs(
+            &actual_root.join("shops"),
+            "shop",
+            parse_shop_jsonc_with_id,
+            ShopId::from,
+        );
+        let modes = load_id_mapped_configs(
+            &actual_root.join("modes"),
+            "mode",
+            parse_jsonc_with_id,
+            ModeId::from,
+        );
 
-        // Try to find the config directory by going up if not found
-        let mut actual_root = root_path.to_path_buf();
-        if !actual_root.exists()
-            && let Ok(cwd) = std::env::current_dir()
-            && let Some(parent) = cwd.parent()
-        {
-            let parent_root = parent.join(root_path);
-            if parent_root.exists() {
-                actual_root = parent_root;
-            }
-        }
-
-        // Load pieces
-        for entry in WalkDir::new(actual_root.join("pieces"))
-            .into_iter()
-            .filter_map(|e| e.ok())
-            .filter(|e| {
-                e.path()
-                    .extension()
-                    .is_some_and(|ext| ext == "json" || ext == "jsonc")
-            })
-        {
-            let content =
-                std::fs::read_to_string(entry.path()).expect("Failed to read piece config");
-            let id = file_stem(entry.path());
-            let config: PieceConfig = parse_jsonc_with_id(&content, entry.path(), &id);
-            pieces.insert(PieceTypeId::from(id), config);
-        }
-
-        // Load shops
-        for entry in WalkDir::new(actual_root.join("shops"))
-            .into_iter()
-            .filter_map(|e| e.ok())
-            .filter(|e| {
-                e.path()
-                    .extension()
-                    .is_some_and(|ext| ext == "json" || ext == "jsonc")
-            })
-        {
-            let content =
-                std::fs::read_to_string(entry.path()).expect("Failed to read shop config");
-            let id = file_stem(entry.path());
-            let config: ShopConfig = parse_shop_jsonc_with_id(&content, entry.path(), &id);
-            shops.insert(ShopId::from(id), config);
-        }
-
-        // Load modes
-        for entry in WalkDir::new(actual_root.join("modes"))
-            .into_iter()
-            .filter_map(|e| e.ok())
-            .filter(|e| {
-                e.path()
-                    .extension()
-                    .is_some_and(|ext| ext == "json" || ext == "jsonc")
-            })
-        {
-            let content =
-                std::fs::read_to_string(entry.path()).expect("Failed to read mode config");
-            let id = file_stem(entry.path());
-            let config: GameModeConfig = parse_jsonc_with_id(&content, entry.path(), &id);
-            modes.insert(ModeId::from(id), config);
-        }
-
-        // Load server global name pool and other settings
-        let global_server = actual_root.join("global/server.jsonc");
-        if global_server.exists()
-            && let Ok(content) = std::fs::read_to_string(&global_server)
-            && let Ok(parsed) = parse_to_serde_value(&content, &Default::default())
-            && let Some(v) = parsed
-            && let Ok(cfg) = serde_json::from_value::<serde_json::Value>(v)
-        {
-            if let Ok(pool) = serde_json::from_value::<NamePool>(
-                cfg.get("default_name").cloned().unwrap_or_default(),
-            ) {
-                name_pool = pool;
-            }
-            if let Ok(g) = serde_json::from_value::<ServerGlobalConfig>(cfg) {
-                global = g;
-            }
-        }
+        let (name_pool, global) = load_server_globals(&actual_root.join("global/server.jsonc"));
 
         Self {
             pieces,
@@ -135,6 +71,87 @@ impl ConfigManager {
             global,
         }
     }
+}
+
+/// Resolves the config root path from common run locations.
+fn resolve_config_root(root_path: &Path) -> PathBuf {
+    if root_path.exists() {
+        return root_path.to_path_buf();
+    }
+
+    if let Ok(cwd) = std::env::current_dir()
+        && let Some(parent) = cwd.parent()
+    {
+        let parent_root = parent.join(root_path);
+        if parent_root.exists() {
+            return parent_root;
+        }
+    }
+
+    root_path.to_path_buf()
+}
+
+/// Loads id-keyed configs from one directory of JSON/JSONC files.
+fn load_id_mapped_configs<T, K, Parse, Key>(
+    dir: &Path,
+    kind: &str,
+    parse: Parse,
+    key_from_id: Key,
+) -> HashMap<K, T>
+where
+    Parse: Fn(&str, &Path, &str) -> T,
+    Key: Fn(String) -> K,
+    K: Eq + Hash,
+{
+    let mut loaded = HashMap::new();
+
+    for path in config_paths(dir) {
+        let content = std::fs::read_to_string(&path)
+            .unwrap_or_else(|_| panic!("Failed to read {kind} config: {:?}", path));
+        let id = file_stem(&path);
+        let config = parse(&content, &path, &id);
+        loaded.insert(key_from_id(id), config);
+    }
+
+    loaded
+}
+
+/// Returns all JSON/JSONC config file paths under `dir`.
+fn config_paths(dir: &Path) -> Vec<PathBuf> {
+    WalkDir::new(dir)
+        .into_iter()
+        .filter_map(Result::ok)
+        .map(|entry| entry.into_path())
+        .filter(|path| {
+            path.extension()
+                .is_some_and(|ext| ext == "json" || ext == "jsonc")
+        })
+        .collect()
+}
+
+/// Loads optional server-global settings from one JSONC file.
+fn load_server_globals(path: &Path) -> (NamePool, ServerGlobalConfig) {
+    let Some(value) = read_jsonc_value(path) else {
+        return (NamePool::default(), ServerGlobalConfig::default());
+    };
+
+    let name_pool = value
+        .get("default_name")
+        .cloned()
+        .and_then(|v| serde_json::from_value::<NamePool>(v).ok())
+        .unwrap_or_default();
+
+    let global = serde_json::from_value::<ServerGlobalConfig>(value).unwrap_or_default();
+
+    (name_pool, global)
+}
+
+/// Reads one JSONC document as a serde value.
+fn read_jsonc_value(path: &Path) -> Option<serde_json::Value> {
+    let content = std::fs::read_to_string(path).ok()?;
+    parse_to_serde_value(&content, &Default::default())
+        .ok()
+        .flatten()
 }
 
 /// Parses a JSONC file and injects the `id` field before deserializing.
