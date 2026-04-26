@@ -18,6 +18,8 @@ pub fn build_on_rejoin(
     join_step: UseStateHandle<JoinStep>,
     has_interacted: UseStateHandle<bool>,
     rejoin_flow: UseStateHandle<RejoinFlow>,
+    single_kit: Option<KitId>,
+    on_join: Callback<KitId>,
 ) -> Callback<MouseEvent> {
     Callback::from(move |_| {
         if rc_ref.borrow().is_zero() {
@@ -27,7 +29,12 @@ pub fn build_on_rejoin(
             }
             rejoin_flow.set(RejoinFlow::Active);
             reducer.dispatch(GameAction::Reset);
-            join_step.set(JoinStep::SelectKit);
+            if let Some(kit_id) = single_kit.clone() {
+                join_step.set(JoinStep::SelectKit);
+                on_join.emit(kit_id);
+            } else {
+                join_step.set(JoinStep::SelectKit);
+            }
         }
     })
 }

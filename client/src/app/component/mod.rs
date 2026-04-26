@@ -192,6 +192,8 @@ pub fn app() -> Html {
         join_step.clone(),
         has_interacted.clone(),
         rejoin_flow.clone(),
+        single_kit.clone(),
+        on_join.clone(),
     );
 
     let disconnected = reducer.disconnected;
