@@ -1,7 +1,9 @@
 //! Tests for expression evaluation and board sizing helpers.
 
 use common::logic::{calculate_board_size, evaluate_expression};
-use common::models::{GameModeConfig, KitConfig, NpcLimitConfig, ShopCountConfig};
+use common::models::{
+    GameModeConfig, JoinCameraCenterConfig, KitConfig, NpcLimitConfig, ShopCountConfig,
+};
 use common::types::{BoardSize, DurationMs, ExprString, KitId, ModeId, PlayerCount};
 
 #[test]
@@ -35,6 +37,11 @@ fn calculate_board_size_clamps_minimum() {
         board_size: ExprString::from("0"),
         camera_pan_limit: ExprString::from("10"),
         fog_of_war_radius: Some(ExprString::from("10")),
+        show_scoreboard: true,
+        join_camera_center: JoinCameraCenterConfig::Piece {
+            piece_id: "king".into(),
+        },
+        disable_screen_panning: false,
         respawn_cooldown_ms: DurationMs::zero(),
         npc_limits: vec![NpcLimitConfig {
             piece_id: "pawn".into(),

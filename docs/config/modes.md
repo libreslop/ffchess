@@ -17,6 +17,9 @@ The filename stem becomes the runtime `GameModeConfig.id`.
 | `board_size` | expression string | Yes | none | Server-side expression evaluated with `player_count`. |
 | `camera_pan_limit` | expression string | Yes | none | Client-side expression evaluated with `player_piece_count` and `fog_of_war_radius`. |
 | `fog_of_war_radius` | expression string or `null` | No | `null` | Client-side expression evaluated with `player_piece_count`. `null` disables fog of war. |
+| `show_scoreboard` | boolean | No | `true` | Shows or hides the in-game leaderboard overlay. |
+| `join_camera_center` | `JoinCameraCenter` | No | `{ "piece_id": "king" }` | Initial camera focus when entering `Alive` (first spawn/rejoin). |
+| `disable_screen_panning` | boolean | No | `false` | Disables drag/touch panning by the player. Camera can still auto-focus/follow. |
 | `respawn_cooldown_ms` | integer (`i64`) | Yes | none | Time after elimination before the same stored player id may respawn. |
 | `npc_limits` | `NpcLimit[]` | Yes | none | Per-piece NPC cap formulas. |
 | `shop_counts` | `ShopCount[]` | Yes | none | Randomly spawned shops for the mode. |
@@ -75,6 +78,15 @@ The filename stem becomes the runtime `GameModeConfig.id`.
 | --- | --- | --- | --- |
 | `piece_id` | piece id | Yes | Piece type to spawn. |
 | `position` | `[i32, i32]` | Yes | Absolute board coordinate. |
+
+### `JoinCameraCenter`
+
+Untagged union: use exactly one of these objects.
+
+| Shape | Required fields | Notes |
+| --- | --- | --- |
+| Piece target | `piece_id` | Focuses the local player's first owned piece with this type id (falls back to king if missing). |
+| Position target | `position` | Focuses a board-space position `[x, y]` (`f64`); integer values target a tile center and fractions are allowed. |
 
 ### `Hook`
 

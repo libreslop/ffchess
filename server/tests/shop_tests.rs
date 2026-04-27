@@ -2,8 +2,8 @@
 
 use common::logic::evaluate_expression;
 use common::models::{
-    GameModeConfig, KitConfig, NpcLimitConfig, PieceConfig, Shop, ShopConfig, ShopCountConfig,
-    ShopGroupConfig, ShopItemConfig,
+    GameModeConfig, JoinCameraCenterConfig, KitConfig, NpcLimitConfig, PieceConfig, Shop,
+    ShopConfig, ShopCountConfig, ShopGroupConfig, ShopItemConfig,
 };
 use common::types::{
     DurationMs, ExprString, KitId, ModeId, PieceTypeId, PlayerCount, Score, ShopId, TimestampMs,
@@ -66,6 +66,11 @@ async fn shop_purchase_deducts_score_and_adds_piece() {
         board_size: ExprString::from("20"),
         camera_pan_limit: ExprString::from("10"),
         fog_of_war_radius: Some(ExprString::from("10")),
+        show_scoreboard: true,
+        join_camera_center: JoinCameraCenterConfig::Piece {
+            piece_id: PieceTypeId::from("king"),
+        },
+        disable_screen_panning: false,
         respawn_cooldown_ms: DurationMs::zero(),
         npc_limits: vec![NpcLimitConfig {
             piece_id: PieceTypeId::from("pawn"),

@@ -519,6 +519,11 @@ pub fn game_view(props: &GameViewProps) -> Html {
 
             let board_size = reducer.state.board_size;
             let mut is_interactive = false;
+            let panning_disabled = reducer
+                .mode
+                .as_ref()
+                .map(|m| m.disable_screen_panning)
+                .unwrap_or(false);
 
             if !input.is_right_click && is_within_board(BoardCoord(target), board_size) {
                 let mut ghosts = reducer.state.pieces.clone();
@@ -550,7 +555,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
             }
             drag_start.set(Some(DragStart {
                 pos: input.pos,
-                allow_panning: !is_interactive,
+                allow_panning: !is_interactive && !panning_disabled,
             }));
             manager.velocity = Vec2::ZERO;
         })
@@ -1002,7 +1007,14 @@ pub fn game_view(props: &GameViewProps) -> Html {
                         if let Some(prev) = mgr.last_touch_dist {
                             let factor = (dist / prev).powf(0.8); // dampen sensitivity
                             mgr.mouse_pos = center;
-                            if let Some(prev_center) = mgr.last_touch_center {
+                            let panning_disabled = reducer
+                                .mode
+                                .as_ref()
+                                .map(|m| m.disable_screen_panning)
+                                .unwrap_or(false);
+                            if !panning_disabled
+                                && let Some(prev_center) = mgr.last_touch_center
+                            {
                                 let pan = center - prev_center;
                                 let board_rotated_180 = local_board_rotated_180(
                                     &reducer.state,

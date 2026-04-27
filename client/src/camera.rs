@@ -3,6 +3,7 @@
 use crate::math::Vec2;
 use crate::reducer::ClientPhase;
 use common::logic::evaluate_expression;
+use common::models::JoinCameraCenterConfig;
 use common::protocol::VictoryFocusTarget;
 use common::*;
 use yew::prelude::*;
@@ -148,7 +149,8 @@ pub fn update_camera(manager: &mut CameraManager, params: CameraUpdateParams<'_>
 
             if !manager.was_alive {
                 // Respawn or First Join: Set target to king and start panning
-                manager.target_camera = king_pos;
+                manager.target_camera =
+                    join_focus_camera_pos(&params, p.king_id, tile_size, king_pos);
                 manager.target_zoom = 1.0;
                 manager.last_king_grid_pos = king.position.into();
                 manager.input_locked = true;
@@ -256,4 +258,42 @@ pub fn update_camera(manager: &mut CameraManager, params: CameraUpdateParams<'_>
     }
 
     changed
+}
+
+fn join_focus_camera_pos(
+    params: &CameraUpdateParams<'_>,
+    king_id: PieceId,
+    tile_size: f64,
+    fallback: Vec2,
+) -> Vec2 {
+    let Some(mode) = params.mode else {
+        return fallback;
+    };
+    let focus = &mode.join_camera_center;
+    match focus {
+        JoinCameraCenterConfig::Position { position } => Vec2::new(
+            position[0] * tile_size + tile_size / 2.0,
+            position[1] * tile_size + tile_size / 2.0,
+        ),
+        JoinCameraCenterConfig::Piece { piece_id } => {
+            let player_id = params.player_id.unwrap_or_else(PlayerId::nil);
+            let target_piece = params.state.pieces.get(&king_id).and_then(|king| {
+                if king.piece_type == *piece_id {
+                    Some(king)
+                } else {
+                    params.state.pieces.values().find(|piece| {
+                        piece.owner_id == Some(player_id) && piece.piece_type == *piece_id
+                    })
+                }
+            });
+            target_piece
+                .map(|piece| {
+                    Vec2::new(
+                        piece.position.0.x as f64 * tile_size + tile_size / 2.0,
+                        piece.position.0.y as f64 * tile_size + tile_size / 2.0,
+                    )
+                })
+                .unwrap_or(fallback)
+        }
+    }
 }

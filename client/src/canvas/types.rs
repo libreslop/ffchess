@@ -1,7 +1,7 @@
 //! Data structures used by the canvas renderer.
 
-use crate::math::Vec2;
 use crate::components::game_view::helpers::VisiblePremoveLine;
+use crate::math::Vec2;
 use common::models::{GameModeClientConfig, GameState, Piece, PieceConfig, ShopConfig};
 use common::types::{PieceId, PieceTypeId, PlayerId, ShopId};
 use std::cell::RefCell;

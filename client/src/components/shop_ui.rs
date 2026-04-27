@@ -56,48 +56,51 @@ pub fn shop_ui(props: &ShopUIProps) -> Html {
     {
         let on_buy = props.on_buy.clone();
         let hotkey_can_buy = hotkey_can_buy.clone();
-        use_effect_with((hotkey_can_buy, on_buy.clone()), move |(hotkey_can_buy, on_buy)| {
-            let hotkey_can_buy = hotkey_can_buy.clone();
-            let on_buy = on_buy.clone();
-            let window = web_sys::window().unwrap();
-            let listener = EventListener::new(&window, "keydown", move |event| {
-                let Some(key_event) = event.dyn_ref::<KeyboardEvent>() else {
-                    return;
-                };
-                if key_event.repeat() {
-                    return;
-                }
-                if let Some(target) = key_event.target()
-                    && let Some(input) = target.dyn_ref::<HtmlInputElement>()
-                    && !input.read_only()
-                {
-                    return;
-                }
-                if let Some(target) = key_event.target()
-                    && target.dyn_ref::<HtmlTextAreaElement>().is_some()
-                {
-                    return;
-                }
-                let key = key_event.key();
-                let Some(digit) = key
-                    .chars()
-                    .next()
-                    .and_then(|ch| ch.to_digit(10))
-                    .and_then(|d| usize::try_from(d).ok())
-                else {
-                    return;
-                };
-                if digit == 0 {
-                    return;
-                }
-                let index = digit - 1;
-                if hotkey_can_buy.get(index).copied().unwrap_or(false) {
-                    key_event.prevent_default();
-                    on_buy.emit(index);
-                }
-            });
-            move || drop(listener)
-        });
+        use_effect_with(
+            (hotkey_can_buy, on_buy.clone()),
+            move |(hotkey_can_buy, on_buy)| {
+                let hotkey_can_buy = hotkey_can_buy.clone();
+                let on_buy = on_buy.clone();
+                let window = web_sys::window().unwrap();
+                let listener = EventListener::new(&window, "keydown", move |event| {
+                    let Some(key_event) = event.dyn_ref::<KeyboardEvent>() else {
+                        return;
+                    };
+                    if key_event.repeat() {
+                        return;
+                    }
+                    if let Some(target) = key_event.target()
+                        && let Some(input) = target.dyn_ref::<HtmlInputElement>()
+                        && !input.read_only()
+                    {
+                        return;
+                    }
+                    if let Some(target) = key_event.target()
+                        && target.dyn_ref::<HtmlTextAreaElement>().is_some()
+                    {
+                        return;
+                    }
+                    let key = key_event.key();
+                    let Some(digit) = key
+                        .chars()
+                        .next()
+                        .and_then(|ch| ch.to_digit(10))
+                        .and_then(|d| usize::try_from(d).ok())
+                    else {
+                        return;
+                    };
+                    if digit == 0 {
+                        return;
+                    }
+                    let index = digit - 1;
+                    if hotkey_can_buy.get(index).copied().unwrap_or(false) {
+                        key_event.prevent_default();
+                        on_buy.emit(index);
+                    }
+                });
+                move || drop(listener)
+            },
+        );
     }
 
     html! {

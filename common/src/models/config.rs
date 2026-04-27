@@ -3,6 +3,7 @@ use crate::models::summary::{GameModeClientConfig, KitSummary};
 use crate::types::{
     DurationMs, ExprString, KitId, ModeId, PieceTypeId, PlayerCount, Score, ShopId,
 };
+use educe::Educe;
 use glam::IVec2;
 use serde::{Deserialize, Serialize};
 
@@ -112,26 +113,49 @@ pub struct QueuePresetLayoutConfig {
     pub players: Vec<QueuePresetPlayerConfig>,
 }
 
-/// Full server mode configuration.
+/// Join-time camera focus target for a mode.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(untagged)]
+pub enum JoinCameraCenterConfig {
+    Piece { piece_id: PieceTypeId },
+    Position { position: [f64; 2] },
+}
+
+/// Full server mode configuration.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Educe)]
+#[serde(default)]
+#[educe(Default)]
 pub struct GameModeConfig {
+    #[educe(Default = ModeId::from(""))]
     pub id: ModeId,
+    #[educe(Default = String::new())]
     pub display_name: String,
+    #[educe(Default = PlayerCount::zero())]
     pub max_players: PlayerCount,
-    #[serde(default)]
+    #[educe(Default = PlayerCount::zero())]
     pub queue_players: PlayerCount,
-    #[serde(default = "GameModeConfig::default_preview_switch_delay_ms")]
+    #[educe(Default = DurationMs::from_millis(5000))]
     pub preview_switch_delay_ms: DurationMs,
+    #[educe(Default = ExprString::from("1"))]
     pub board_size: ExprString,
+    #[educe(Default = ExprString::from("0"))]
     pub camera_pan_limit: ExprString,
+    #[educe(Default = None)]
     pub fog_of_war_radius: Option<ExprString>,
+    #[educe(Default = true)]
+    pub show_scoreboard: bool,
+    #[educe(Default = JoinCameraCenterConfig::Piece {
+        piece_id: PieceTypeId::from("king")
+    })]
+    pub join_camera_center: JoinCameraCenterConfig,
+    #[educe(Default = false)]
+    pub disable_screen_panning: bool,
+    #[educe(Default = DurationMs::zero())]
     pub respawn_cooldown_ms: DurationMs,
     pub npc_limits: Vec<NpcLimitConfig>,
     pub shop_counts: Vec<ShopCountConfig>,
-    #[serde(default)]
     pub fixed_shops: Vec<FixedShopConfig>,
     pub kits: Vec<KitConfig>,
-    #[serde(default)]
     pub queue_layout: Option<QueuePresetLayoutConfig>,
     pub hooks: Vec<HookConfig>,
 }
@@ -157,6 +181,9 @@ impl GameModeConfig {
             queue_players: self.queue_players,
             camera_pan_limit: self.camera_pan_limit.clone(),
             fog_of_war_radius: self.fog_of_war_radius.clone(),
+            show_scoreboard: self.show_scoreboard,
+            join_camera_center: self.join_camera_center.clone(),
+            disable_screen_panning: self.disable_screen_panning,
             respawn_cooldown_ms: self.respawn_cooldown_ms,
             kits: self
                 .kits

@@ -49,6 +49,11 @@ pub fn render_app(props: AppViewProps) -> Html {
     let is_victory = props.is_victory;
     let force_join_overlay = props.force_join_overlay;
     let player_id = props.player_id;
+    let show_scoreboard = props
+        .mode
+        .as_ref()
+        .map(|mode| mode.show_scoreboard)
+        .unwrap_or(true);
 
     html! {
         <div style="margin: 0; padding: 0; width: 100vw; height: 100vh; overflow: hidden; position: relative; background: #f0f2f5;">
@@ -105,7 +110,9 @@ pub fn render_app(props: AppViewProps) -> Html {
                 />
             } else if is_joined && !force_join_overlay {
                     <div data-testid="in-game-hud">
-                        <Leaderboard players={reducer.state.players.values().cloned().collect::<Vec<_>>()} self_id={player_id} />
+                        if show_scoreboard {
+                            <Leaderboard players={reducer.state.players.values().cloned().collect::<Vec<_>>()} self_id={player_id} />
+                        }
                         <div
                             data-testid="stats-overlay"
                             class="pointer-events-none"
