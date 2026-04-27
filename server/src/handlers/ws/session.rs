@@ -145,7 +145,7 @@ impl SocketSession {
             }
         };
 
-        self.detach_existing_binding().await;
+        self.detach_existing_binding_for_rejoin().await;
         self.remove_from_queue_if_present().await;
 
         if self.is_queue_mode {
@@ -275,10 +275,10 @@ impl SocketSession {
             .await;
     }
 
-    async fn detach_existing_binding(&self) {
+    async fn detach_existing_binding_for_rejoin(&self) {
         if let Some(binding) = self.state.unbind_connection(self.conn_id).await {
             let (player_id, instance) = binding.into_parts();
-            instance.remove_player(player_id).await;
+            instance.detach_player(player_id).await;
             self.state.cleanup_private_games().await;
         }
     }

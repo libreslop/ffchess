@@ -1,60 +1,99 @@
-# Board and World Logic
+# World, Board Size, And Shops
 
-The board environment is dynamic, resizing based on the player count and containing interactive shops that provide pieces to players.
+This chapter covers the spatial rules that are broader than one move: board sizing, spawn helpers,
+shop placement, and pruning.
 
-## Board Resizing
+## Board Coordinates
 
-The board's size is not fixed; it adjusts to ensure there's enough space for all active players while remaining compact enough to encourage interaction.
+The board is centered around `(0, 0)` and uses `BoardCoord(IVec2)`.
 
-### Size Calculation
+For a board size `N`:
 
--   The `board_size` expression from the game mode config is evaluated using the current `player_count`.
--   The result is a square board with a dimension from `-half` to `limit_pos`.
+- `half = N / 2`
+- `limit_pos = (N + 1) / 2`
+- valid coordinates are:
+  - `x >= -half && x < limit_pos`
+  - `y >= -half && y < limit_pos`
 
-### Resizing Sequence
+That gives symmetric odd/even handling without requiring a separate origin rule.
 
-1.  **Calculate Target Size**: Based on the current player count.
-2.  **Safety Check**: The board only shrinks if all player-owned pieces are within the new target bounds.
-3.  **Resize and Prune**: If safe, the board dimension is updated, and any NPCs or shops outside the new bounds are removed.
+## Board Growth And Shrink
 
-## Shops
+### Growth
 
-Shops are structures that allow players to purchase new pieces or upgrades using their accumulated score.
+When a player joins:
 
-### Shop Spawning
+- the server recomputes the target board size from the mode's `board_size` expression,
+- if the result is larger than the current board, the instance grows immediately.
 
--   The number of each shop type is defined in the `shop_counts` config for the mode.
--   Shops are placed on empty squares on the board.
+### Shrink
 
-### Interacting with Shops
+During ticks:
 
-1.  **Placement**: A player must move one of their pieces onto a shop's square.
-2.  **Item Selection**:
-    *   The server determines which shop group to show based on the `piece_id` of the piece currently on the shop.
-    *   If no specific group matches, the `default_group` is used.
-3.  **Pricing**: Prices are calculated using the `price_expr` for each item, which can depend on the player's current piece counts.
-4.  **Purchase**:
-    *   The player must have a sufficient score.
-    *   The score is deducted, and the shop's `uses` counter is decremented.
-    *   If `replace_with` is set, the piece at the shop is transformed.
-    *   If `add_pieces` is set, new pieces are spawned on or near the shop's square.
-    *   If a shop reaches zero uses, it is removed from the board.
+- the same expression is recomputed from current player count,
+- if the result is smaller, the server checks whether any player-owned piece would be outside the target board,
+- if even one player piece would be outside, the shrink is postponed,
+- otherwise the board shrinks and out-of-bounds NPCs/shops are pruned.
 
-## Mermaid Diagram: Shop Interaction
+This prevents the server from deleting active player armies during a shrink.
+
+## Spawn Helpers
+
+`server/src/spawning.rs` contains the common spawn utilities.
+
+### `is_free_position()`
+
+Checks:
+
+- in-bounds,
+- no piece on the tile,
+- no shop on the tile.
+
+### `find_adjacent_free_pos()`
+
+Used mainly for shop purchases that add pieces.
+The server checks the eight neighboring tiles in a fixed order and uses the first free one.
+
+### `find_random_nearby_free_pos()`
+
+Used for cluster spawns such as kit pieces placed around a chosen spawn anchor.
+
+### `find_spawn_pos()`
+
+Used for player spawn anchors, NPC spawns, and shop respawns.
+It first searches for tiles that are not close to existing pieces or shops, then falls back to any
+free tile, then finally to any in-bounds tile.
+
+## Shop Lifecycle
+
+Shops enter the world in two ways:
+
+- `fixed_shops`: exact coordinates defined in the mode config,
+- `shop_counts`: random placements created at instance initialization.
+
+When a shop is used:
+
+1. `uses_remaining` decreases.
+2. If it reaches zero:
+   - the shop is removed,
+   - a fresh copy of the same `shop_id` respawns at a new random spawn position.
+
+Bullet-mode invisible rule tiles use the same system, just with very large `default_uses` and transparent colors.
+
+## Shop Interaction Summary
 
 ```mermaid
-graph TD
-    A[Move Piece to Shop Square] --> B[Open Shop UI]
-    B --> C[Select Item]
-    C --> D{Enough Score?}
-    D -- Yes --> E[Execute Purchase]
-    D -- No --> F[Show Error]
-    E --> G[Deduct Score]
-    G --> H[Apply Piece Changes]
-    H --> I[Decrement Shop Uses]
-    I --> J{Uses == 0?}
-    J -- Yes --> K[Remove Shop]
-    J -- No --> L[Keep Shop]
+flowchart TD
+    A[piece lands on shop square] --> B[select matching shop group]
+    B --> C{auto upgrade single item?}
+    C -- yes --> D[buy item automatically]
+    C -- no --> E[player opens shop UI]
+    E --> F[player picks item]
+    D --> G[deduct score if needed]
+    F --> G
+    G --> H[replace standing piece and or add adjacent pieces]
+    H --> I[decrement uses_remaining]
+    I --> J{uses remaining?}
+    J -- no --> K[remove and respawn shop]
+    J -- yes --> L[leave shop in place]
 ```
-
-Board resizing and shops together create a dynamic, evolving play area that rewards players for their captures and encourages them to explore and grow their army.

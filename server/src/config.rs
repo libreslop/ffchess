@@ -118,7 +118,7 @@ where
 
 /// Returns all JSON/JSONC config file paths under `dir`.
 fn config_paths(dir: &Path) -> Vec<PathBuf> {
-    WalkDir::new(dir)
+    let mut paths = WalkDir::new(dir)
         .into_iter()
         .filter_map(Result::ok)
         .map(|entry| entry.into_path())
@@ -126,7 +126,9 @@ fn config_paths(dir: &Path) -> Vec<PathBuf> {
             path.extension()
                 .is_some_and(|ext| ext == "json" || ext == "jsonc")
         })
-        .collect()
+        .collect::<Vec<_>>();
+    paths.sort();
+    paths
 }
 
 /// Loads optional server-global settings from one JSONC file.
@@ -159,20 +161,7 @@ fn read_jsonc_value(path: &Path) -> Option<serde_json::Value> {
 /// `content` is the file contents, `path` is used for error context, and `id` is injected.
 /// Returns the deserialized config type `T`.
 fn parse_jsonc_with_id<T: DeserializeOwned>(content: &str, path: &Path, id: &str) -> T {
-    let mut value = parse_to_serde_value(content, &Default::default())
-        .map_err(|e| format!("Failed to parse config {:?}: {}", path, e))
-        .unwrap()
-        .unwrap_or_else(|| panic!("Failed to parse config {:?}: empty document", path));
-
-    if let serde_json::Value::Object(obj) = &mut value {
-        obj.insert("id".to_string(), serde_json::Value::String(id.to_string()));
-    } else {
-        panic!("Expected object in config {:?}", path);
-    }
-
-    serde_json::from_value(value)
-        .map_err(|e| format!("Failed to deserialize config {:?}: {}", path, e))
-        .unwrap()
+    parse_jsonc_with_id_mutator(content, path, id, |_| {})
 }
 
 /// Parses a shop config JSONC file and normalizes the default group.
@@ -180,27 +169,48 @@ fn parse_jsonc_with_id<T: DeserializeOwned>(content: &str, path: &Path, id: &str
 /// `content` is the file contents, `path` is used for error context, and `id` is injected.
 /// Returns the deserialized `ShopConfig`.
 fn parse_shop_jsonc_with_id(content: &str, path: &Path, id: &str) -> ShopConfig {
-    let mut value = parse_to_serde_value(content, &Default::default())
+    parse_jsonc_with_id_mutator(content, path, id, normalize_shop_default_group)
+}
+
+/// Parses a JSONC object, injects the file-derived id, applies one mutation, and deserializes it.
+fn parse_jsonc_with_id_mutator<T, F>(content: &str, path: &Path, id: &str, mutate: F) -> T
+where
+    T: DeserializeOwned,
+    F: FnOnce(&mut serde_json::Map<String, serde_json::Value>),
+{
+    let mut value = parse_jsonc_document(content, path);
+    let obj = value
+        .as_object_mut()
+        .unwrap_or_else(|| panic!("Expected object in config {:?}", path));
+    obj.insert("id".to_string(), serde_json::Value::String(id.to_string()));
+    mutate(obj);
+    deserialize_config_value(value, path)
+}
+
+/// Parses raw JSONC content into one serde value with config-specific error context.
+fn parse_jsonc_document(content: &str, path: &Path) -> serde_json::Value {
+    parse_to_serde_value(content, &Default::default())
         .map_err(|e| format!("Failed to parse config {:?}: {}", path, e))
         .unwrap()
-        .unwrap_or_else(|| panic!("Failed to parse config {:?}: empty document", path));
+        .unwrap_or_else(|| panic!("Failed to parse config {:?}: empty document", path))
+}
 
-    if let serde_json::Value::Object(obj) = &mut value {
-        obj.insert("id".to_string(), serde_json::Value::String(id.to_string()));
-        if let Some(default_group) = obj.get_mut("default_group")
-            && let serde_json::Value::Object(group_obj) = default_group
-        {
-            group_obj
-                .entry("applies_to")
-                .or_insert_with(|| serde_json::Value::Array(vec![]));
-        }
-    } else {
-        panic!("Expected object in config {:?}", path);
-    }
-
+/// Deserializes one config value into its target type with config-specific error context.
+fn deserialize_config_value<T: DeserializeOwned>(value: serde_json::Value, path: &Path) -> T {
     serde_json::from_value(value)
         .map_err(|e| format!("Failed to deserialize config {:?}: {}", path, e))
         .unwrap()
+}
+
+/// Ensures a shop default group behaves like a regular empty group during deserialization.
+fn normalize_shop_default_group(obj: &mut serde_json::Map<String, serde_json::Value>) {
+    if let Some(default_group) = obj.get_mut("default_group")
+        && let serde_json::Value::Object(group_obj) = default_group
+    {
+        group_obj
+            .entry("applies_to")
+            .or_insert_with(|| serde_json::Value::Array(vec![]));
+    }
 }
 
 /// Extracts the filename stem (without extension) as a string.

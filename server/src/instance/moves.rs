@@ -2,10 +2,16 @@
 
 use super::{GameInstance, game_instance::QueuedMoveRequest};
 use crate::time::now_ms;
-use common::models::GameState;
+use common::models::{GameState, Piece};
 use common::protocol::{GameError, ServerMessage};
-use common::types::{BoardCoord, PieceId, PlayerId};
+use common::types::{BoardCoord, DurationMs, PieceId, PlayerId, TimestampMs};
 use std::collections::VecDeque;
+
+/// Fully validated move data ready to apply to either live or projected game state.
+struct PreparedMove {
+    cooldown_ms: DurationMs,
+    captured_piece: Option<Piece>,
+}
 
 impl GameInstance {
     /// Validates and applies a move for a player's piece.
@@ -138,6 +144,20 @@ impl GameInstance {
         target: BoardCoord,
         enforce_cooldown: bool,
     ) -> Result<(), GameError> {
+        let prepared = self.prepare_move(game, player_id, piece_id, target, enforce_cooldown)?;
+        self.apply_prepared_live_move(game, player_id, piece_id, target, prepared)
+            .await
+    }
+
+    /// Validates one move against the provided game state without mutating it.
+    fn prepare_move(
+        &self,
+        game: &GameState,
+        player_id: PlayerId,
+        piece_id: PieceId,
+        target: BoardCoord,
+        enforce_cooldown: bool,
+    ) -> Result<PreparedMove, GameError> {
         let (piece_type, start_pos, piece_owner) = {
             let piece = game.pieces.get(&piece_id).ok_or(GameError::PieceNotFound)?;
             if piece.owner_id != Some(player_id) {
@@ -157,16 +177,15 @@ impl GameInstance {
         let target_piece = game
             .pieces
             .values()
-            .find(|piece| piece.position == target)
+            .find(|piece| piece.position == target && piece.id != piece_id)
             .cloned();
-        let is_capture = if let Some(ref target_piece) = target_piece {
-            if target_piece.owner_id == Some(player_id) {
-                return Err(GameError::TargetFriendly);
-            }
-            true
-        } else {
-            false
-        };
+        let is_capture = target_piece.is_some();
+        if target_piece
+            .as_ref()
+            .is_some_and(|piece| piece.owner_id == Some(player_id))
+        {
+            return Err(GameError::TargetFriendly);
+        }
 
         let piece_config = self
             .piece_configs
@@ -185,21 +204,34 @@ impl GameInstance {
             return Err(GameError::InvalidMove);
         }
 
-        if let Some(target_piece) = target_piece {
+        Ok(PreparedMove {
+            cooldown_ms: piece_config.cooldown_ms,
+            captured_piece: target_piece,
+        })
+    }
+
+    /// Applies one validated move to live game state, including capture side effects.
+    async fn apply_prepared_live_move(
+        &self,
+        game: &mut GameState,
+        player_id: PlayerId,
+        piece_id: PieceId,
+        target: BoardCoord,
+        prepared: PreparedMove,
+    ) -> Result<(), GameError> {
+        if let Some(target_piece) = prepared.captured_piece {
             self.capture_piece(target_piece, Some(player_id), game)
                 .await;
         }
 
-        if let Some(piece) = game.pieces.get_mut(&piece_id) {
-            piece.position = target;
-            piece.last_move_time = now_ms();
-            piece.cooldown_ms = piece_config.cooldown_ms;
-        } else {
-            return Err(GameError::PieceNotFound);
-        }
-
-        self.try_auto_upgrade_single_item(game, player_id, target);
-        Ok(())
+        self.finish_prepared_move(
+            game,
+            player_id,
+            piece_id,
+            target,
+            prepared.cooldown_ms,
+            Some(now_ms()),
+        )
     }
 
     fn validate_queued_move_before_enqueue(
@@ -229,52 +261,49 @@ impl GameInstance {
         player_id: PlayerId,
         target: BoardCoord,
     ) -> Result<(), GameError> {
-        let (piece_type, start_pos, piece_owner) = {
-            let piece = game.pieces.get(&piece_id).ok_or(GameError::PieceNotFound)?;
-            if piece.owner_id != Some(player_id) {
-                return Err(GameError::NotYourPiece);
-            }
-            (piece.piece_type.clone(), piece.position, piece.owner_id)
-        };
+        let prepared = self.prepare_move(game, player_id, piece_id, target, false)?;
+        self.apply_prepared_projected_move(game, player_id, piece_id, target, prepared)
+    }
 
-        let target_piece = game
-            .pieces
-            .values()
-            .find(|piece| piece.position == target && piece.id != piece_id)
-            .cloned();
-        let is_capture = if let Some(ref target_piece) = target_piece {
-            if target_piece.owner_id == Some(player_id) {
-                return Err(GameError::TargetFriendly);
-            }
-            true
-        } else {
-            false
-        };
-
-        let piece_config = self
-            .piece_configs
-            .get(&piece_type)
-            .ok_or_else(|| GameError::Internal("Piece config not found".to_string()))?;
-
-        if !common::logic::is_valid_move(common::logic::MoveValidationParams {
-            piece_config,
-            start: start_pos,
-            end: target,
-            is_capture,
-            board_size: game.board_size,
-            pieces: &game.pieces,
-            moving_owner: piece_owner,
-        }) {
-            return Err(GameError::InvalidMove);
-        }
-
-        if let Some(target_piece) = target_piece {
+    /// Applies one validated move to projected state used for queued premove validation.
+    fn apply_prepared_projected_move(
+        &self,
+        game: &mut GameState,
+        player_id: PlayerId,
+        piece_id: PieceId,
+        target: BoardCoord,
+        prepared: PreparedMove,
+    ) -> Result<(), GameError> {
+        if let Some(target_piece) = prepared.captured_piece {
             game.pieces.remove(&target_piece.id);
         }
 
+        self.finish_prepared_move(
+            game,
+            player_id,
+            piece_id,
+            target,
+            prepared.cooldown_ms,
+            None,
+        )
+    }
+
+    /// Updates the moved piece after validation and capture handling succeed.
+    fn finish_prepared_move(
+        &self,
+        game: &mut GameState,
+        player_id: PlayerId,
+        piece_id: PieceId,
+        target: BoardCoord,
+        cooldown_ms: DurationMs,
+        last_move_time: Option<TimestampMs>,
+    ) -> Result<(), GameError> {
         if let Some(piece) = game.pieces.get_mut(&piece_id) {
             piece.position = target;
-            piece.cooldown_ms = piece_config.cooldown_ms;
+            if let Some(last_move_time) = last_move_time {
+                piece.last_move_time = last_move_time;
+            }
+            piece.cooldown_ms = cooldown_ms;
         } else {
             return Err(GameError::PieceNotFound);
         }

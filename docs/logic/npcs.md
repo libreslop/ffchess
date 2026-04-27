@@ -1,47 +1,87 @@
-# NPC Behavior and Spawning
+# NPCs
 
-Non-Player Characters (NPCs) are pieces that move autonomously on the board, providing challenges and opportunities for players to gain scores.
+NPCs are ordinary pieces with `owner_id = None`.
+They use the same piece configs as player-controlled pieces, but their spawning and movement logic
+is entirely server-driven.
 
-## NPC Spawning
+## Spawn Limits
 
-NPCs are spawned based on the `npc_limits` configuration for each game mode.
+Each mode declares `npc_limits`, where every entry contains:
 
-### Spawn Logic
+- `piece_id`
+- `max_expr`
 
-1.  **Count Check**: For each NPC piece type, the server counts the number of current NPCs of that type.
-2.  **Expression Evaluation**: The maximum number of allowed NPCs is calculated using the `max_expr` defined in the mode's config. This expression can depend on the current `player_count`.
-3.  **Spawn Positioning**: If the current count is below the maximum, a new NPC is spawned. The server uses `find_spawn_pos` to find an empty square on the board that is not too close to existing players.
-4.  **Initial Cooldown**: New NPCs receive a random initial `last_move_time` to stagger their movements.
+`max_expr` is evaluated with one variable:
 
-## NPC Movement AI
+- `player_count`
 
-NPC movement is processed every tick in `tick_npcs`.
+For every tick in a recently viewed instance, the server:
 
-### AI Decision Making
+1. counts current NPCs of that type,
+2. evaluates the configured maximum,
+3. spawns one new NPC if the current count is still below the cap.
 
-For each NPC piece, the AI decides its next move:
+## Spawn Positioning
 
-1.  **Target Selection**: The AI finds the nearest player-owned piece.
-2.  **Move Prioritization**:
-    *   **Hunting**: If a player piece is within a certain distance (currently 12 tiles), the AI searches for a move that minimizes the distance to that target piece. This includes searching for a capture move if possible.
-    *   **Random Movement**: If no player is nearby, or no path to hunt is available, the AI picks a random legal quiet move.
-3.  **Execution**: Once a target square is chosen, the move is validated and executed. If it's a capture, the player's piece is removed.
+NPC spawns reuse the general `find_spawn_pos()` helper.
+The helper prefers positions that:
 
-## Mermaid Diagram: NPC Decision Flow
+- are inside the board,
+- are unoccupied,
+- are not too close to existing pieces,
+- are not too close to existing shops.
+
+If a "good" position is not found quickly, the helper degrades to "any free valid tile", then
+finally to a random in-bounds tile.
+
+## Initial Cooldown Staggering
+
+Fresh NPCs do not all move on the same frame.
+Their initial `last_move_time` is randomized within the piece cooldown window so that different NPCs
+come off cooldown at different moments.
+
+## Movement AI
+
+During `tick_npcs()`:
+
+1. iterate every piece,
+2. ignore owned pieces,
+3. skip NPCs still on cooldown,
+4. load the piece config,
+5. choose a move.
+
+### Move Choice Strategy
+
+- Find the nearest player-owned piece.
+- If that target is within roughly 12 tiles:
+  - collect all legal capture moves,
+  - collect all legal quiet moves,
+  - choose the move that minimizes distance to the target.
+- Otherwise:
+  - collect legal quiet moves only,
+  - choose one at random.
+
+If no legal move exists, the NPC does nothing that tick.
+
+## Shared Validation
+
+NPCs do not have special movement rules.
+Every candidate move is checked with the same `common::logic::is_valid_move()` function used by
+player pieces.
+
+## NPC Diagram
 
 ```mermaid
-graph TD
-    A[Tick NPC] --> B{On Cooldown?}
-    B -- Yes --> C[Wait]
-    B -- No --> D[Find Nearest Player Piece]
-    D --> E{Player Nearby?}
-    E -- Yes --> F[Find Best Hunting Move]
-    E -- No --> G[Pick Random Quiet Move]
-    F --> H{Move Found?}
-    H -- Yes --> I[Execute Move]
-    H -- No --> G
-    G --> H
-    I --> J[Update Cooldown]
+flowchart TD
+    A[recently viewed instance] --> B[iterate NPC pieces]
+    B --> C{off cooldown?}
+    C -- no --> D[skip]
+    C -- yes --> E[find nearest player piece]
+    E --> F{within hunt radius?}
+    F -- yes --> G[choose closest legal move]
+    F -- no --> H[random legal quiet move]
+    G --> I{move found?}
+    H --> I
+    I -- no --> D
+    I -- yes --> J[apply move or capture]
 ```
-
-NPCs add a dynamic element to the board, creating a more lively and challenging environment, especially in modes with lower player counts.

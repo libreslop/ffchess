@@ -1,51 +1,82 @@
-# Game Loop and Ticking
+# Game Loop
 
-The server operates on a periodic tick system to maintain game state, process automated behaviors, and broadcast updates to clients.
+The authoritative server loop lives in `server/src/main.rs`. It wakes every `100ms` and runs two
+top-level tasks:
 
-## The Tick Cycle
+1. `tick_all_games()`
+2. `tick_previews()`
 
-The main game loop is driven by the `handle_tick` method in `GameInstance`. This method is executed at a regular interval (typically every 50ms).
+Each `GameInstance` then runs its own `handle_tick()` routine.
 
-### Tick Sequence
+## Per-Instance Tick Order
 
-1.  **Start Tick Hooks**: Any events from the previous tick that are queued for hook processing are promoted to the active buffer.
-2.  **View Status Check**: The server checks if any players or spectators are currently viewing the instance. If not, certain expensive operations (like NPC logic) are paused.
-3.  **Process Queued Moves**: Executes any player moves that were queued due to cooldowns.
-4.  **NPC Logic**:
-    *   **Spawning**: Checks NPC limits and spawns new pieces if needed.
-    *   **Ticking**: Moves NPCs according to their AI rules.
-5.  **Periodic Cleanup**: Every 600 ticks (~30 seconds), the server performs maintenance:
-    *   Cleans up old death timestamps.
-    *   Removes expired session secrets.
-    *   Purges inactive colors from the color manager.
-6.  **Board Resizing**: Calculates the target board size based on the current player count. If the board should shrink and no player pieces are outside the new bounds, the board is resized.
-7.  **Pruning**: Any pieces or shops that are now out of bounds are removed.
-8.  **Resolve Tick Hooks**: Evaluates gameplay hooks (like king capture) and applies their effects (elimination, victory).
-9.  **Broadcast**: Collects the full game state and broadcasts an `UpdateState` message to all connected clients.
+`server/src/instance/ticks.rs` currently performs work in this order:
 
-## Mermaid Diagram: Tick Flow
+1. Promote queued hook events into the active tick buffer.
+2. Check whether any player channels or spectator channels are attached.
+3. Refresh `last_viewed_at` when someone is watching.
+4. If the instance has been viewed within the last 5 seconds:
+   - process server-side queued moves,
+   - spawn NPCs up to the configured limits,
+   - advance NPCs that are off cooldown.
+5. Every 600 ticks (roughly 60 seconds with a 100ms server loop):
+   - prune death timestamps older than 10 minutes,
+   - prune session secrets older than 5 minutes,
+   - prune stale color claims older than 24 hours.
+6. Refresh color activity for currently connected players.
+7. Recalculate the target board size and shrink only if no player-owned piece would fall outside the new boundary.
+8. Resolve buffered hooks for the completed tick.
+9. Drain `removed_pieces` and `removed_players`.
+10. Broadcast a full `UpdateState` snapshot to active players and passive viewers.
+
+## Why NPCs Pause When Unwatched
+
+The server intentionally gates queued moves and NPC simulation behind a recent-view check:
+
+- if nobody has looked at the instance for more than 5 seconds, the board effectively idles,
+- state still exists,
+- players can reconnect and resume,
+- but background NPC churn is avoided for dormant instances.
+
+## Board Resizing In The Tick
+
+Shrinking is conservative:
+
+- the target size is computed from the mode's `board_size` expression,
+- the board only shrinks if every player-owned piece is already inside the target boundary,
+- once the shrink happens, NPCs and shops outside the new bounds are pruned immediately.
+
+Growing is handled when new players join, not here.
+
+## Broadcast Payload
+
+At the end of the tick, the server sends one `ServerMessage::UpdateState` containing:
+
+- all current players,
+- all current pieces,
+- all current shops,
+- all piece ids removed during the tick,
+- all player ids removed during the tick,
+- the current board size.
+
+The client treats this as authoritative state and layers prediction on top of it.
+
+## Tick Diagram
 
 ```mermaid
-graph TD
-    A[Start Tick] --> B[Promote Hook Events]
-    B --> C{Any Viewers?}
-    C -- Yes --> D[Process Queued Moves]
-    D --> E[Spawn & Move NPCs]
-    E --> F[Board Resizing]
-    C -- No --> F
-    F --> G[Resolve Hooks]
-    G --> H[Prune Out-of-Bounds]
-    H --> I[Broadcast UpdateState]
-    I --> J[End Tick]
+flowchart TD
+    A[Main loop wakes] --> B[handle_tick per instance]
+    B --> C[begin tick hooks]
+    C --> D{viewed recently?}
+    D -- yes --> E[process queued moves]
+    E --> F[spawn NPCs]
+    F --> G[tick NPCs]
+    D -- no --> H[skip hot simulation]
+    G --> I[periodic cleanup]
+    H --> I
+    I --> J[refresh color activity]
+    J --> K[attempt safe board shrink]
+    K --> L[resolve hooks]
+    L --> M[drain removed ids]
+    M --> N[broadcast UpdateState]
 ```
-
-## State Synchronization
-
-The `UpdateState` message contains:
-- List of all active players and their scores.
-- List of all active pieces and their positions.
-- List of all active shops.
-- IDs of pieces and players removed in this tick.
-- Current board size.
-
-Clients use this message to update their local state and interpolate piece movements.

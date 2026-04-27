@@ -249,10 +249,12 @@ impl GameInstance {
     ///
     /// `player_id` identifies the player to remove. Returns nothing.
     pub async fn remove_player(&self, player_id: PlayerId) {
-        self.remove_player_locked(player_id).await;
+        self.send_game_over(player_id).await;
+        self.remove_player_from_instance(player_id, true).await;
     }
 
-    async fn remove_player_locked(&self, player_id: PlayerId) {
+    /// Sends the departing player their final score payload before removal.
+    async fn send_game_over(&self, player_id: PlayerId) {
         let stats = {
             let game = self.game.read().await;
             game.players
@@ -273,51 +275,27 @@ impl GameInstance {
                 });
             }
         }
-
-        let (_removed, removed_piece_ids) = {
-            let mut game = self.game.write().await;
-            self.player_channels.write().await.remove(&player_id);
-            let (removed_internal, pieces) = self.remove_player_state(player_id, &mut game).await;
-            if removed_internal {
-                self.record_player_leave_event().await;
-            }
-            (removed_internal, pieces)
-        };
-
-        if !removed_piece_ids.is_empty() {
-            let mut queued_moves = self.queued_moves.write().await;
-            for piece_id in removed_piece_ids {
-                queued_moves.remove(&piece_id);
-            }
-        }
     }
 
     /// Removes a player from the game without locking player_channels (caller must hold it).
     pub(super) async fn remove_player_only_state(&self, player_id: PlayerId) {
-        let (_removed, removed_piece_ids) = {
-            let mut game = self.game.write().await;
-            let (removed_internal, pieces) = self.remove_player_state(player_id, &mut game).await;
-            if removed_internal {
-                self.record_player_leave_event().await;
-            }
-            (removed_internal, pieces)
-        };
-
-        if !removed_piece_ids.is_empty() {
-            let mut queued_moves = self.queued_moves.write().await;
-            for piece_id in removed_piece_ids {
-                queued_moves.remove(&piece_id);
-            }
-        }
+        self.remove_player_from_instance(player_id, false).await;
     }
 
     /// Removes a player from the game without sending a GameOver payload.
     ///
     /// Used when a player is leaving via the join flow.
     pub async fn detach_player(&self, player_id: PlayerId) {
-        let (_removed, removed_piece_ids) = {
+        self.remove_player_from_instance(player_id, true).await;
+    }
+
+    /// Removes one player from live state and clears any stale queued premoves they owned.
+    async fn remove_player_from_instance(&self, player_id: PlayerId, remove_channel: bool) {
+        let (removed, removed_piece_ids) = {
             let mut game = self.game.write().await;
-            self.player_channels.write().await.remove(&player_id);
+            if remove_channel {
+                self.player_channels.write().await.remove(&player_id);
+            }
             let (removed_internal, pieces) = self.remove_player_state(player_id, &mut game).await;
             if removed_internal {
                 self.record_player_leave_event().await;
@@ -325,11 +303,8 @@ impl GameInstance {
             (removed_internal, pieces)
         };
 
-        if !removed_piece_ids.is_empty() {
-            let mut queued_moves = self.queued_moves.write().await;
-            for piece_id in removed_piece_ids {
-                queued_moves.remove(&piece_id);
-            }
+        if removed {
+            self.clear_queued_moves_for_pieces(removed_piece_ids).await;
         }
     }
 
@@ -351,18 +326,18 @@ impl GameInstance {
             .write()
             .await
             .insert(player_id, now_ms());
-        let mut _rp = self.removed_pieces.write().await;
+        let mut removed_piece_log = self.removed_pieces.write().await;
         let mut removed_piece_ids = Vec::new();
         game.pieces.retain(|id, p| {
             if p.owner_id == Some(player_id) {
-                _rp.push(*id);
+                removed_piece_log.push(*id);
                 removed_piece_ids.push(*id);
                 false
             } else {
                 true
             }
         });
-        drop(_rp);
+        drop(removed_piece_log);
 
         (true, removed_piece_ids)
     }

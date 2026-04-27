@@ -1,68 +1,133 @@
 # Shop Configuration
 
-Shop configuration files define the items available for purchase, pricing formulas, and appearance of in-game shop structures.
+Shop configs live in `config/shops/` and describe what a board shop can sell, who sees each item
+group, and what happens when an item is purchased.
 
-**Path:** `config/shops/`
-**Naming:** `<shop_id>.jsonc`
+**Path pattern:** `config/shops/<shop_id>.jsonc`
 
-The `shop_id` is automatically derived from the filename stem (e.g., `spawn_shop.jsonc` becomes `spawn_shop`).
+The filename stem becomes the runtime `ShopConfig.id`.
 
-### Shop Attributes
+## Schema
 
-| Attribute | Type | Description | Optional | Default |
-|-----------|------|-------------|----------|---------|
-| `display_name` | `String` | The name of the shop displayed in the UI. | No | - |
-| `default_uses` | `u32` | How many times the shop can be used by any player before it vanishes. | No | - |
-| `color` | `String` | Any valid CSS color string (e.g. `#3b82f6`, `rgba(59,130,246,0.2)`). | Yes | - |
-| `auto_upgrade_single_item` | `bool` | If `true`, automatically buys the only item when exactly one item applies to the piece on the shop. | Yes | `false` |
-| `groups` | `Array<ShopGroup>` | Specific item groups that only apply to certain piece types. | Yes | `[]` |
-| `default_group` | `ShopGroup \| null` | Optional fallback group; if `null`, pieces outside configured groups see no shop menu. | Yes | `null` |
+### Top-Level Shop Fields
 
-### ShopGroup Attributes
+| Field | Type | Required | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `display_name` | string | Yes | Label shown in the client UI. |
+| `default_uses` | integer (`u32`) | Yes | Number of successful purchases before the shop depletes. When it reaches zero, the server removes the shop and respawns a fresh copy elsewhere. |
+| `color` | string or `null` | No | `null` | CSS color string used when drawing the shop tile. Transparent RGBA values are valid and used in bullet mode. |
+| `auto_upgrade_single_item` | boolean | No | `false` | If `true` and the selected group contains exactly one item, landing on the shop auto-purchases that item after a move succeeds. |
+| `groups` | `ShopGroup[]` | Yes | none | Piece-specific groups checked before `default_group`. |
+| `default_group` | `ShopGroup` or `null` | No | `null` | Fallback group used when no specific group matches. |
 
-| Attribute | Type | Description | Optional | Default |
-|-----------|------|-------------|----------|---------|
-| `applies_to` | `Array<String>` | List of `piece_id`s that this group applies to. | Yes | `[]` (if in `default_group`, it applies to all) |
-| `items` | `Array<ShopItem>` | The list of items available in this group. | No | - |
+### `ShopGroup`
 
-### ShopItem Attributes
+| Field | Type | Required | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `applies_to` | piece id[] | No | `[]` | Piece types that should use this group. For `default_group`, the loader normalizes a missing value to `[]`. |
+| `items` | `ShopItem[]` | Yes | none | Purchase options shown for that group. |
 
-| Attribute | Type | Description | Optional | Default |
-|-----------|------|-------------|----------|---------|
-| `display_name` | `String` | The name of the item. | No | - |
-| `price_expr` | `String \| null` | A mathematical expression for the price. `null` means free (`0`) and hides the price tag in UI. Can use variables (see below). | Yes | `null` |
-| `replace_with` | `String (piece_id)` | If set, the current piece at the shop is replaced with this type. | Yes | `null` |
-| `add_pieces` | `Array<String>` | List of `piece_id`s to add to the player's collection. | Yes | `[]` |
+### `ShopItem`
 
-### Pricing Expressions
+| Field | Type | Required | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `display_name` | string | Yes | none | Button label in the shop UI. |
+| `price_expr` | string or `null` | No | `null` | Pricing formula. `null` means free. |
+| `replace_with` | piece id or `null` | No | `null` | If set, the piece standing on the shop is transformed into this piece type. |
+| `add_pieces` | piece id[] | No | `[]` | Extra pieces spawned adjacent to the shop tile for the buyer. |
 
-When set, `price_expr` is evaluated using a simple math expression parser. Available variables:
-- `player_piece_count`: Total number of pieces owned by the player.
-- `<piece_id>_count`: Number of pieces of a specific type owned by the player (e.g., `pawn_count`).
+## Group Selection Rules
 
-### Example (`spawn_shop.jsonc`)
+The shared helper `common::logic::select_shop_group` applies these rules:
+
+1. If a piece is on the shop, scan `groups` in order and pick the first group whose `applies_to`
+   contains that piece type.
+2. If no explicit group matches, fall back to `default_group`.
+3. If there is no piece and no `default_group`, the result is `None`.
+
+The normal client UI only opens a shop when the local player has a piece on the shop square.
+
+## Pricing Expression Variables
+
+`price_expr` is evaluated with these variables:
+
+- `player_piece_count`: total pieces owned by the buyer
+- `<piece_id>_count`: per-piece ownership counts, for example `pawn_count` or `bullet_queen_count`
+
+Values are computed server-side during purchase. The client uses the same formula inputs for its
+shop UI preview.
+
+## Purchase Effects
+
+A successful purchase can do three things:
+
+1. Deduct score from the buyer.
+2. Replace the shop-standing piece with a different `piece_type`.
+3. Spawn extra pieces on adjacent free squares.
+
+Important runtime details:
+
+- Added pieces must fit in one of the eight adjacent offsets checked by the server.
+- If there is no adjacent space for an `add_pieces` spawn, the purchase fails with `NoSpaceNearby`.
+- Replacement updates the piece's cooldown to the replacement piece's configured cooldown.
+- When `default_uses` reaches zero, the shop is removed and a fresh copy respawns at a new random free location.
+
+## Example: Standard Recruit Shop
 
 ```jsonc
 {
-    "display_name": "Mercenary Outpost",
-    "default_uses": 3,
-    "color": "#3b82f6",
-    "groups": [],
-    "default_group": {
-        "items": [
-            {
-                "display_name": "Hire Pawn",
-                "price_expr": "10 + player_piece_count * 2",
-                "replace_with": null,
-                "add_pieces": ["pawn"]
-            },
-            {
-                "display_name": "Hire Knight",
-                "price_expr": "50 + player_piece_count * 5",
-                "replace_with": null,
-                "add_pieces": ["knight"]
-            }
-        ]
-    }
+  "display_name": "Mercenary Outpost",
+  "default_uses": 3,
+  "color": "#3b82f6",
+  "groups": [],
+  "default_group": {
+    "items": [
+      {
+        "display_name": "Hire Pawn",
+        "price_expr": "10 + player_piece_count * 2",
+        "replace_with": null,
+        "add_pieces": ["pawn"]
+      },
+      {
+        "display_name": "Hire Knight",
+        "price_expr": "50 + player_piece_count * 5",
+        "replace_with": null,
+        "add_pieces": ["knight"]
+      }
+    ]
+  }
 }
 ```
+
+## Example: Bullet Promotion Shop
+
+```jsonc
+{
+  "display_name": "Pawn Promotion",
+  "default_uses": 9999,
+  "color": "rgba(253, 224, 71, 0)",
+  "auto_upgrade_single_item": false,
+  "groups": [
+    {
+      "applies_to": ["bullet_pawn_northbound_moved", "bullet_pawn_southbound_moved"],
+      "items": [
+        { "display_name": "Queen",  "price_expr": null, "replace_with": "bullet_queen",  "add_pieces": [] },
+        { "display_name": "Rook",   "price_expr": null, "replace_with": "bullet_rook",   "add_pieces": [] },
+        { "display_name": "Bishop", "price_expr": null, "replace_with": "bullet_bishop", "add_pieces": [] },
+        { "display_name": "Knight", "price_expr": null, "replace_with": "bullet_knight", "add_pieces": [] }
+      ]
+    }
+  ],
+  "default_group": null
+}
+```
+
+## Validation Checklist
+
+When adding a shop config, verify that:
+
+- the filename matches the intended `shop_id`,
+- every referenced `piece_id` exists,
+- formulas only use the supported variables,
+- `auto_upgrade_single_item` is only enabled when that behavior is intentional,
+- `default_group` is `null` when you want "no valid purchase here" rather than a fallback menu.

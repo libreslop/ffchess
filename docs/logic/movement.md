@@ -1,55 +1,112 @@
-# Movement and Move Validation
+# Movement And Premoves
 
-Movement is the core mechanic of the game. It involves player input, validation against piece-specific rules, and handling of cooldowns and premoves.
+Movement is split across three layers:
 
-## Move Validation
+1. shared rule validation in `common/src/logic.rs`,
+2. authoritative execution in `server/src/instance/moves.rs`,
+3. predictive visualization in the client reducer and game view helpers.
 
-The validation logic resides in `common/src/logic.rs` within the `is_valid_move` function. It performs several checks to ensure a move is legal:
+## Shared Validation Rules
 
-1.  **Bound Check**: The target coordinate must be within the current board bounds.
-2.  **Square Content**:
-    *   **Quiet Move**: The target square must be empty.
-    *   **Capture**: The target square must contain an opponent's piece.
-3.  **Path Validation**:
-    *   The piece's configuration (`move_paths` or `capture_paths`) is consulted.
-    *   The relative displacement must match one of the predefined steps in the configuration.
-    *   If a path has multiple steps (sliding), all intermediate tiles must be empty.
+`common::logic::is_valid_move()` answers one question: "Given the current board state, is this
+specific quiet move or capture legal for this piece config?"
 
-## Cooldowns and Queuing
+It enforces:
 
-To prevent spamming and allow for tactical planning, moves are subject to cooldowns.
+- start and end squares must differ,
+- the target must be inside the current board bounds,
+- quiet moves must land on an empty square,
+- captures must land on an occupied non-friendly square,
+- the target displacement must match one of the configured path steps,
+- every earlier step in the chosen path must be empty.
 
-### The Cooldown System
+The validator does not understand turns, matchmaking, shops, scoring, or victory. It only reasons
+about paths, occupancy, and board bounds.
 
--   Each piece has a `cooldown_ms` defined in its configuration.
--   When a piece moves, its `last_move_time` is updated to the current server timestamp.
--   A piece can only move again if `now - last_move_time >= cooldown_ms`.
+## Authoritative Server Move Flow
 
-### Queued Moves (Premoves)
+When a `ClientMessage::MovePiece` arrives:
 
-If a player attempts to move a piece that is still on cooldown, the server may queue the move:
+1. The server confirms the piece exists and belongs to the requesting player.
+2. If the piece is still on cooldown, the request may be queued instead of executed immediately.
+3. Otherwise the server prepares the move against the live `GameState`.
+4. If the move is valid:
+   - captured pieces are removed,
+   - score and kill side effects are applied,
+   - hook capture events are recorded,
+   - the moved piece position and cooldown are updated,
+   - auto-upgrade shops may fire if the piece landed on a qualifying shop.
 
-1.  If the piece is currently cooling down, the move request is added to a `queued_moves` buffer for that piece.
-2.  The buffer can hold up to 100 queued moves per piece.
-3.  During each server tick, the `process_queued_moves` function checks if the cooldown has expired for pieces with queued moves.
-4.  If the cooldown has elapsed, the next move in the queue is validated and executed.
-5.  If a move in the queue becomes invalid (e.g., the target square is no longer empty), it is discarded and an error is sent to the player.
+If any validation fails, the server returns a `GameError`.
 
-## Mermaid Diagram: Move Execution
+## Cooldowns
+
+Every piece stores:
+
+- `last_move_time`
+- `cooldown_ms`
+
+A move is legal only when:
+
+```text
+now - last_move_time >= cooldown_ms
+```
+
+The piece config decides the next cooldown after a successful move.
+
+## Server-Side Queued Moves
+
+The server owns a `queued_moves: HashMap<PieceId, VecDeque<QueuedMoveRequest>>`.
+
+Rules:
+
+- each piece may queue up to 100 requests,
+- if a piece is on cooldown, the server validates the new request against a projected future state,
+- that projected future state includes earlier queued moves for the same piece,
+- invalid chained premoves are rejected immediately,
+- during ticks, the server replays queued moves as soon as the cooldown expires.
+
+This avoids accepting nonsense chains such as "move to A, then instantly jump to an unreachable C".
+
+## Client-Side Prediction
+
+The client keeps a local `pm_queue` for immediate feedback:
+
+- predicted piece positions are applied to a ghost map,
+- the renderer shows queued path lines,
+- shop actions can also be queued locally,
+- the queue is reconciled against authoritative `UpdateState` messages.
+
+The client prediction is visual only. The server still decides what actually happens.
+
+## Auto-Upgrade Shops
+
+Movement can trigger a shop action without a separate click.
+
+If a piece lands on a shop where:
+
+- `auto_upgrade_single_item == true`, and
+- exactly one shop item applies to that piece,
+
+the server purchases that item automatically after the move completes.
+
+Bullet-mode pawn advancement uses this mechanic instead of hard-coding pawn state transitions in
+move logic.
+
+## Movement Diagram
 
 ```mermaid
-graph TD
-    A[Move Request Received] --> B{Piece on Cooldown?}
-    B -- Yes --> C[Queue Move]
-    B -- No --> D{Any Queued Moves?}
-    D -- Yes --> C
-    D -- No --> E[Validate Move]
-    E -- Valid --> F[Execute Move]
-    E -- Invalid --> G[Send Error to Player]
-    F --> H[Update Piece Cooldown]
-    C --> I[Wait for Next Tick]
-    I --> J{Cooldown Finished?}
-    J -- Yes --> K[Pop Move from Queue]
-    K --> E
-    J -- No --> I
+flowchart TD
+    A[client click or tap] --> B[send MovePiece]
+    B --> C{piece on cooldown?}
+    C -- yes --> D[validate against projected queue]
+    D --> E[append queued move]
+    C -- no --> F[validate against live board]
+    F --> G{valid?}
+    G -- no --> H[send GameError]
+    G -- yes --> I[apply capture side effects]
+    I --> J[move piece and update cooldown]
+    J --> K[attempt auto shop upgrade]
+    E --> L[next tick replays queued move]
+    L --> F
 ```

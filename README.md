@@ -1,54 +1,78 @@
-# ffchess - Multi-Player Multi-Piece Chess
+# ffchess
 
-**ffchess** is a fast-paced, multi-player, data-driven chess variant. Unlike traditional chess, this game features a dynamic, resizing board where players can bring their own starting kits, capture NPCs to earn score, and buy new pieces or upgrades from interactive shops.
+`ffchess` is a real-time, data-driven multiplayer chess sandbox built as a Rust workspace.
+Players control whole armies instead of a single piece, pieces move on independent cooldowns,
+NPCs wander the board for score, shops upgrade armies in place, and queue-based modes can spin
+up isolated private matches from shared public lobbies.
 
-## Key Features
+## What It Includes
 
--   **Multi-Player Sandbox**: Play with up to 20+ players on a single, shared board.
--   **Dynamic Board Size**: The world expands and contracts based on the number of active players.
--   **Data-Driven Design**: Pieces, shops, and game modes are fully configurable via JSONC files.
--   **Real-Time Combat**: Pieces move on independent cooldowns—no more waiting for turns!
--   **In-Game Economy**: Capture pieces to gain score, then visit shops to recruit new units or upgrade existing ones.
--   **Customizable Hooks**: Game modes can define custom triggers, such as "Eliminate owner on King capture."
--   **NPC AI**: Autonomous pieces roam the board, providing constant interaction even in low-population games.
+- Real-time movement instead of alternating turns.
+- Config-defined pieces, shops, kits, hooks, and modes.
+- Public sandbox modes plus queue-based private match modes.
+- A WebSocket server, a Yew/WebAssembly client, and a shared `common` crate.
+- Client-side premove prediction backed by server-side queued move execution.
 
-## Technology Stack
+## Workspace Layout
 
--   **Server**: Built with **Rust** using `tokio` for high-performance asynchronous networking and state management.
--   **Client**: A high-performance **WebAssembly** application built with Rust and `yew`/`gloo`.
--   **Common**: Shared logic and protocols between client and server, ensuring a single source of truth for movement rules and data models.
--   **Communication**: Real-time communication via **WebSockets** with a custom JSON-based protocol.
+- `common/`: shared domain models, protocol types, strong primitive wrappers, and rule helpers.
+- `server/`: Axum server, live game instances, matchmaking, previews, hooks, NPCs, and config loading.
+- `client/`: Yew application, canvas renderer, camera/input logic, and UI overlays.
+- `config/`: JSONC content that defines runtime behavior.
+- `docs/`: configuration reference and logic chapters for the project.
 
-## Getting Started
+## Running Locally
 
 ### Prerequisites
 
--   [Rust](https://www.rust-lang.org/tools/install) (latest stable version)
--   [Trunk](https://trunkrs.dev/) (for building the WebAssembly client)
+- Rust stable with `cargo`
+- `trunk` for the WebAssembly client
 
-### Build and Run
+### Development Flow
 
-1.  **Build the Client**:
-    ```bash
-    cd client
-    trunk build --release
-    cd ..
-    ```
-    This compiles the Rust client to WebAssembly and places the static assets in `client/dist`.
+1. Run the test suite:
 
-2.  **Run the Server**:
-    ```bash
-    cargo run -p server --release
-    ```
-    The server will start at `http://localhost:3000` (by default), serving both the WebSocket API and the static client files from the `dist` directory.
+   ```bash
+   cargo test
+   ```
+
+2. Build the client bundle:
+
+   ```bash
+   cd client
+   NO_COLOR=true trunk build --release
+   cd ..
+   ```
+
+3. Build or run the server:
+
+   ```bash
+   cargo build --release -p server
+   cargo run --release -p server
+   ```
+
+The server serves the built client from `client/dist/` and static assets from `assets/`.
+By default it listens on `http://localhost:8080`. Set `PORT` to override that.
+
+## Configuration Overview
+
+The runtime is intentionally driven by files under `config/`:
+
+- `config/global/`: server and client globals.
+- `config/pieces/`: movement rules, cooldowns, score values, and SVG asset names.
+- `config/shops/`: recruit/upgrade behavior and price formulas.
+- `config/modes/`: board sizing, NPC caps, kits, hooks, queue behavior, and layouts.
+
+Detailed field-by-field reference lives in [docs/README.md](docs/README.md).
+
+## Architecture Notes
+
+- The server owns the authoritative `GameState` for each `GameInstance`.
+- The client renders a predicted view by applying local premoves on top of the latest server snapshot.
+- Queue modes keep a public preview board alive while private match instances are created on demand.
+- Hook handling is tick-buffered so captures and leave events resolve in a predictable order.
 
 ## Documentation
 
-Comprehensive documentation for all project systems can be found in the [`docs/`](docs/README.md) folder:
-
--   [**Configuration Guide**](docs/README.md#configuration-guide): How to define pieces, shops, and modes.
--   [**Logic and Flow**](docs/README.md#logic-and-flow): Detailed technical descriptions of the game loop, movement, and NPC AI.
-
-## License
-
-AGPLv3
+Start with [docs/README.md](docs/README.md) for the full
+documentation index.

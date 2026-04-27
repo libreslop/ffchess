@@ -1,53 +1,100 @@
-# Combat, Captures, and Hooks
+# Combat, Captures, And Hooks
 
-Combat in the game occurs when a piece moves onto a square occupied by an opponent's piece. This event triggers a series of actions including reward distribution and hook evaluation.
+Combat in `ffchess` is simple at the board layer and rich at the mode layer:
 
-## Captures
+- the board layer removes pieces and awards score,
+- the mode layer decides whether a capture also eliminates a player or ends the match.
 
-When a piece is captured:
+## Capture Application
 
-1.  **Removal**: The captured piece is removed from the `pieces` map in the `GameState`.
-2.  **Notification**: The piece's ID is recorded in `removed_pieces` and sent to clients in the next `UpdateState` message.
-3.  **Reward Distribution**: If the capturer is a player, they receive:
-    *   **Score**: Based on the `score_value` from the captured piece's configuration.
-    *   **Stats**: Increment of `pieces_captured` and potentially `kills` (if the captured piece was a king).
-4.  **Hook Recording**: The capture event is recorded in a buffer for later processing by the hook system.
+The core server helpers live in `server/src/instance/captures.rs`.
 
-## Hooks
+On a successful capture:
 
-Hooks allow for custom logic based on gameplay events, such as king capture leading to player elimination.
+1. The target piece is removed from `game.pieces`.
+2. Its id is pushed into `removed_pieces` for the next `UpdateState`.
+3. If the capturer is a player:
+   - `score` increases by the captured piece config's `score_value`,
+   - `pieces_captured` increments,
+   - `kills` increments when the captured piece id is treated as a king.
+4. A hook event is recorded for end-of-tick resolution.
 
-### Hook Triggering
+## King Semantics
 
-Hooks are processed at the end of each server tick in `resolve_tick_hooks`. The system evaluates the recorded events against the `hooks` configuration for the current game mode.
+There is no separate boolean "is king" flag in the piece config.
 
-### Supported Hooks
+The runtime treats a piece as a king when its piece id:
 
--   **EliminateOwnerOnCapture**: If a piece of a specific type (e.g., `king`) is captured, its owner is eliminated from the game. All of the eliminated player's remaining pieces are removed.
--   **WinCapturerOnActiveCapture**: If a player captures a target piece type, they are immediately declared the winner.
--   **WinRemainingOnPlayerLeave**: If only a certain number of players remain (usually 1), the remaining player(s) are declared winners.
+- is exactly `king`, or
+- ends with `_king`
 
-### Hook Resolution Flow
+That rule affects:
+
+- kit validation,
+- kill counting,
+- common hook targeting patterns.
+
+## Hook Buffering
+
+Hook resolution is deliberately delayed until the end of the tick.
+
+The server records events into `HookEventBuffer`:
+
+- capture events,
+- "a player left" events.
+
+At the start of a tick, queued events are promoted into the active buffer.
+At the end of the tick, the active buffer is resolved against the mode's configured hooks.
+
+This keeps capture side effects deterministic even when several things happen inside one tick.
+
+## Supported Hook Outcomes
+
+### `OnCapture` + `EliminateOwner`
+
+If the captured piece matches `target_piece_id`, remove that captured piece's owner from the game.
+All of their remaining pieces are removed and their queued premoves are cleared.
+
+### `OnCapturePieceActive` + `WinCapturer`
+
+If the capture matches, send the capturing player a victory payload.
+
+`victory_focus` decides whether the client:
+
+- stays on the current camera target, or
+- centers on the capture square.
+
+### `OnPlayerLeave` + `WinRemaining`
+
+If a player left during the tick and the remaining player count matches `players_left`
+(or `players_left` is omitted), send victory to the remaining player.
+
+## Victory Delivery
+
+The server sends `ServerMessage::Victory` with:
+
+- `title`
+- `message`
+- `focus_target`
+
+The client switches into its victory/dead phase and the camera may keep its current view or focus
+the capture square depending on the payload.
+
+## Combat Diagram
 
 ```mermaid
-graph TD
-    A[Capture Event Recorded] --> B[End of Tick]
-    B --> C[Evaluate Hooks]
-    C --> D{Hook Matches?}
-    D -- Yes --> E[Apply Action]
-    D -- No --> F[Next Hook]
-    E --> G{Eliminate Owner?}
-    G -- Yes --> H[Remove Player and All Their Pieces]
-    G -- No --> I{Victory?}
-    I -- Yes --> J[Send Victory Message to Player]
-    J --> K[End Game Instance]
-    H --> L[Record Player Removal]
-    L --> F
+flowchart TD
+    A[validated capture move] --> B[remove captured piece]
+    B --> C[record removed piece id]
+    C --> D{capturer is player?}
+    D -- yes --> E[award score and stats]
+    D -- no --> F[skip reward update]
+    E --> G[record hook capture event]
+    F --> G
+    G --> H[end of tick]
+    H --> I[resolve mode hooks]
+    I --> J{eliminate owner?}
+    J -- yes --> K[remove player and owned pieces]
+    I --> L{victory hook?}
+    L -- yes --> M[send Victory payload]
 ```
-
-## Reward and Score
-
-Scores and kills are important for the leaderboard:
-- `score` is updated for any capture.
-- `kills` is specifically incremented when a piece marked as a `king` is captured.
-- This information is broadcast to all clients to keep the leaderboard in sync.

@@ -263,10 +263,8 @@ impl GameInstance {
         }
 
         if !all_removed_piece_ids.is_empty() {
-            let mut queued_moves = self.queued_moves.write().await;
-            for piece_id in all_removed_piece_ids {
-                queued_moves.remove(&piece_id);
-            }
+            self.clear_queued_moves_for_pieces(all_removed_piece_ids)
+                .await;
         }
     }
 

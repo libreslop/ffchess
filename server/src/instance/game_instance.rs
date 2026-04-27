@@ -236,6 +236,17 @@ impl GameInstance {
         self.removed_pieces.write().await.push(piece_id);
     }
 
+    /// Clears any queued premoves referencing pieces that were removed from the instance.
+    pub(super) async fn clear_queued_moves_for_pieces<I>(&self, piece_ids: I)
+    where
+        I: IntoIterator<Item = PieceId>,
+    {
+        let mut queued_moves = self.queued_moves.write().await;
+        for piece_id in piece_ids {
+            queued_moves.remove(&piece_id);
+        }
+    }
+
     /// Removes pieces and shops that drift outside the current board bounds.
     ///
     /// `game` is the mutable game state to prune. Returns nothing.

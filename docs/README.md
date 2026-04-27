@@ -1,28 +1,28 @@
-# Project Documentation
+# ffchess Documentation
 
-This folder contains the technical documentation for the **ffchess** project.
+This directory documents the runtime configuration and the major logic flows in `ffchess`.
+The documents below are written from the current code and config files in this repository.
 
-## Configuration Guide
+## Configuration Reference
 
-The following documents describe the various configuration files used to define game pieces, shops, and game modes.
+- [config/global.md](config/global.md): global client and server settings.
+- [config/pieces.md](config/pieces.md): piece schema, movement path encoding, and piece-family examples.
+- [config/shops.md](config/shops.md): shop groups, pricing, auto-upgrades, and purchase effects.
+- [config/modes.md](config/modes.md): mode schema, queue behavior, layouts, hooks, and expression contexts.
 
--   [**Global Configuration**](config/global.md): System-wide settings for server and client.
--   [**Piece Configuration**](config/pieces.md): Define properties, movement, and scoring for pieces.
--   [**Shop Configuration**](config/shops.md): Configure in-game shops, items, and pricing formulas.
--   [**Game Mode Configuration**](config/modes.md): Rules, board parameters, and kits for different modes.
+## Logic Chapters
 
-## Logic and Flow
+- [logic/game_loop.md](logic/game_loop.md): the per-instance server tick and maintenance flow.
+- [logic/movement.md](logic/movement.md): validation, cooldowns, client premoves, and server queued moves.
+- [logic/combat.md](logic/combat.md): captures, rewards, eliminations, and victory hooks.
+- [logic/npcs.md](logic/npcs.md): spawn rules and autonomous NPC movement.
+- [logic/world.md](logic/world.md): board sizing, spawn heuristics, shop spawning, and pruning.
+- [logic/matchmaking.md](logic/matchmaking.md): queue modes, preview boards, private matches, and connection binding.
 
-These documents explain the core logic and detailed workflows of the game's systems.
+## Reading Order
 
--   [**Game Loop and Ticking**](logic/game_loop.md): The heart of the server's periodic processing.
--   [**Movement and Validation**](logic/movement.md): How moves are validated, queued, and executed.
--   [**Combat, Captures, and Hooks**](logic/combat.md): Capture side-effects and the custom hook system.
--   [**NPC Behavior and Spawning**](logic/npcs.md): AI logic for autonomous pieces on the board.
--   [**Board and World Logic**](logic/world.md): Dynamic board resizing and interactive shop systems.
+If you are new to the codebase, a practical order is:
 
-## Overview
-
-The project is a data-driven chess variant where multiple players can compete on a dynamic, resizing board. Players can capture both each other's pieces and NPCs to earn scores, which can then be spent at shops to expand or upgrade their army.
-
-The server is built in Rust and uses a tick-based system for state management, while the client (also in Rust via WebAssembly) provides a real-time, interactive experience with smooth animations and camera controls.
+1. Read [README.md](../README.md).
+2. Read the four config reference files to understand the data model.
+3. Read `game_loop`, then `movement`, `combat`, `world`, `npcs`, and `matchmaking`.
