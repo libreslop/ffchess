@@ -13,8 +13,9 @@ use crate::math::{Vec2, vec2};
 use crate::reducer::{GameAction, GameStateReducer, MsgSender, Pmove};
 use crate::utils::request_fullscreen;
 use common::logic::is_within_board;
+use common::models::{GameState, Piece, ShopConfig};
 use common::protocol::ClientMessage;
-use common::types::{BoardCoord, PieceId, PlayerId, Score};
+use common::types::{BoardCoord, PieceId, PlayerId, Score, ShopId};
 use gloo_events::EventListener;
 use gloo_render::{AnimationFrame, request_animation_frame};
 use std::cell::RefCell;
@@ -46,6 +47,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
     let piece_anims = use_mut_ref(HashMap::<PieceId, PieceAnim>::new);
     let last_tap = use_mut_ref(|| None::<LastTap>);
     let touch_gesture_active = use_mut_ref(|| false);
+    let submitted_shop_actions = use_mut_ref(Vec::<(PieceId, BoardCoord)>::new);
 
     let cam_state = use_state(|| Vec2::ZERO);
     let zoom_state = use_state(|| 1.0f64);
@@ -233,6 +235,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
         let shop_configs = props.reducer.shop_configs.clone();
         let globals = props.globals.clone();
         let piece_anims = piece_anims.clone();
+        let submitted_shop_actions = submitted_shop_actions.clone();
         use_effect_with(
             (
                 *frame_id,
@@ -271,32 +274,17 @@ pub fn game_view(props: &GameViewProps) -> Html {
                         .filter(|pm| pm_visible(pm, state))
                         .cloned()
                         .collect();
-                    let active_shop_highlight_pos = {
-                        let player_id = player_id.unwrap_or_else(PlayerId::nil);
-                        let tile_size = globals.tile_size_px;
-                        state
-                            .shops
-                            .iter()
-                            .filter_map(|shop| {
-                                ghosts
-                                    .values()
-                                    .find(|p| {
-                                        p.position == shop.position && p.owner_id == Some(player_id)
-                                    })
-                                    .map(|p| {
-                                        let piece_pos = vec2(
-                                            p.position.0.x as f64 * tile_size + tile_size / 2.0,
-                                            p.position.0.y as f64 * tile_size + tile_size / 2.0,
-                                        );
-                                        let dist_sq = (piece_pos - **cam).length_squared();
-                                        (shop.position, dist_sq)
-                                    })
-                            })
-                            .min_by(|a, b| {
-                                a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal)
-                            })
-                            .map(|(pos, _)| pos)
-                    };
+                    let active_shop_highlight_pos = active_shop_menu_context(
+                        state,
+                        &ghosts,
+                        pm_queue,
+                        shop_configs,
+                        player_id.unwrap_or_else(PlayerId::nil),
+                        **cam,
+                        globals.tile_size_px,
+                        &submitted_shop_actions.borrow(),
+                    )
+                    .map(|(pos, _, _)| pos);
 
                     let now = web_sys::window().unwrap().performance().unwrap().now();
                     let mut anims = piece_anims.borrow_mut();
@@ -411,6 +399,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
     {
         let reducer = props.reducer.clone();
         let tx = props.tx.clone();
+        let submitted_shop_actions = submitted_shop_actions.clone();
         use_effect_with(
             (
                 reducer.pm_queue.clone(),
@@ -421,6 +410,19 @@ pub fn game_view(props: &GameViewProps) -> Html {
             ),
             move |(pm_queue, pieces, shops, shop_configs, player_id)| {
                 let player_id = player_id.unwrap_or_else(PlayerId::nil);
+                {
+                    let mut submitted = submitted_shop_actions.borrow_mut();
+                    submitted.retain(|(piece_id, pos)| {
+                        pieces
+                            .get(piece_id)
+                            .map(|piece| {
+                                piece.owner_id == Some(player_id)
+                                    && piece.position == *pos
+                                    && shops.iter().any(|shop| shop.position == *pos)
+                            })
+                            .unwrap_or(false)
+                    });
+                }
                 if let Some(pm) = pm_queue
                     .iter()
                     .find(|pm| pm.shop_item_index.is_some())
@@ -436,6 +438,13 @@ pub fn game_view(props: &GameViewProps) -> Html {
                     if item_index >= group.items.len() {
                         reducer.dispatch(GameAction::RemovePm(pm.id));
                     } else {
+                        {
+                            let mut submitted = submitted_shop_actions.borrow_mut();
+                            let key = (piece.id, piece.position);
+                            if !submitted.contains(&key) {
+                                submitted.push(key);
+                            }
+                        }
                         let _ = tx.0.try_send(ClientMessage::BuyPiece {
                             shop_pos: piece.position,
                             item_index,
@@ -792,26 +801,16 @@ pub fn game_view(props: &GameViewProps) -> Html {
     );
 
     let cam = *cam_state;
-    let mut active_shops = Vec::new();
-    for shop in &props.reducer.state.shops {
-        if let Some(p) = ui_ghosts
-            .values()
-            .find(|p| p.position == shop.position && p.owner_id == Some(player_id))
-        {
-            let tile_size = props.globals.tile_size_px;
-            let piece_pos = vec2(
-                p.position.0.x as f64 * tile_size + tile_size / 2.0,
-                p.position.0.y as f64 * tile_size + tile_size / 2.0,
-            );
-            let dist_sq = (piece_pos - cam).length_squared();
-            active_shops.push((shop, p.clone(), dist_sq));
-        }
-    }
-    active_shops.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal));
-
-    let shop_menu_context = active_shops
-        .first()
-        .map(|(s, p, _)| (s.position, s.shop_id.clone(), p.clone()));
+    let shop_menu_context = active_shop_menu_context(
+        &props.reducer.state,
+        &ui_ghosts,
+        &props.reducer.pm_queue,
+        &props.reducer.shop_configs,
+        player_id,
+        cam,
+        props.globals.tile_size_px,
+        &submitted_shop_actions.borrow(),
+    );
     let shop_on_which_player_is = shop_menu_context
         .as_ref()
         .map(|(pos, shop_id, _)| (*pos, shop_id.clone()));
@@ -1130,4 +1129,49 @@ pub fn game_view(props: &GameViewProps) -> Html {
             />
         </div>
     }
+}
+
+fn active_shop_menu_context(
+    state: &GameState,
+    ghosts: &HashMap<PieceId, Piece>,
+    pm_queue: &[Pmove],
+    shop_configs: &HashMap<ShopId, ShopConfig>,
+    player_id: PlayerId,
+    camera: Vec2,
+    tile_size: f64,
+    submitted_shop_actions: &[(PieceId, BoardCoord)],
+) -> Option<(BoardCoord, ShopId, Piece)> {
+    state
+        .shops
+        .iter()
+        .filter_map(|shop| {
+            let piece = ghosts
+                .values()
+                .find(|p| p.position == shop.position && p.owner_id == Some(player_id))?;
+            let shop_config = shop_configs.get(&shop.shop_id)?;
+            let group = common::logic::select_shop_group(shop_config, Some(piece))?;
+            if group.items.is_empty() {
+                return None;
+            }
+            if shop_config.auto_upgrade_single_item && group.items.len() == 1 {
+                return None;
+            }
+            let has_queued_shop_action = pm_queue.iter().any(|pm| {
+                pm.shop_item_index.is_some()
+                    && pm.piece_id == piece.id
+                    && pm.target == shop.position.0
+            });
+            if has_queued_shop_action || submitted_shop_actions.contains(&(piece.id, shop.position))
+            {
+                return None;
+            }
+            let piece_pos = vec2(
+                piece.position.0.x as f64 * tile_size + tile_size / 2.0,
+                piece.position.0.y as f64 * tile_size + tile_size / 2.0,
+            );
+            let dist_sq = (piece_pos - camera).length_squared();
+            Some((shop.position, shop.shop_id.clone(), piece.clone(), dist_sq))
+        })
+        .min_by(|a, b| a.3.partial_cmp(&b.3).unwrap_or(std::cmp::Ordering::Equal))
+        .map(|(pos, shop_id, piece, _)| (pos, shop_id, piece))
 }
