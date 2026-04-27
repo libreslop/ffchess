@@ -50,6 +50,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
     let last_tap = use_mut_ref(|| None::<LastTap>);
     let touch_gesture_active = use_mut_ref(|| false);
     let submitted_shop_actions = use_mut_ref(Vec::<(PieceId, BoardCoord)>::new);
+    let submitted_move_premoves = use_mut_ref(Vec::<u64>::new);
 
     let cam_state = use_state(|| Vec2::ZERO);
     let zoom_state = use_state(|| 1.0f64);
@@ -472,7 +473,6 @@ pub fn game_view(props: &GameViewProps) -> Html {
                             },
                             "failed to send BuyPiece",
                         );
-                        reducer.dispatch(GameAction::RemovePm(pm.id));
                     }
                 } else if let Some(pm) = pending_shop_pm {
                     web_sys::console::error_1(
@@ -482,6 +482,67 @@ pub fn game_view(props: &GameViewProps) -> Html {
                         )
                         .into(),
                     );
+                }
+                || ()
+            },
+        );
+    }
+
+    {
+        let reducer = props.reducer.clone();
+        let tx = props.tx.clone();
+        let submitted_move_premoves = submitted_move_premoves.clone();
+        use_effect_with(
+            (
+                reducer.pm_queue.clone(),
+                reducer.state.pieces.clone(),
+                reducer.player_id,
+            ),
+            move |(pm_queue, pieces, player_id)| {
+                let player_id = player_id.unwrap_or_else(PlayerId::nil);
+                {
+                    let mut submitted = submitted_move_premoves.borrow_mut();
+                    submitted.retain(|pm_id| pm_queue.iter().any(|pm| pm.id == *pm_id));
+                }
+
+                for (index, pm) in pm_queue.iter().enumerate() {
+                    if pm.shop_item_index.is_some() {
+                        continue;
+                    }
+                    if submitted_move_premoves.borrow().contains(&pm.id) {
+                        continue;
+                    }
+                    let Some(piece) = pieces.get(&pm.piece_id) else {
+                        web_sys::console::error_1(
+                            &format!(
+                                "Dropping move premove {}: piece {} not found.",
+                                pm.id, pm.piece_id
+                            )
+                            .into(),
+                        );
+                        reducer.dispatch(GameAction::RemovePm(pm.id));
+                        continue;
+                    };
+                    if piece.owner_id != Some(player_id) {
+                        continue;
+                    }
+
+                    let blocked_by_shop = pm_queue[..index]
+                        .iter()
+                        .any(|prev| prev.piece_id == pm.piece_id && prev.shop_item_index.is_some());
+                    if blocked_by_shop {
+                        continue;
+                    }
+
+                    let _ = try_send_client_message(
+                        &tx,
+                        ClientMessage::MovePiece {
+                            piece_id: pm.piece_id,
+                            target: BoardCoord(pm.target),
+                        },
+                        "failed to send MovePiece",
+                    );
+                    submitted_move_premoves.borrow_mut().push(pm.id);
                 }
                 || ()
             },
@@ -654,6 +715,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
         let tx = props.tx.clone();
         let selected_piece_id = selected_piece_id.clone();
         let next_pm_id = next_pm_id.clone();
+        let submitted_move_premoves = submitted_move_premoves.clone();
         let manager_ref = manager_ref.clone();
         let drag_start = drag_start.clone();
         let did_pan = did_pan.clone();
@@ -781,20 +843,36 @@ pub fn game_view(props: &GameViewProps) -> Html {
                                 moving_owner: p.owner_id,
                             })
                         {
-                            let _ = try_send_client_message(
-                                &tx,
-                                ClientMessage::MovePiece {
-                                    piece_id: sid,
-                                    target: BoardCoord(target),
-                                },
-                                "failed to send MovePiece",
-                            );
+                            let blocked_by_shop = reducer.pm_queue.iter().any(|pm| {
+                                pm.piece_id == sid && pm.shop_item_index.is_some()
+                            });
+                            if !blocked_by_shop {
+                                let _ = try_send_client_message(
+                                    &tx,
+                                    ClientMessage::MovePiece {
+                                        piece_id: sid,
+                                        target: BoardCoord(target),
+                                    },
+                                    "failed to send MovePiece",
+                                );
+                            }
                             let pm_id = {
                                 let mut next_id = next_pm_id.borrow_mut();
                                 let id = *next_id;
                                 *next_id += 1;
                                 id
                             };
+                            if blocked_by_shop {
+                                web_sys::console::log_1(
+                                    &format!(
+                                        "Queued deferred move premove {} for piece {} behind shop action.",
+                                        pm_id, sid
+                                    )
+                                    .into(),
+                                );
+                            } else {
+                                submitted_move_premoves.borrow_mut().push(pm_id);
+                            }
                             reducer.dispatch(GameAction::AddPmove(Pmove {
                                 id: pm_id,
                                 piece_id: sid,
