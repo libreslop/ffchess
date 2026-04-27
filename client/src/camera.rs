@@ -94,7 +94,7 @@ pub fn update_camera(manager: &mut CameraManager, params: CameraUpdateParams<'_>
 
             // Mouse position relative to canvas center
             // When dead, anchor zoom to canvas center so the death focus stays accurate.
-            let mut mouse_delta = if params.phase == ClientPhase::Dead {
+            let mut mouse_delta = if params.phase == ClientPhase::Dead || manager.input_locked {
                 Vec2::ZERO
             } else {
                 Vec2::new(
@@ -117,7 +117,7 @@ pub fn update_camera(manager: &mut CameraManager, params: CameraUpdateParams<'_>
             // CameraPos' = (Zoom' / Zoom) * (Zoom * W) - (M - CanvasWidth/2)
             // CameraPos' = Ratio * (CameraPos + M - CanvasWidth/2) - (M - CanvasWidth/2)
 
-            if params.phase != ClientPhase::Dead {
+            if params.phase != ClientPhase::Dead && !manager.input_locked {
                 manager.camera = (manager.camera + mouse_delta) * ratio - mouse_delta;
                 manager.target_camera = (manager.target_camera + mouse_delta) * ratio - mouse_delta;
             }
@@ -150,7 +150,6 @@ pub fn update_camera(manager: &mut CameraManager, params: CameraUpdateParams<'_>
                 || manager.last_tracked_king_id != Some(p.king_id)
                 || manager.last_tracked_join_time != Some(p.join_time);
             if fresh_alive_entry {
-                // A new live session must not inherit stale death/menu camera state.
                 let join_zoom = 1.0;
                 let join_tile_size = params.tile_size_px * join_zoom;
                 let join_king_pos = Vec2::new(
@@ -159,15 +158,16 @@ pub fn update_camera(manager: &mut CameraManager, params: CameraUpdateParams<'_>
                 );
                 let join_camera =
                     join_focus_camera_pos(&params, p.king_id, join_tile_size, join_king_pos);
-                manager.camera = join_camera;
-                manager.target_camera = join_camera;
-                manager.zoom = join_zoom;
-                manager.target_zoom = join_zoom;
-                manager.velocity = Vec2::ZERO;
+                start_camera_pan(
+                    manager,
+                    join_camera,
+                    join_zoom,
+                    params.zoom_min,
+                    params.zoom_max,
+                );
                 manager.last_king_grid_pos = king.position.into();
                 manager.last_tracked_king_id = Some(p.king_id);
                 manager.last_tracked_join_time = Some(p.join_time);
-                manager.input_locked = false;
                 manager.was_alive = true;
                 changed = true;
             } else {
@@ -288,6 +288,19 @@ pub fn update_camera(manager: &mut CameraManager, params: CameraUpdateParams<'_>
     }
 
     changed
+}
+
+fn start_camera_pan(
+    manager: &mut CameraManager,
+    target_camera: Vec2,
+    target_zoom: f64,
+    zoom_min: f64,
+    zoom_max: f64,
+) {
+    manager.target_camera = target_camera;
+    manager.target_zoom = target_zoom.clamp(zoom_min, zoom_max);
+    manager.velocity = Vec2::ZERO;
+    manager.input_locked = true;
 }
 
 fn join_focus_camera_pos(
