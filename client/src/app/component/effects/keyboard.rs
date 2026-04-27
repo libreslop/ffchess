@@ -81,6 +81,9 @@ pub fn use_keyboard_shortcuts_effect(inputs: KeyboardShortcutEffectInputs) {
 
             let listener = EventListener::new(&web_sys::window().unwrap(), "keydown", move |e| {
                 let e = e.dyn_ref::<web_sys::KeyboardEvent>().unwrap();
+                if event_targets_text_input(e) {
+                    return;
+                }
                 let key = e.key();
                 if !joined
                     && !dead
@@ -128,6 +131,20 @@ pub fn use_keyboard_shortcuts_effect(inputs: KeyboardShortcutEffectInputs) {
             move || drop(listener)
         },
     );
+}
+
+fn event_targets_text_input(event: &web_sys::KeyboardEvent) -> bool {
+    let Some(target) = event.target() else {
+        return false;
+    };
+    let Ok(element) = target.dyn_into::<web_sys::Element>() else {
+        return false;
+    };
+    element
+        .closest("input, textarea, [contenteditable='true'], [data-chat-input]")
+        .ok()
+        .flatten()
+        .is_some()
 }
 
 fn try_submit_join(context: JoinShortcutContext<'_>) {

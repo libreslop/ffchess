@@ -38,9 +38,7 @@ impl GameStateReducer {
 
             let first_candidate = candidates.next();
             let has_multiple = candidates.next().is_some();
-            if !has_multiple
-                && let Some(old_id) = first_candidate
-            {
+            if !has_multiple && let Some(old_id) = first_candidate {
                 reassigned_piece_ids.insert(old_id, incoming_piece.id);
             }
         }

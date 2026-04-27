@@ -185,11 +185,16 @@ pub fn app() -> Html {
                 .iter()
                 .position(|mode| mode.id == current_id)
                 .unwrap_or(0) as i32;
-            let len = options.len() as i32;
-            let next_index = (current_index + delta).rem_euclid(len) as usize;
+            let max_index = options.len().saturating_sub(1) as i32;
+            let next_index = (current_index + delta).clamp(0, max_index) as usize;
             if let Some(next_mode) = options.get(next_index) {
+                if next_mode.id == current_id {
+                    return;
+                }
                 let window = web_sys::window().unwrap();
-                let _ = window.location().set_hash(&format!("#{}", next_mode.id.as_ref()));
+                let _ = window
+                    .location()
+                    .set_hash(&format!("#{}", next_mode.id.as_ref()));
             }
         })
     };

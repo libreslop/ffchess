@@ -1,6 +1,7 @@
 use crate::state::{MatchQueueEntry, QueueJoinResult, ServerState};
 use crate::types::ConnectionId;
-use common::protocol::{ClientMessage, GameError, ServerMessage};
+use common::protocol::{ChatLine, ClientMessage, GameError, ServerMessage};
+use common::types::ColorHex;
 use common::types::{BoardCoord, KitId, ModeId, PieceId, PlayerId, SessionSecret};
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -99,6 +100,9 @@ impl SocketSession {
                         .set_preview_default(&self.mode_id, self.conn_id, self.tx.clone(), enabled)
                         .await;
                 }
+            }
+            ClientMessage::Chat { name_hint, message } => {
+                self.handle_chat(name_hint, message).await;
             }
             ClientMessage::Ping(client_now) => {
                 let _ = self
@@ -293,6 +297,71 @@ impl SocketSession {
         }
     }
 
+    async fn handle_chat(&self, name_hint: String, message: String) {
+        let trimmed = message.trim();
+        if trimmed.is_empty() {
+            return;
+        }
+        let message = trimmed.chars().take(280).collect::<String>();
+
+        let target_instance = if let Some(binding) = self.state.get_binding(self.conn_id).await {
+            binding.instance().clone()
+        } else if self.is_queue_mode {
+            if let Some(instance) = self
+                .state
+                .watched_instance_for_connection(&self.mode_id, self.conn_id)
+                .await
+            {
+                instance
+            } else if let Some(instance) = self.state.get_joinable_game(&self.mode_id).await {
+                instance
+            } else {
+                self.lobby_instance.clone()
+            }
+        } else {
+            self.lobby_instance.clone()
+        };
+
+        let (sender_name, sender_color) = self.chat_identity(&target_instance, name_hint).await;
+        let line = ChatLine {
+            sender_name,
+            sender_color,
+            message,
+        };
+        target_instance.push_chat_line(line.clone()).await;
+        target_instance
+            .broadcast(ServerMessage::Chat { line })
+            .await;
+    }
+
+    async fn chat_identity(
+        &self,
+        instance: &Arc<crate::instance::GameInstance>,
+        name_hint: String,
+    ) -> (String, ColorHex) {
+        if let Some(binding) = self.state.get_binding(self.conn_id).await
+            && let Some(player) = binding
+                .instance()
+                .game
+                .read()
+                .await
+                .players
+                .get(&binding.player_id())
+        {
+            return (player.name.clone(), player.color.clone());
+        }
+
+        if self.is_queue_mode
+            && let Some(name) = self.state.queued_name(&self.mode_id, self.conn_id).await
+        {
+            return (name, ColorHex::from("#555555"));
+        }
+
+        let sanitized_name = sanitize_chat_name(name_hint);
+        let _ = instance;
+        (sanitized_name, ColorHex::from("#555555"))
+    }
+
     /// Cleans up all bindings/channels associated with a disconnected socket.
     pub(super) async fn cleanup_connection(&self) {
         if let Some(binding) = self.state.unbind_connection(self.conn_id).await {
@@ -320,4 +389,12 @@ impl SocketSession {
             super::super::queue::broadcast_queue_state(&self.state, &self.mode_id).await;
         }
     }
+}
+
+fn sanitize_chat_name(input: String) -> String {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return "Guest".to_string();
+    }
+    trimmed.chars().take(32).collect()
 }

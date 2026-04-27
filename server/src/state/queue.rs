@@ -121,6 +121,20 @@ impl ServerState {
         removed
     }
 
+    /// Returns the queued player name for a connection when present.
+    pub async fn queued_name(&self, mode_id: &ModeId, conn_id: ConnectionId) -> Option<String> {
+        self.queue_entries
+            .read()
+            .await
+            .get(mode_id)
+            .and_then(|entries| {
+                entries
+                    .iter()
+                    .find(|entry| entry.conn_id() == conn_id)
+                    .map(|entry| entry.name().to_string())
+            })
+    }
+
     /// Enqueues a player for a matchmaking mode.
     ///
     /// Returns `None` if the mode is not a matchmaking mode.

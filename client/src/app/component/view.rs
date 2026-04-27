@@ -72,6 +72,7 @@ pub fn render_app(props: AppViewProps) -> Html {
                     tx={sender}
                     render_interval_ms={global_cfg.render_interval_ms}
                     globals={global_cfg.clone()}
+                    player_name={props.player_name.clone()}
                 />
             } else if !props.show_disconnected || !props.has_interacted {
                 <div style="position: absolute; inset: 0; background: #f0f2f5; display: flex; align-items: center; justify-content: center; z-index: 200;">

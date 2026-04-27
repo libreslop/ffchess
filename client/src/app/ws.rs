@@ -58,6 +58,8 @@ pub async fn connect_ws(
                             mode,
                             pieces,
                             shops,
+                            chat_room_key,
+                            chat_history,
                             sync_interval_ms,
                         } => {
                             if player_id != PlayerId::nil() {
@@ -73,6 +75,8 @@ pub async fn connect_ws(
                                 mode,
                                 pieces,
                                 shops,
+                                chat_room_key,
+                                chat_history,
                                 sync_interval_ms,
                             }))
                         }
@@ -143,6 +147,7 @@ pub async fn connect_ws(
                             time_survived_secs,
                         },
                         ServerMessage::Pong(t, server_time) => GameAction::Pong(t, server_time),
+                        ServerMessage::Chat { line } => GameAction::PushChatLine(line),
                         });
                     }
                     Ok(_) => {}

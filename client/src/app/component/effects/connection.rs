@@ -143,17 +143,13 @@ pub fn use_ws_connection_effect(
             .0
             .try_send(ClientMessage::Ping(js_sys::Date::now() as u64))
         {
-            web_sys::console::error_1(
-                &format!("Initial ping send failed: {error}").into(),
-            );
+            web_sys::console::error_1(&format!("Initial ping send failed: {error}").into());
         }
         let ping_interval_ms = global_cfg.ping_interval_ms.max(500);
         let ping_interval = Interval::new(ping_interval_ms, move || {
             let now = js_sys::Date::now() as u64;
             if let Err(error) = ping_sender.0.try_send(ClientMessage::Ping(now)) {
-                web_sys::console::error_1(
-                    &format!("Periodic ping send failed: {error}").into(),
-                );
+                web_sys::console::error_1(&format!("Periodic ping send failed: {error}").into());
             }
         });
 

@@ -22,7 +22,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 use wasm_bindgen::JsCast;
-use web_sys::HtmlCanvasElement;
+use web_sys::{HtmlCanvasElement, HtmlInputElement};
 use yew::prelude::*;
 
 /// Properties for the main game viewport.
@@ -32,6 +32,7 @@ pub struct GameViewProps {
     pub tx: MsgSender,
     pub render_interval_ms: u32,
     pub globals: crate::app::GlobalClientConfig,
+    pub player_name: String,
 }
 
 #[function_component(GameView)]
@@ -59,6 +60,9 @@ pub fn game_view(props: &GameViewProps) -> Html {
 
     let window_size = use_state(read_window_size);
     let has_match_result = props.reducer.is_dead || props.reducer.is_victory;
+    let chat_input_ref = use_node_ref();
+    let chat_log_ref = use_node_ref();
+    let chat_text = use_state(String::new);
 
     // Drive a steady render heartbeat with requestAnimationFrame so visual elements (e.g., cooldown bars) update every frame
     {
@@ -86,6 +90,53 @@ pub fn game_view(props: &GameViewProps) -> Html {
                     drop(h);
                 }
             }
+        });
+    }
+
+    {
+        let chat_input_ref = chat_input_ref.clone();
+        use_effect_with((), move |_| {
+            let listener =
+                EventListener::new(&web_sys::window().unwrap(), "pointerdown", move |event| {
+                    let Some(target) = event.target() else {
+                        return;
+                    };
+                    let Ok(target_el) = target.dyn_into::<web_sys::Element>() else {
+                        return;
+                    };
+                    if chat_input_ref.cast::<web_sys::Element>().is_none() {
+                        return;
+                    }
+                    let target_is_input = target_el
+                        .closest("[data-chat-input]")
+                        .ok()
+                        .flatten()
+                        .is_some();
+                    if !target_is_input
+                        && let Some(input) = chat_input_ref.cast::<HtmlInputElement>()
+                    {
+                        let _ = input.blur();
+                    }
+                });
+            move || drop(listener)
+        });
+    }
+
+    {
+        let chat_log_ref = chat_log_ref.clone();
+        use_effect_with(props.reducer.chat_lines.len(), move |_| {
+            if let Some(el) = chat_log_ref.cast::<web_sys::HtmlElement>() {
+                el.set_scroll_top(el.scroll_height());
+            }
+            || ()
+        });
+    }
+
+    {
+        let chat_text = chat_text.clone();
+        use_effect_with(props.reducer.chat_room_key.clone(), move |_| {
+            chat_text.set(String::new());
+            || ()
         });
     }
 
@@ -872,10 +923,8 @@ pub fn game_view(props: &GameViewProps) -> Html {
         .values()
         .filter(|p| p.owner_id == Some(player_id))
         .count();
-    let queue_countdown_secs = queue_countdown_remaining_secs(
-        props.reducer.move_unlock_at,
-        props.reducer.clock_offset_ms,
-    );
+    let queue_countdown_secs =
+        queue_countdown_remaining_secs(props.reducer.move_unlock_at, props.reducer.clock_offset_ms);
     let mut ui_ghosts = props.reducer.state.pieces.clone();
     let _ = apply_visible_ghosts(
         &mut ui_ghosts,
@@ -945,6 +994,62 @@ pub fn game_view(props: &GameViewProps) -> Html {
                 target: shop_pos.0,
                 shop_item_index: Some(item_index),
             }));
+        })
+    };
+
+    let chat_on_input = {
+        let chat_text = chat_text.clone();
+        Callback::from(move |event: InputEvent| {
+            if let Some(input) = event.target_dyn_into::<HtmlInputElement>() {
+                chat_text.set(input.value());
+            }
+        })
+    };
+
+    let submit_chat_message = {
+        let tx = props.tx.clone();
+        let chat_text = chat_text.clone();
+        let chat_input_ref = chat_input_ref.clone();
+        let player_name = props.player_name.clone();
+        Callback::from(move |_| {
+            let message = (*chat_text).trim().to_string();
+            if message.is_empty() {
+                return;
+            }
+            let sent = try_send_client_message(
+                &tx,
+                ClientMessage::Chat {
+                    name_hint: player_name.clone(),
+                    message,
+                },
+                "failed to send Chat",
+            );
+            if sent {
+                chat_text.set(String::new());
+            }
+            if let Some(input) = chat_input_ref.cast::<HtmlInputElement>() {
+                let _ = input.focus();
+            }
+        })
+    };
+
+    let chat_on_keydown = {
+        let submit_chat_message = submit_chat_message.clone();
+        Callback::from(move |event: KeyboardEvent| {
+            if event.key() == "Enter" {
+                event.prevent_default();
+                submit_chat_message.emit(());
+            }
+            event.stop_propagation();
+        })
+    };
+
+    let on_chat_submit = {
+        let submit_chat_message = submit_chat_message.clone();
+        Callback::from(move |event: SubmitEvent| {
+            event.prevent_default();
+            event.stop_propagation();
+            submit_chat_message.emit(());
         })
     };
 
@@ -1237,6 +1342,53 @@ pub fn game_view(props: &GameViewProps) -> Html {
                     />
                 }
             }
+
+            <div
+                data-ui-exempt="true"
+                data-chat-ui="true"
+                style="position: absolute; right: 12px; bottom: 12px; width: min(420px, calc(100vw - 24px)); max-height: 38vh; display: flex; flex-direction: column; gap: 8px; z-index: 160;"
+            >
+                <div
+                    data-chat-ui="true"
+                    ref={chat_log_ref}
+                    style="border-radius: 6px; border: 1px solid #cbd5e1; background: rgba(255, 255, 255, 0.88); backdrop-filter: blur(4px); padding: 8px; overflow-y: auto; box-shadow: 0 4px 16px rgba(15,23,42,0.20);"
+                >
+                    {
+                        if props.reducer.chat_lines.is_empty() {
+                            html! { <div style="font-size: 12px; color: #64748b;">{"No messages yet."}</div> }
+                        } else {
+                            html! {
+                                for props.reducer.chat_lines.iter().map(|line| {
+                                    html! {
+                                        <div style="font-size: 12px; line-height: 1.6; overflow-wrap: anywhere;">
+                                            <span style={format!("color: {}; font-weight: 700;", line.sender_color.as_ref())}>
+                                                {format!("[{}]", line.sender_name)}
+                                            </span>
+                                            <span style="color: #0f172a;">{" : "}{line.message.clone()}</span>
+                                        </div>
+                                    }
+                                })
+                            }
+                        }
+                    }
+                </div>
+                <form data-chat-ui="true" onsubmit={on_chat_submit}>
+                    <input
+                        ref={chat_input_ref}
+                        data-ui-exempt="true"
+                        data-chat-ui="true"
+                        data-chat-input="true"
+                        type="text"
+                        value={(*chat_text).clone()}
+                        oninput={chat_on_input}
+                        onkeydown={chat_on_keydown}
+                        maxlength="280"
+                        placeholder={props.reducer.chat_room_key.clone().map(|key| format!("Chat ({key})")).unwrap_or_else(|| "Chat".to_string())}
+                        style="width: 100%; border-radius: 6px; border: 1px solid #cbd5e1; background: rgba(255,255,255,0.9); color: #0f172a; font-size: 14px; padding: 8px 10px; outline: none;"
+                        autocomplete="off"
+                    />
+                </form>
+            </div>
 
             <crate::components::fatal_notification::FatalNotification
                 show={props.reducer.fatal_error}

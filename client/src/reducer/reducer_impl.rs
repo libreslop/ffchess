@@ -26,6 +26,8 @@ impl Reducible for GameStateReducer {
                     mode,
                     pieces,
                     shops,
+                    chat_room_key,
+                    chat_history,
                     sync_interval_ms,
                 } = *payload;
                 next.player_id = Some(player_id);
@@ -35,6 +37,8 @@ impl Reducible for GameStateReducer {
                 next.mode = Some(mode);
                 next.piece_configs = pieces;
                 next.shop_configs = shops;
+                next.chat_room_key = Some(chat_room_key);
+                next.chat_lines = chat_history;
                 next.sync_interval_ms = sync_interval_ms;
                 next.pm_queue.clear();
                 next.error = None;
@@ -73,6 +77,14 @@ impl Reducible for GameStateReducer {
             }
             GameAction::UpdateState(payload) => {
                 next.apply_update_state(*payload);
+            }
+            GameAction::PushChatLine(line) => {
+                const MAX_CHAT_LINES: usize = 120;
+                next.chat_lines.push(line);
+                if next.chat_lines.len() > MAX_CHAT_LINES {
+                    let drop_count = next.chat_lines.len() - MAX_CHAT_LINES;
+                    next.chat_lines.drain(0..drop_count);
+                }
             }
             GameAction::SetError(e) => {
                 next.error = (!matches!(e, GameError::TargetFriendly)).then_some(e.clone());
@@ -182,6 +194,8 @@ impl Reducible for GameStateReducer {
                 next.is_dead = false;
                 next.clear_victory_state();
                 next.queue_status = None;
+                next.chat_room_key = None;
+                next.chat_lines.clear();
                 // Keep state/mode/configs so the join overlay shows the same preview board
                 // as a fresh menu screen without a visual blank between flows.
             }

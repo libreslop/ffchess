@@ -3,8 +3,8 @@ use crate::models::{
 };
 use crate::protocol::error::GameError;
 use crate::types::{
-    BoardCoord, BoardSize, KitId, PieceId, PieceTypeId, PlayerCount, PlayerId, QueuePosition,
-    Score, SessionSecret, ShopId, TimestampMs,
+    BoardCoord, BoardSize, ColorHex, KitId, PieceId, PieceTypeId, PlayerCount, PlayerId,
+    QueuePosition, Score, SessionSecret, ShopId, TimestampMs,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -15,6 +15,14 @@ pub enum VictoryFocusTarget {
     #[default]
     KeepCurrent,
     BoardPosition(BoardCoord),
+}
+
+/// One chat line sent by the server for the active room.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ChatLine {
+    pub sender_name: String,
+    pub sender_color: ColorHex,
+    pub message: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -41,6 +49,10 @@ pub enum ClientMessage {
     SetPreviewDefault {
         enabled: bool,
     },
+    Chat {
+        name_hint: String,
+        message: String,
+    },
     Ping(u64),
 }
 
@@ -55,6 +67,8 @@ pub enum ServerMessage {
         mode: GameModeClientConfig,
         pieces: HashMap<PieceTypeId, PieceConfig>,
         shops: HashMap<ShopId, ShopConfig>,
+        chat_room_key: String,
+        chat_history: Vec<ChatLine>,
         sync_interval_ms: u32,
     },
     UpdateState {
@@ -81,6 +95,9 @@ pub enum ServerMessage {
         kills: u32,
         pieces_captured: u32,
         time_survived_secs: u64,
+    },
+    Chat {
+        line: ChatLine,
     },
     Pong(u64, TimestampMs),
 }

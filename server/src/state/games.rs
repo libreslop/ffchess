@@ -44,6 +44,8 @@ impl ServerState {
             .unwrap_or_else(|| instance.client_mode_config());
         let mut state = instance.game.read().await.clone();
         let move_unlock_at = instance.move_unlock_at().await;
+        let chat_room_key = instance.chat_room_key();
+        let chat_history = instance.chat_history_snapshot().await;
         state.mode_id = instance.public_mode_id().clone();
         let _ = tx.try_send(ServerMessage::Init {
             player_id,
@@ -53,8 +55,32 @@ impl ServerState {
             mode,
             pieces: instance.piece_config_snapshot(),
             shops: instance.shop_config_snapshot(),
+            chat_room_key,
+            chat_history,
             sync_interval_ms: self.config_manager.global.sync_interval_ms,
         });
+    }
+
+    /// Finds the currently viewed instance for an unbound connection in a public mode.
+    pub async fn watched_instance_for_connection(
+        &self,
+        mode_id: &ModeId,
+        conn_id: crate::types::ConnectionId,
+    ) -> Option<Arc<GameInstance>> {
+        let instances = {
+            let games = self.games.read().await;
+            games
+                .values()
+                .filter(|instance| instance.public_mode_id() == mode_id)
+                .cloned()
+                .collect::<Vec<_>>()
+        };
+        for instance in instances {
+            if instance.has_connection_channel(conn_id).await {
+                return Some(instance);
+            }
+        }
+        None
     }
 
     /// Returns all public (non-private) game instances.

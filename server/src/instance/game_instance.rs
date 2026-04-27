@@ -5,7 +5,7 @@ use crate::colors::ColorManager;
 use crate::time::now_ms;
 use crate::types::ConnectionId;
 use common::models::{GameModeConfig, GameState, PieceConfig, QueuePresetLayoutConfig, ShopConfig};
-use common::protocol::{GameError, ServerMessage, VictoryFocusTarget};
+use common::protocol::{ChatLine, GameError, ServerMessage, VictoryFocusTarget};
 use common::types::{
     BoardCoord, ModeId, PieceId, PieceTypeId, PlayerCount, PlayerId, SessionSecret, ShopId,
     TimestampMs,
@@ -40,6 +40,7 @@ pub struct GameInstance {
     pub last_started_at: RwLock<TimestampMs>,
     pub move_unlock_at: RwLock<Option<TimestampMs>>,
     pub death_timestamps: RwLock<HashMap<PlayerId, TimestampMs>>,
+    pub chat_history: RwLock<VecDeque<ChatLine>>,
     pub(super) hook_events: RwLock<HookEventBuffer>,
     pub(super) queued_moves: RwLock<HashMap<PieceId, VecDeque<QueuedMoveRequest>>>,
 }
@@ -95,6 +96,40 @@ impl GameInstance {
     /// Returns the timestamp when player move execution is unlocked.
     pub async fn move_unlock_at(&self) -> Option<TimestampMs> {
         *self.move_unlock_at.read().await
+    }
+
+    /// Returns the chat room key represented by this instance.
+    pub fn chat_room_key(&self) -> String {
+        if self.mode_id() == self.public_mode_id() {
+            format!("mode:{}", self.public_mode_id())
+        } else {
+            format!("game:{}", self.mode_id())
+        }
+    }
+
+    /// Returns whether this instance currently contains the given connection as a viewer.
+    pub async fn has_connection_channel(&self, conn_id: ConnectionId) -> bool {
+        self.connection_channels.read().await.contains_key(&conn_id)
+    }
+
+    /// Returns whether this instance currently has active players.
+    pub async fn has_active_players(&self) -> bool {
+        !self.game.read().await.players.is_empty()
+    }
+
+    /// Appends one line to room chat history and trims to a fixed maximum.
+    pub async fn push_chat_line(&self, line: ChatLine) {
+        const MAX_CHAT_HISTORY: usize = 120;
+        let mut history = self.chat_history.write().await;
+        history.push_back(line);
+        while history.len() > MAX_CHAT_HISTORY {
+            history.pop_front();
+        }
+    }
+
+    /// Returns a snapshot of room chat history.
+    pub async fn chat_history_snapshot(&self) -> Vec<ChatLine> {
+        self.chat_history.read().await.iter().cloned().collect()
     }
 
     /// Starts a queue countdown if configured for this mode instance.
@@ -214,6 +249,7 @@ impl GameInstance {
             last_started_at: RwLock::new(now),
             move_unlock_at: RwLock::new(None),
             death_timestamps: RwLock::new(HashMap::new()),
+            chat_history: RwLock::new(VecDeque::new()),
             hook_events: RwLock::new(HookEventBuffer::default()),
             queued_moves: RwLock::new(HashMap::new()),
         }

@@ -1,7 +1,7 @@
 //! Reducer state types used by the client UI.
 
 use common::models::{GameModeClientConfig, GameState, PieceConfig, ShopConfig};
-use common::protocol::{ClientMessage, GameError, VictoryFocusTarget};
+use common::protocol::{ChatLine, ClientMessage, GameError, VictoryFocusTarget};
 use common::types::{
     PieceId, PieceTypeId, PlayerCount, PlayerId, QueuePosition, Score, SessionSecret, ShopId,
     TimestampMs,
@@ -76,6 +76,8 @@ pub struct GameStateReducer {
     pub victory_title: Option<String>,
     pub victory_msg: Option<String>,
     pub victory_focus_target: VictoryFocusTarget,
+    pub chat_room_key: Option<String>,
+    pub chat_lines: Vec<ChatLine>,
 }
 
 impl GameStateReducer {

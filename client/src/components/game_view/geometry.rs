@@ -63,7 +63,7 @@ pub(super) fn is_ui_exempt_target(target: Option<EventTarget>) -> bool {
         return false;
     };
     element
-        .closest("[data-ui-exempt], [data-shop-ui]")
+        .closest("[data-ui-exempt], [data-shop-ui], [data-chat-ui]")
         .ok()
         .flatten()
         .is_some()
