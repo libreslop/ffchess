@@ -1,7 +1,7 @@
 //! Main in-game canvas view and input handling.
 
 use super::geometry::{
-    is_shop_ui_target, local_board_rotated_180, read_window_size, screen_to_grid,
+    is_ui_exempt_target, local_board_rotated_180, read_window_size, screen_to_grid,
 };
 use super::helpers::{MOVE_ANIM_MS, apply_visible_ghosts, pm_visible};
 use super::types::{
@@ -40,6 +40,7 @@ pub struct GameViewProps {
 pub fn game_view(props: &GameViewProps) -> Html {
     let canvas_ref = use_node_ref();
     let selected_piece_id = use_state(|| None::<PieceId>);
+    let next_pm_id = use_mut_ref(|| 1u64);
     let manager_ref = use_mut_ref(CameraManager::new);
     let piece_prev_positions = use_mut_ref(HashMap::<PieceId, BoardCoord>::new);
     let piece_anims = use_mut_ref(HashMap::<PieceId, PieceAnim>::new);
@@ -270,6 +271,32 @@ pub fn game_view(props: &GameViewProps) -> Html {
                         .filter(|pm| pm_visible(pm, state))
                         .cloned()
                         .collect();
+                    let active_shop_highlight_pos = {
+                        let player_id = player_id.unwrap_or_else(PlayerId::nil);
+                        let tile_size = globals.tile_size_px;
+                        state
+                            .shops
+                            .iter()
+                            .filter_map(|shop| {
+                                ghosts
+                                    .values()
+                                    .find(|p| {
+                                        p.position == shop.position && p.owner_id == Some(player_id)
+                                    })
+                                    .map(|p| {
+                                        let piece_pos = vec2(
+                                            p.position.0.x as f64 * tile_size + tile_size / 2.0,
+                                            p.position.0.y as f64 * tile_size + tile_size / 2.0,
+                                        );
+                                        let dist_sq = (piece_pos - **cam).length_squared();
+                                        (shop.position, dist_sq)
+                                    })
+                            })
+                            .min_by(|a, b| {
+                                a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal)
+                            })
+                            .map(|(pos, _)| pos)
+                    };
 
                     let now = web_sys::window().unwrap().performance().unwrap().now();
                     let mut anims = piece_anims.borrow_mut();
@@ -305,6 +332,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
                         mode: mode.as_ref(),
                         board_rotated_180: local_board_rotated_180(state, *player_id),
                         shop_configs,
+                        active_shop_highlight_pos,
                         disable_fog_of_war: *has_match_result,
                         clock_offset_ms: *clock_offset_ms,
                     });
@@ -378,6 +406,46 @@ pub fn game_view(props: &GameViewProps) -> Html {
             prev.extend(pieces.iter().map(|(id, p)| (*id, p.position)));
             || ()
         });
+    }
+
+    {
+        let reducer = props.reducer.clone();
+        let tx = props.tx.clone();
+        use_effect_with(
+            (
+                reducer.pm_queue.clone(),
+                reducer.state.pieces.clone(),
+                reducer.state.shops.clone(),
+                reducer.shop_configs.clone(),
+                reducer.player_id,
+            ),
+            move |(pm_queue, pieces, shops, shop_configs, player_id)| {
+                let player_id = player_id.unwrap_or_else(PlayerId::nil);
+                if let Some(pm) = pm_queue
+                    .iter()
+                    .find(|pm| pm.shop_item_index.is_some())
+                    .cloned()
+                    && let Some(piece) = pieces.get(&pm.piece_id)
+                    && piece.owner_id == Some(player_id)
+                    && piece.position == BoardCoord(pm.target)
+                    && let Some(shop) = shops.iter().find(|s| s.position == piece.position)
+                    && let Some(shop_config) = shop_configs.get(&shop.shop_id)
+                    && let Some(group) = common::logic::select_shop_group(shop_config, Some(piece))
+                {
+                    let item_index = pm.shop_item_index.unwrap_or_default();
+                    if item_index >= group.items.len() {
+                        reducer.dispatch(GameAction::RemovePm(pm.id));
+                    } else {
+                        let _ = tx.0.try_send(ClientMessage::BuyPiece {
+                            shop_pos: piece.position,
+                            item_index,
+                        });
+                        reducer.dispatch(GameAction::RemovePm(pm.id));
+                    }
+                }
+                || ()
+            },
+        );
     }
 
     let handle_input_start = {
@@ -502,6 +570,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
         let reducer = props.reducer.clone();
         let tx = props.tx.clone();
         let selected_piece_id = selected_piece_id.clone();
+        let next_pm_id = next_pm_id.clone();
         let manager_ref = manager_ref.clone();
         let drag_start = drag_start.clone();
         let did_pan = did_pan.clone();
@@ -629,9 +698,17 @@ pub fn game_view(props: &GameViewProps) -> Html {
                                 piece_id: sid,
                                 target: BoardCoord(target),
                             });
+                            let pm_id = {
+                                let mut next_id = next_pm_id.borrow_mut();
+                                let id = *next_id;
+                                *next_id += 1;
+                                id
+                            };
                             reducer.dispatch(GameAction::AddPmove(Pmove {
+                                id: pm_id,
                                 piece_id: sid,
                                 target,
+                                shop_item_index: None,
                             }));
                             handled_action = true;
                         }
@@ -706,37 +783,84 @@ pub fn game_view(props: &GameViewProps) -> Html {
         .values()
         .filter(|p| p.owner_id == Some(player_id))
         .count();
-    let player_pieces: Vec<_> = props
-        .reducer
-        .state
-        .pieces
-        .values()
-        .filter(|p| p.owner_id == Some(player_id))
-        .collect();
+    let mut ui_ghosts = props.reducer.state.pieces.clone();
+    apply_visible_ghosts(
+        &mut ui_ghosts,
+        &props.reducer.pm_queue,
+        &props.reducer.state,
+        &props.reducer.shop_configs,
+    );
 
     let cam = *cam_state;
     let mut active_shops = Vec::new();
     for shop in &props.reducer.state.shops {
-        if let Some(p) = player_pieces.iter().find(|p| p.position == shop.position) {
+        if let Some(p) = ui_ghosts
+            .values()
+            .find(|p| p.position == shop.position && p.owner_id == Some(player_id))
+        {
             let tile_size = props.globals.tile_size_px;
             let piece_pos = vec2(
                 p.position.0.x as f64 * tile_size + tile_size / 2.0,
                 p.position.0.y as f64 * tile_size + tile_size / 2.0,
             );
             let dist_sq = (piece_pos - cam).length_squared();
-            active_shops.push((shop, (*p).clone(), dist_sq));
+            active_shops.push((shop, p.clone(), dist_sq));
         }
     }
     active_shops.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal));
 
-    let shop_on_which_player_is = active_shops.first().map(|(s, _, _)| *s);
-    let piece_on_shop = active_shops.first().map(|(_, p, _)| p.clone());
+    let shop_menu_context = active_shops
+        .first()
+        .map(|(s, p, _)| (s.position, s.shop_id.clone(), p.clone()));
+    let shop_on_which_player_is = shop_menu_context
+        .as_ref()
+        .map(|(pos, shop_id, _)| (*pos, shop_id.clone()));
+    let piece_on_shop = shop_menu_context.as_ref().map(|(_, _, p)| p.clone());
+
+    let on_shop_buy = {
+        let reducer = props.reducer.clone();
+        let next_pm_id = next_pm_id.clone();
+        let piece_on_shop = piece_on_shop.clone();
+        let shop_menu_context = shop_menu_context.clone();
+        Callback::from(move |item_index: usize| {
+            let Some(piece) = piece_on_shop.as_ref() else {
+                return;
+            };
+            let Some((shop_pos, shop_id, _)) = shop_menu_context.as_ref() else {
+                return;
+            };
+            let Some(shop_config) = reducer.shop_configs.get(shop_id) else {
+                return;
+            };
+            if shop_config.auto_upgrade_single_item
+                && let Some(group) = common::logic::select_shop_group(shop_config, Some(piece))
+                && group.items.len() == 1
+            {
+                return;
+            }
+            let pm_id = {
+                let mut next_id = next_pm_id.borrow_mut();
+                let id = *next_id;
+                *next_id += 1;
+                id
+            };
+            reducer.dispatch(GameAction::AddPmove(Pmove {
+                id: pm_id,
+                piece_id: piece.id,
+                target: shop_pos.0,
+                shop_item_index: Some(item_index),
+            }));
+        })
+    };
 
     html! {
         <div class="fixed inset-0 bg-slate-100 overflow-hidden touch-none"
              onmousedown={
                  let handle_input_start = handle_input_start.clone();
                  Callback::from(move |e: MouseEvent| {
+                     if is_ui_exempt_target(e.target()) {
+                         return;
+                     }
                      handle_input_start.emit(InputStart {
                          pos: vec2(e.client_x() as f64, e.client_y() as f64),
                          is_right_click: e.button() == 2,
@@ -746,6 +870,9 @@ pub fn game_view(props: &GameViewProps) -> Html {
              onmousemove={
                  let handle_input_move = handle_input_move.clone();
                  Callback::from(move |e: MouseEvent| {
+                     if is_ui_exempt_target(e.target()) {
+                         return;
+                     }
                      handle_input_move.emit(InputMove {
                          pos: vec2(e.client_x() as f64, e.client_y() as f64),
                      });
@@ -754,6 +881,9 @@ pub fn game_view(props: &GameViewProps) -> Html {
              onmouseup={
                  let handle_input_end = handle_input_end.clone();
                  Callback::from(move |e: MouseEvent| {
+                     if is_ui_exempt_target(e.target()) {
+                         return;
+                     }
                      handle_input_end.emit(InputEnd {
                          pos: vec2(e.client_x() as f64, e.client_y() as f64),
                          is_right_click: e.button() == 2,
@@ -770,7 +900,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
                 let input_blocked = has_match_result;
                 let touch_gesture_active = touch_gesture_active.clone();
                 Callback::from(move |e: TouchEvent| {
-                    if is_shop_ui_target(e.target()) {
+                    if is_ui_exempt_target(e.target()) {
                         return;
                     }
                     e.prevent_default();
@@ -821,7 +951,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
                 let drag_start = drag_start.clone();
                 let touch_gesture_active = touch_gesture_active.clone();
                 Callback::from(move |e: TouchEvent| {
-                    if is_shop_ui_target(e.target()) {
+                    if is_ui_exempt_target(e.target()) {
                         return;
                     }
                     e.prevent_default();
@@ -913,7 +1043,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
                 let last_tap = last_tap.clone();
                 let touch_gesture_active = touch_gesture_active.clone();
                 Callback::from(move |e: TouchEvent| {
-                    if is_shop_ui_target(e.target()) {
+                    if is_ui_exempt_target(e.target()) {
                         return;
                     }
                     e.prevent_default();
@@ -980,16 +1110,15 @@ pub fn game_view(props: &GameViewProps) -> Html {
                 </div>
             </div>
 
-            if let Some(shop) = shop_on_which_player_is {
-                if let Some(shop_config) = props.reducer.shop_configs.get(&shop.shop_id) {
+            if let Some((_shop_pos, shop_id)) = shop_on_which_player_is.as_ref() {
+                if let Some(shop_config) = props.reducer.shop_configs.get(shop_id) {
                     <crate::components::shop_ui::ShopUI
                         player_score={player_score}
                         player_pieces_count={player_pieces_count}
                         piece_on_shop={piece_on_shop}
                         shop_config={shop_config.clone()}
                         piece_configs={props.reducer.piece_configs.clone()}
-                        tx={props.tx.clone()}
-                        shop_pos={shop.position}
+                        on_buy={on_shop_buy.clone()}
                     />
                 }
             }

@@ -53,6 +53,7 @@ impl Renderer {
             mode,
             board_rotated_180,
             shop_configs,
+            active_shop_highlight_pos,
             disable_fog_of_war,
             clock_offset_ms,
         } = params;
@@ -217,6 +218,27 @@ impl Renderer {
             }
         }
 
+        if let Some(highlight_pos) = active_shop_highlight_pos
+            && (highlight_pos.0 - king_pos.0).abs().max_element() <= view_radius_squares + 2
+        {
+            let color = state
+                .shops
+                .iter()
+                .find(|shop| shop.position == highlight_pos)
+                .and_then(|shop| shop_configs.get(&shop.shop_id))
+                .and_then(|c| c.color.as_ref())
+                .map(|s| s.as_ref())
+                .unwrap_or("rgba(253, 224, 71, 0.35)");
+            let mapped = map_grid(highlight_pos.0);
+            self.ctx.set_fill_style_str(color);
+            self.ctx.fill_rect(
+                mapped.x as f64 * tile_size + offset_x + 2.0,
+                mapped.y as f64 * tile_size + offset_y + 2.0,
+                tile_size - 4.0,
+                tile_size - 4.0,
+            );
+        }
+
         // Selected piece highlight
         if let Some(sid) = selected_piece_id
             && let Some(piece) = ghost_pieces.get(&sid)
@@ -287,6 +309,9 @@ impl Renderer {
 
         // Pmove lines
         for pm in pm_queue {
+            if pm.shop_item_index.is_some() {
+                continue;
+            }
             if let Some(real_p) = state.pieces.get(&pm.piece_id) {
                 let color = if let Some(owner_id) = real_p.owner_id {
                     if let Some(player) = state.players.get(&owner_id) {

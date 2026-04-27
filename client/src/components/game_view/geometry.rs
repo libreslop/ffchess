@@ -54,13 +54,17 @@ pub(super) fn local_board_rotated_180(state: &GameState, player_id: Option<Playe
     player.board_rotation_deg.rem_euclid(360) == 180
 }
 
-/// Returns true when a pointer/touch event originates from the shop UI overlay.
-pub(super) fn is_shop_ui_target(target: Option<EventTarget>) -> bool {
+/// Returns true when a pointer/touch event originates from exempt UI.
+pub(super) fn is_ui_exempt_target(target: Option<EventTarget>) -> bool {
     let Some(target) = target else {
         return false;
     };
     let Ok(element) = target.dyn_into::<Element>() else {
         return false;
     };
-    element.closest("[data-shop-ui]").ok().flatten().is_some()
+    element
+        .closest("[data-ui-exempt], [data-shop-ui]")
+        .ok()
+        .flatten()
+        .is_some()
 }

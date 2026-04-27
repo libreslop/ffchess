@@ -47,6 +47,7 @@ pub enum GameAction {
         time_survived_secs: u64,
     },
     AddPmove(Pmove),
+    RemovePm(u64),
     ClearPm(PieceId),
     Pong(u64, common::types::TimestampMs),
     SetFPS(u32),

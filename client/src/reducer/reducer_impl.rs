@@ -73,7 +73,13 @@ impl Reducible for GameStateReducer {
             GameAction::SetError(e) => {
                 next.error = (!matches!(e, GameError::TargetFriendly)).then_some(e.clone());
                 if is_move_error(&e) && !next.pm_queue.is_empty() {
-                    next.pm_queue.remove(0);
+                    if let Some(index) = next
+                        .pm_queue
+                        .iter()
+                        .position(|pm| pm.shop_item_index.is_none())
+                    {
+                        next.pm_queue.remove(index);
+                    }
                 }
             }
             GameAction::SetVictory {
@@ -107,6 +113,9 @@ impl Reducible for GameStateReducer {
             }
             GameAction::AddPmove(pm) => {
                 next.pm_queue.push(pm);
+            }
+            GameAction::RemovePm(pm_id) => {
+                next.pm_queue.retain(|pm| pm.id != pm_id);
             }
             GameAction::ClearPm(piece_id) => {
                 next.pm_queue.retain(|pm| pm.piece_id != piece_id);

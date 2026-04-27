@@ -87,6 +87,7 @@ pub struct RenderParams<'a> {
     pub mode: Option<&'a GameModeClientConfig>,
     pub board_rotated_180: bool,
     pub shop_configs: &'a HashMap<ShopId, ShopConfig>,
+    pub active_shop_highlight_pos: Option<common::types::BoardCoord>,
     pub disable_fog_of_war: bool,
     pub clock_offset_ms: i64,
 }

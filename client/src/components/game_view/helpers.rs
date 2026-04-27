@@ -25,17 +25,28 @@ pub fn apply_visible_ghosts(
             continue;
         }
 
-        if let Some(p) = ghosts.get_mut(&pm.piece_id) {
-            p.position = BoardCoord(pm.target);
-        }
+        if let Some(item_index) = pm.shop_item_index {
+            apply_manual_shop_action_for_premove(
+                ghosts,
+                &mut virtual_shops,
+                shop_configs,
+                pm.piece_id,
+                BoardCoord(pm.target),
+                item_index,
+            );
+        } else {
+            if let Some(p) = ghosts.get_mut(&pm.piece_id) {
+                p.position = BoardCoord(pm.target);
+            }
 
-        apply_auto_shop_action_for_premove(
-            ghosts,
-            &mut virtual_shops,
-            shop_configs,
-            pm.piece_id,
-            BoardCoord(pm.target),
-        );
+            apply_auto_shop_action_for_premove(
+                ghosts,
+                &mut virtual_shops,
+                shop_configs,
+                pm.piece_id,
+                BoardCoord(pm.target),
+            );
+        }
     }
 }
 
@@ -81,6 +92,61 @@ fn apply_auto_shop_action_for_premove(
         return;
     }
     let item = &group.items[0];
+
+    if let Some(replace_with) = &item.replace_with
+        && let Some(piece) = ghosts.get_mut(&piece_id)
+    {
+        piece.piece_type = replace_with.clone();
+    }
+
+    if let Some(shop) = virtual_shops.get_mut(shop_index)
+        && shop.uses_remaining > 0
+    {
+        shop.uses_remaining -= 1;
+    }
+    if virtual_shops
+        .get(shop_index)
+        .map(|shop| shop.uses_remaining == 0)
+        .unwrap_or(false)
+    {
+        virtual_shops.remove(shop_index);
+    }
+}
+
+/// Applies an explicitly queued shop action to a ghost piece.
+fn apply_manual_shop_action_for_premove(
+    ghosts: &mut HashMap<PieceId, Piece>,
+    virtual_shops: &mut Vec<Shop>,
+    shop_configs: &HashMap<ShopId, ShopConfig>,
+    piece_id: PieceId,
+    shop_pos: BoardCoord,
+    item_index: usize,
+) {
+    let Some(piece_on_shop) = ghosts.get(&piece_id).cloned() else {
+        return;
+    };
+    if piece_on_shop.position != shop_pos {
+        return;
+    }
+
+    let Some((shop_index, shop_id)) = virtual_shops
+        .iter()
+        .enumerate()
+        .find(|(_, shop)| shop.position == shop_pos)
+        .map(|(i, shop)| (i, shop.shop_id.clone()))
+    else {
+        return;
+    };
+
+    let Some(shop_config) = shop_configs.get(&shop_id) else {
+        return;
+    };
+    let Some(group) = common::logic::select_shop_group(shop_config, Some(&piece_on_shop)) else {
+        return;
+    };
+    let Some(item) = group.items.get(item_index) else {
+        return;
+    };
 
     if let Some(replace_with) = &item.replace_with
         && let Some(piece) = ghosts.get_mut(&piece_id)

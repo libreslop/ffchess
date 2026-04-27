@@ -1,9 +1,7 @@
 //! Shop overlay component for purchases.
 
-use crate::reducer::MsgSender;
 use common::models::{Piece, PieceConfig, ShopConfig};
-use common::protocol::ClientMessage;
-use common::types::{BoardCoord, PieceTypeId, Score};
+use common::types::{PieceTypeId, Score};
 use std::collections::HashMap;
 use yew::prelude::*;
 
@@ -15,8 +13,7 @@ pub struct ShopUIProps {
     pub piece_on_shop: Option<Piece>,
     pub shop_config: ShopConfig,
     pub piece_configs: HashMap<PieceTypeId, PieceConfig>,
-    pub tx: MsgSender,
-    pub shop_pos: BoardCoord,
+    pub on_buy: Callback<usize>,
 }
 
 #[function_component(ShopUI)]
@@ -32,6 +29,9 @@ pub fn shop_ui(props: &ShopUIProps) -> Html {
     if group.items.is_empty() {
         return Html::default();
     }
+    if props.shop_config.auto_upgrade_single_item && group.items.len() == 1 {
+        return Html::default();
+    }
 
     let vars = common::logic::build_price_vars(
         props.player_pieces_count,
@@ -39,7 +39,7 @@ pub fn shop_ui(props: &ShopUIProps) -> Html {
     );
 
     html! {
-        <div data-shop-ui="true" style="position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 8px; z-index: 50; width: 95%; max-width: 800px; pointer-events: none;">
+        <div data-shop-ui="true" data-ui-exempt="true" style="position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 8px; z-index: 50; width: 95%; max-width: 800px; pointer-events: none;">
             <span style="font-weight: 800; color: #1e293b; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.15em; pointer-events: auto; background: #ffffff; padding: 2px 8px; border: 2px solid #1e293b;">
                 { &props.shop_config.display_name }
             </span>
@@ -52,13 +52,9 @@ pub fn shop_ui(props: &ShopUIProps) -> Html {
                             .map(|expr| Score::from(common::logic::evaluate_expression(expr, &vars) as u64))
                             .unwrap_or_else(Score::zero);
                         let can_afford = props.player_score >= price;
-                        let shop_pos = props.shop_pos;
-                        let tx = props.tx.clone();
+                        let on_buy_cb = props.on_buy.clone();
                         let on_buy = Callback::from(move |_| {
-                            let _ = tx.0.try_send(ClientMessage::BuyPiece {
-                                shop_pos,
-                                item_index: idx,
-                            });
+                            on_buy_cb.emit(idx);
                         });
 
                         html! {

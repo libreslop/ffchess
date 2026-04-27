@@ -36,7 +36,9 @@ impl GameStateReducer {
 
         for piece in params.pieces {
             if let Some(matching_pending_index) = self.pm_queue.iter().rposition(|pending_move| {
-                pending_move.piece_id == piece.id && pending_move.target == piece.position
+                pending_move.shop_item_index.is_none()
+                    && pending_move.piece_id == piece.id
+                    && pending_move.target == piece.position
             }) {
                 let mut index = 0;
                 let mut upper_bound = matching_pending_index;

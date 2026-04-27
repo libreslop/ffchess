@@ -11,8 +11,10 @@ use std::collections::HashMap;
 /// Client-side requested move entry used for visuals until server state catches up.
 #[derive(Clone, PartialEq, Default, Debug)]
 pub struct Pmove {
+    pub id: u64,
     pub piece_id: PieceId,
     pub target: IVec2,
+    pub shop_item_index: Option<usize>,
 }
 
 /// High-level client session phase used for UI and camera behavior.
