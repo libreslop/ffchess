@@ -61,6 +61,7 @@ pub struct GameStateReducer {
     pub last_kills: u32,
     pub last_captured: u32,
     pub last_survival_secs: u64,
+    pub last_board_rotation_deg: i32,
     pub ping_ms: u64,
     pub clock_offset_ms: i64,
     pub sync_interval_ms: u32,
@@ -85,6 +86,17 @@ impl GameStateReducer {
     pub fn active_player_id(&self) -> Option<PlayerId> {
         self.player_id
             .filter(|player_id| *player_id != PlayerId::nil())
+    }
+
+    /// Returns true when the board should be viewed rotated by 180 degrees.
+    pub fn board_rotated_180(&self) -> bool {
+        let Some(player_id) = self.active_player_id() else {
+            return false;
+        };
+        let rotation = self.state.players.get(&player_id)
+            .map(|p| p.board_rotation_deg)
+            .unwrap_or(self.last_board_rotation_deg);
+        rotation.rem_euclid(360) == 180
     }
 }
 

@@ -1,8 +1,6 @@
 //! Geometry and hit-testing helpers for the game view.
 
 use crate::math::{Vec2, vec2};
-use common::models::GameState;
-use common::types::PlayerId;
 use glam::IVec2;
 use wasm_bindgen::JsCast;
 use web_sys::{DomRect, Element, EventTarget, HtmlCanvasElement};
@@ -41,17 +39,6 @@ pub(super) fn screen_to_grid(
     };
     let grid = (world_pos / tile_size).floor();
     IVec2::new(grid.x as i32, grid.y as i32)
-}
-
-/// Returns true when this local player should view the board rotated by 180 degrees.
-pub(super) fn local_board_rotated_180(state: &GameState, player_id: Option<PlayerId>) -> bool {
-    let Some(player_id) = player_id.filter(|id| *id != PlayerId::nil()) else {
-        return false;
-    };
-    let Some(player) = state.players.get(&player_id) else {
-        return false;
-    };
-    player.board_rotation_deg.rem_euclid(360) == 180
 }
 
 /// Returns true when a pointer/touch event originates from exempt UI.

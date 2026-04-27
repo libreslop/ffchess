@@ -2,7 +2,7 @@
 
 use super::chat::GameChat;
 use super::geometry::{
-    is_ui_exempt_target, local_board_rotated_180, read_window_size, screen_to_grid,
+    is_ui_exempt_target, read_window_size, screen_to_grid,
 };
 use super::helpers::{MOVE_ANIM_MS, apply_visible_ghosts};
 use super::shop_context::ActiveShopMenuQuery;
@@ -177,10 +177,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
                             pan_lerp_dead: globals.pan_lerp_dead,
                             tile_size_px: globals.tile_size_px,
                             death_zoom: globals.death_zoom,
-                            board_rotated_180: local_board_rotated_180(
-                                &reducer_state.state,
-                                reducer_state.player_id,
-                            ),
+                            board_rotated_180: reducer_state.board_rotated_180(),
                         },
                     );
 
@@ -254,7 +251,10 @@ pub fn game_view(props: &GameViewProps) -> Html {
                 reducer.state.clone(),
                 reducer.pm_queue.clone(),
                 reducer.mode.clone(),
-                reducer.player_id,
+                (
+                    reducer.player_id,
+                    reducer.board_rotated_180(),
+                ),
                 *selected_piece_id,
                 has_match_result,
                 shop_configs,
@@ -268,7 +268,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
                 state,
                 pm_queue,
                 mode,
-                player_id,
+                (player_id, board_rotated_180),
                 sid,
                 has_match_result,
                 shop_configs,
@@ -329,7 +329,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
                         zoom: **zoom,
                         tile_size_px: globals.tile_size_px,
                         mode: mode.as_ref(),
-                        board_rotated_180: local_board_rotated_180(state, *player_id),
+                        board_rotated_180: *board_rotated_180,
                         shop_configs,
                         active_shop_highlight_pos,
                         disable_fog_of_war: *has_match_result,
@@ -604,7 +604,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
                 &canvas,
                 manager.camera,
                 tile_size,
-                local_board_rotated_180(&reducer.state, reducer.player_id),
+                reducer.board_rotated_180(),
             );
 
             let board_size = reducer.state.board_size;
@@ -682,8 +682,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
                 let delta = input.pos - start.pos;
                 if delta.x.abs().max(delta.y.abs()) > 0.1 {
                     *did_pan.borrow_mut() = true;
-                    let board_rotated_180 =
-                        local_board_rotated_180(&reducer.state, reducer.player_id);
+                    let board_rotated_180 = reducer.board_rotated_180();
                     if board_rotated_180 {
                         manager.camera += delta;
                         manager.velocity = delta;
@@ -770,7 +769,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
                 &canvas,
                 manager.camera,
                 tile_size,
-                local_board_rotated_180(&reducer.state, reducer.player_id),
+                reducer.board_rotated_180(),
             );
             let player_id = reducer.player_id.unwrap_or_else(PlayerId::nil);
 
@@ -1153,10 +1152,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
                                 && let Some(prev_center) = mgr.last_touch_center
                             {
                                 let pan = center - prev_center;
-                                let board_rotated_180 = local_board_rotated_180(
-                                    &reducer.state,
-                                    reducer.player_id,
-                                );
+                                let board_rotated_180 = reducer.board_rotated_180();
                                 if board_rotated_180 {
                                     mgr.camera += pan;
                                 } else {
@@ -1179,7 +1175,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
                                         canvas.height() as f64 / 2.0,
                                     );
                                     let mut mouse_delta = screen_pos - canvas_center;
-                                    if local_board_rotated_180(&reducer.state, reducer.player_id) {
+                                    if reducer.board_rotated_180() {
                                         mouse_delta = -mouse_delta;
                                     }
                                     let ratio = new_zoom / old_zoom;

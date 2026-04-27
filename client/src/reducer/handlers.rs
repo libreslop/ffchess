@@ -66,6 +66,7 @@ impl GameStateReducer {
                 self.last_score = player.score;
                 self.last_kills = player.kills;
                 self.last_captured = player.pieces_captured;
+                self.last_board_rotation_deg = player.board_rotation_deg;
 
                 if !self.is_victory {
                     self.last_survival_secs = (now_ms - player.join_time).as_u64() / 1000;

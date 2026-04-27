@@ -56,6 +56,7 @@ impl Reducible for GameStateReducer {
                     next.fatal_error = false;
                     if let Some(p) = next.state.players.get(&player_id) {
                         next.last_score = p.score;
+                        next.last_board_rotation_deg = p.board_rotation_deg;
                         next.is_dead = false;
                     } else {
                         // If player is not in state yet, don't immediately set is_dead to true
@@ -253,6 +254,7 @@ impl GameStateReducer {
     /// Clears all victory state so generic end overlays can be derived cleanly.
     fn clear_victory_state(&mut self) {
         self.is_victory = false;
+        self.last_board_rotation_deg = 0;
         self.clear_victory_messages();
         self.victory_focus_target = VictoryFocusTarget::KeepCurrent;
     }
@@ -265,6 +267,7 @@ impl GameStateReducer {
             self.last_score = player.score;
             self.last_kills = player.kills;
             self.last_captured = player.pieces_captured;
+            self.last_board_rotation_deg = player.board_rotation_deg;
             let now = now_timestamp_ms();
             self.last_survival_secs = (now - player.join_time).as_u64() / 1000;
         }
