@@ -19,6 +19,8 @@ This file controls server-wide behavior that is not specific to one mode instanc
 | Field | Type | Required | Default | Notes |
 | --- | --- | --- | --- | --- |
 | `sync_interval_ms` | integer (`u32`) | No | `10000` | Included in the `ServerMessage::Init` payload so the client knows the intended sync cadence. |
+| `chat_message_ttl_ms` | integer (`u32`) | No | `10000` | Authoritative room-chat retention window before the client-side fade begins. The server keeps each line for an extra `500ms` so the fade can complete before pruning. |
+| `chat_message_max_chars` | integer (`u32`) | No | `150` | Authoritative maximum number of characters accepted for one chat message. Longer messages are truncated server-side. |
 | `default_name` | object | No | `{}` | Source pool for generated player names when the join request name is blank. |
 | `default_name.adjectives` | string[] | No | `[]` | Random first half of an auto-generated name. |
 | `default_name.nouns` | string[] | No | `[]` | Random second half of an auto-generated name. |
@@ -34,6 +36,8 @@ This file controls server-wide behavior that is not specific to one mode instanc
 ```jsonc
 {
   "sync_interval_ms": 10000,
+  "chat_message_ttl_ms": 10000,
+  "chat_message_max_chars": 150,
   "default_name": {
     // Used when a player submits an empty name.
     "adjectives": ["Swift", "Frosty", "Hidden"],
@@ -69,12 +73,16 @@ This file is injected into the landing page and deserialized by the Yew client a
 | `tile_size_px` | float | No | `40.0` | Base world-tile size before zoom is applied. |
 | `death_zoom` | float | No | `1.3` | Target zoom when the death or victory camera takes over. |
 | `scroll_zoom_base` | float | No | `1.2` | Exponential base used for wheel zoom scaling. Values above `1.0` make zoom responsive without going unstable. |
+| `chat_message_ttl_ms` | integer (`u32`) | No | `10000` | Client-side chat display lifetime before the fade-out starts. This should match the server value for consistent room history. |
+| `chat_message_max_chars` | integer (`u32`) | No | `150` | Input `maxlength` applied in the chat UI. Keep this aligned with the server maximum. |
+| `chat_warning_chars` | integer (`u32`) | No | `100` | Character count threshold at which the `current/max` counter appears in the chat input row. |
 
 ### Runtime Notes
 
 - `game_order` should contain mode ids from `config/modes/*.jsonc`.
 - The client still works if this file is missing; it falls back to hard-coded defaults.
 - The document is injected by `server/src/handlers/http.rs` into the `index.html` template.
+- Chat linkification is client-only. The server still stores and broadcasts the raw message text.
 
 ### Example
 
@@ -95,6 +103,11 @@ This file is injected into the landing page and deserialized by the Yew client a
   "pan_lerp_dead": 0.08,
   "tile_size_px": 40.0,
   "death_zoom": 1.3,
-  "scroll_zoom_base": 1.2
+  "scroll_zoom_base": 1.2,
+
+  // Chat UI timing and validation. Match server.jsonc where applicable.
+  "chat_message_ttl_ms": 10000,
+  "chat_message_max_chars": 150,
+  "chat_warning_chars": 100
 }
 ```

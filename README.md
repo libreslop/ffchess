@@ -9,6 +9,7 @@ up isolated private matches from shared public lobbies.
 
 - Real-time movement instead of alternating turns.
 - Config-defined pieces, shops, kits, hooks, and modes.
+- Room-scoped chat for both public mode lobbies and private queue matches.
 - Public sandbox modes plus queue-based private match modes.
 - A WebSocket server, a Yew/WebAssembly client, and a shared `common` crate.
 - Client-side premove prediction backed by server-side queued move execution.
@@ -70,6 +71,8 @@ Detailed field-by-field reference lives in [docs/README.md](docs/README.md).
 - The server owns the authoritative `GameState` for each `GameInstance`.
 - The client renders a predicted view by applying local premoves on top of the latest server snapshot.
 - Queue modes keep a public preview board alive while private match instances are created on demand.
+- Queue matches can publish a pre-move countdown so players see the full starting position before moves unlock.
+- Chat follows the currently viewed room, with mode-room chat in lobbies and game-room chat inside private matches.
 - Hook handling is tick-buffered so captures and leave events resolve in a predictable order.
 
 ## Documentation

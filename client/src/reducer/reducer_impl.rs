@@ -280,6 +280,7 @@ fn prune_expired_chat_lines(
     now: common::types::TimestampMs,
     ttl_ms: u32,
 ) {
-    let ttl_ms = ttl_ms.max(1) as i64;
-    lines.retain(|line| now.as_i64().saturating_sub(line.sent_at.as_i64()) < ttl_ms);
+    const CHAT_FADE_OUT_MS: i64 = 500;
+    let prune_after_ms = ttl_ms.max(1) as i64 + CHAT_FADE_OUT_MS;
+    lines.retain(|line| now.as_i64().saturating_sub(line.sent_at.as_i64()) < prune_after_ms);
 }

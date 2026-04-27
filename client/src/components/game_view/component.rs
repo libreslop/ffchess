@@ -3,7 +3,9 @@
 use super::geometry::{
     is_ui_exempt_target, local_board_rotated_180, read_window_size, screen_to_grid,
 };
+use super::chat::GameChat;
 use super::helpers::{MOVE_ANIM_MS, apply_visible_ghosts};
+use super::shop_context::ActiveShopMenuQuery;
 use super::types::{
     DragStart, FpsCounter, InputEnd, InputMove, InputStart, LastTap, LatestStateSnapshot, PieceAnim,
 };
@@ -13,16 +15,15 @@ use crate::math::{Vec2, vec2};
 use crate::reducer::{GameAction, GameStateReducer, MsgSender, Pmove};
 use crate::utils::request_fullscreen;
 use common::logic::is_within_board;
-use common::models::{GameState, Piece, Shop, ShopConfig};
 use common::protocol::ClientMessage;
-use common::types::{BoardCoord, DurationMs, PieceId, PlayerId, Score, ShopId, TimestampMs};
+use common::types::{BoardCoord, DurationMs, PieceId, PlayerId, Score, TimestampMs};
 use gloo_events::EventListener;
 use gloo_render::{AnimationFrame, request_animation_frame};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 use wasm_bindgen::JsCast;
-use web_sys::{HtmlCanvasElement, HtmlInputElement};
+use web_sys::HtmlCanvasElement;
 use yew::prelude::*;
 
 /// Properties for the main game viewport.
@@ -60,10 +61,6 @@ pub fn game_view(props: &GameViewProps) -> Html {
 
     let window_size = use_state(read_window_size);
     let has_match_result = props.reducer.is_dead || props.reducer.is_victory;
-    let chat_input_ref = use_node_ref();
-    let chat_log_ref = use_node_ref();
-    let chat_text = use_state(String::new);
-    let chat_now_ms = use_state(|| js_sys::Date::now() as i64);
 
     // Drive a steady render heartbeat with requestAnimationFrame so visual elements (e.g., cooldown bars) update every frame
     {
@@ -92,78 +89,6 @@ pub fn game_view(props: &GameViewProps) -> Html {
                 }
             }
         });
-    }
-
-    {
-        let chat_input_ref = chat_input_ref.clone();
-        use_effect_with((), move |_| {
-            let listener =
-                EventListener::new(&web_sys::window().unwrap(), "pointerdown", move |event| {
-                    let Some(target) = event.target() else {
-                        return;
-                    };
-                    let Ok(target_el) = target.dyn_into::<web_sys::Element>() else {
-                        return;
-                    };
-                    if chat_input_ref.cast::<web_sys::Element>().is_none() {
-                        return;
-                    }
-                    let target_is_input = target_el
-                        .closest("[data-chat-input]")
-                        .ok()
-                        .flatten()
-                        .is_some();
-                    if !target_is_input
-                        && let Some(input) = chat_input_ref.cast::<HtmlInputElement>()
-                    {
-                        let _ = input.blur();
-                    }
-                });
-            move || drop(listener)
-        });
-    }
-
-    {
-        let chat_log_ref = chat_log_ref.clone();
-        use_effect_with(props.reducer.chat_lines.len(), move |_| {
-            if let Some(el) = chat_log_ref.cast::<web_sys::HtmlElement>() {
-                el.set_scroll_top(el.scroll_height());
-            }
-            || ()
-        });
-    }
-
-    {
-        let chat_text = chat_text.clone();
-        use_effect_with(props.reducer.chat_room_key.clone(), move |_| {
-            chat_text.set(String::new());
-            || ()
-        });
-    }
-
-    {
-        let reducer = props.reducer.clone();
-        let chat_now_ms = chat_now_ms.clone();
-        let chat_ttl_ms = props.globals.chat_message_ttl_ms;
-        let clock_offset_ms = props.reducer.clock_offset_ms;
-        use_effect_with(
-            (
-                chat_ttl_ms,
-                clock_offset_ms,
-                props.reducer.chat_room_key.clone(),
-            ),
-            move |_| {
-                let interval = gloo_timers::callback::Interval::new(250, move || {
-                    let now = js_sys::Date::now() as i64 + clock_offset_ms;
-                    chat_now_ms.set(now);
-                    reducer.dispatch(GameAction::PruneExpiredChat {
-                        now: TimestampMs::from_millis(now),
-                        ttl_ms: chat_ttl_ms,
-                    });
-                });
-                move || drop(interval)
-            },
-        );
     }
 
     // Initialize renderer when canvas is bound
@@ -949,10 +874,6 @@ pub fn game_view(props: &GameViewProps) -> Html {
         .values()
         .filter(|p| p.owner_id == Some(player_id))
         .count();
-    let chat_char_count = (*chat_text).chars().count() as u32;
-    let chat_max_chars = props.globals.chat_message_max_chars.max(1);
-    let chat_warning_chars = props.globals.chat_warning_chars.min(chat_max_chars);
-    let show_chat_counter = chat_char_count >= chat_warning_chars;
     let queue_countdown_secs =
         queue_countdown_remaining_secs(props.reducer.move_unlock_at, props.reducer.clock_offset_ms);
     let mut ui_ghosts = props.reducer.state.pieces.clone();
@@ -1024,62 +945,6 @@ pub fn game_view(props: &GameViewProps) -> Html {
                 target: shop_pos.0,
                 shop_item_index: Some(item_index),
             }));
-        })
-    };
-
-    let chat_on_input = {
-        let chat_text = chat_text.clone();
-        Callback::from(move |event: InputEvent| {
-            if let Some(input) = event.target_dyn_into::<HtmlInputElement>() {
-                chat_text.set(input.value());
-            }
-        })
-    };
-
-    let submit_chat_message = {
-        let tx = props.tx.clone();
-        let chat_text = chat_text.clone();
-        let chat_input_ref = chat_input_ref.clone();
-        let player_name = props.player_name.clone();
-        Callback::from(move |_| {
-            let message = (*chat_text).trim().to_string();
-            if message.is_empty() {
-                return;
-            }
-            let sent = try_send_client_message(
-                &tx,
-                ClientMessage::Chat {
-                    name_hint: player_name.clone(),
-                    message,
-                },
-                "failed to send Chat",
-            );
-            if sent {
-                chat_text.set(String::new());
-            }
-            if let Some(input) = chat_input_ref.cast::<HtmlInputElement>() {
-                let _ = input.focus();
-            }
-        })
-    };
-
-    let chat_on_keydown = {
-        let submit_chat_message = submit_chat_message.clone();
-        Callback::from(move |event: KeyboardEvent| {
-            if event.key() == "Enter" {
-                event.prevent_default();
-                submit_chat_message.emit(());
-            }
-            event.stop_propagation();
-        })
-    };
-
-    let on_chat_submit = {
-        let submit_chat_message = submit_chat_message.clone();
-        Callback::from(move |event: SubmitEvent| {
-            event.prevent_default();
-            event.stop_propagation();
-            submit_chat_message.emit(());
         })
     };
 
@@ -1373,72 +1238,12 @@ pub fn game_view(props: &GameViewProps) -> Html {
                 }
             }
 
-            <div
-                data-ui-exempt="true"
-                data-chat-ui="true"
-                style="position: absolute; left: 12px; bottom: 12px; width: min(460px, calc(100vw - 24px)); max-height: 38vh; display: flex; flex-direction: column; gap: 0; z-index: 160;"
-            >
-                <div
-                    data-chat-ui="true"
-                    ref={chat_log_ref}
-                    style="padding: 0; overflow-y: auto;"
-                >
-                    {
-                        if props.reducer.chat_lines.is_empty() {
-                            html! {}
-                        } else {
-                            html! {
-                                for props.reducer.chat_lines.iter().map(|line| {
-                                    let ttl_ms = props.globals.chat_message_ttl_ms.max(1) as i64;
-                                    let age_ms = (*chat_now_ms).saturating_sub(line.sent_at.as_i64());
-                                    let remaining_ratio = 1.0f64 - (age_ms.max(0) as f64 / ttl_ms as f64);
-                                    let opacity = remaining_ratio.clamp(0.0, 1.0);
-                                    html! {
-                                        <div style={format!("font-size: 12px; line-height: 1.6; min-height: 1.6em; overflow-wrap: anywhere; color: #ffffff; text-shadow: 2px 2px 0 rgba(0,0,0,0.75); opacity: {:.3};", opacity)}>
-                                            <span style={format!("color: {}; font-weight: 700;", line.sender_color.as_ref())}>
-                                                {line.sender_name.clone()}
-                                            </span>
-                                            <span>{" : "}{line.message.clone()}</span>
-                                        </div>
-                                    }
-                                })
-                            }
-                        }
-                    }
-                </div>
-                <form data-chat-ui="true" onsubmit={on_chat_submit}>
-                    <div data-chat-ui="true" style="position: relative; min-height: 1.6em;">
-                        <input
-                            ref={chat_input_ref}
-                            data-ui-exempt="true"
-                            data-chat-ui="true"
-                            data-chat-input="true"
-                            type="text"
-                            value={(*chat_text).clone()}
-                            oninput={chat_on_input}
-                            onkeydown={chat_on_keydown}
-                            maxlength={chat_max_chars.to_string()}
-                            placeholder={props.reducer.chat_room_key.clone().map(|key| format!("Chat ({key})")).unwrap_or_else(|| "Chat".to_string())}
-                            style="width: 100%; border: 0; background: transparent; color: #ffffff; text-shadow: 2px 2px 0 rgba(0,0,0,0.75); font-size: 12px; line-height: 1.6; min-height: 1.6em; padding: 0; padding-right: 68px; outline: none;"
-                            autocomplete="off"
-                        />
-                        {
-                            if show_chat_counter {
-                                html! {
-                                    <span
-                                        data-chat-ui="true"
-                                        style="position: absolute; right: 0; top: 0; font-size: 12px; line-height: 1.6; color: #ffffff; text-shadow: 2px 2px 0 rgba(0,0,0,0.75); pointer-events: none;"
-                                    >
-                                        {format!("{}/{}", chat_char_count, chat_max_chars)}
-                                    </span>
-                                }
-                            } else {
-                                html! {}
-                            }
-                        }
-                    </div>
-                </form>
-            </div>
+            <GameChat
+                reducer={props.reducer.clone()}
+                tx={props.tx.clone()}
+                globals={props.globals.clone()}
+                player_name={props.player_name.clone()}
+            />
 
             <crate::components::fatal_notification::FatalNotification
                 show={props.reducer.fatal_error}
@@ -1446,61 +1251,6 @@ pub fn game_view(props: &GameViewProps) -> Html {
                 msg={props.reducer.disconnected_msg.clone()}
             />
         </div>
-    }
-}
-
-/// Query inputs for resolving the active shop menu near the camera.
-struct ActiveShopMenuQuery<'a> {
-    state: &'a GameState,
-    ghosts: &'a HashMap<PieceId, Piece>,
-    pm_queue: &'a [Pmove],
-    shop_configs: &'a HashMap<ShopId, ShopConfig>,
-    player_id: PlayerId,
-    camera: Vec2,
-    tile_size: f64,
-    submitted_shop_actions: &'a [(PieceId, BoardCoord)],
-}
-
-impl ActiveShopMenuQuery<'_> {
-    fn resolve(&self) -> Option<(BoardCoord, ShopId, Piece)> {
-        self.state
-            .shops
-            .iter()
-            .filter_map(|shop| self.shop_candidate(shop))
-            .min_by(|a, b| a.3.partial_cmp(&b.3).unwrap_or(std::cmp::Ordering::Equal))
-            .map(|(pos, shop_id, piece, _)| (pos, shop_id, piece))
-    }
-
-    fn shop_candidate(&self, shop: &Shop) -> Option<(BoardCoord, ShopId, Piece, f64)> {
-        let piece = self.ghosts.values().find(|piece| {
-            piece.position == shop.position && piece.owner_id == Some(self.player_id)
-        })?;
-        let shop_config = self.shop_configs.get(&shop.shop_id)?;
-        let group = common::logic::select_shop_group(shop_config, Some(piece))?;
-        if group.items.is_empty() {
-            return None;
-        }
-        if shop_config.auto_upgrade_single_item && group.items.len() == 1 {
-            return None;
-        }
-        if self.has_pending_shop_action(piece, shop.position) {
-            return None;
-        }
-
-        let piece_pos = vec2(
-            piece.position.0.x as f64 * self.tile_size + self.tile_size / 2.0,
-            piece.position.0.y as f64 * self.tile_size + self.tile_size / 2.0,
-        );
-        let dist_sq = (piece_pos - self.camera).length_squared();
-        Some((shop.position, shop.shop_id.clone(), piece.clone(), dist_sq))
-    }
-
-    fn has_pending_shop_action(&self, piece: &Piece, shop_position: BoardCoord) -> bool {
-        self.pm_queue.iter().any(|pm| {
-            pm.shop_item_index.is_some() && pm.piece_id == piece.id && pm.target == shop_position.0
-        }) || self
-            .submitted_shop_actions
-            .contains(&(piece.id, shop_position))
     }
 }
 

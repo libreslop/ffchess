@@ -57,7 +57,7 @@ impl ServerState {
             session_secret,
             move_unlock_at,
             state: Box::new(state),
-            mode,
+            mode: Box::new(mode),
             pieces: instance.piece_config_snapshot(),
             shops: instance.shop_config_snapshot(),
             chat_room_key,

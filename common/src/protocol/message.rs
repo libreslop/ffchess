@@ -65,7 +65,7 @@ pub enum ServerMessage {
         session_secret: SessionSecret,
         move_unlock_at: Option<TimestampMs>,
         state: Box<GameState>,
-        mode: GameModeClientConfig,
+        mode: Box<GameModeClientConfig>,
         pieces: HashMap<PieceTypeId, PieceConfig>,
         shops: HashMap<ShopId, ShopConfig>,
         chat_room_key: String,

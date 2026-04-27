@@ -1,6 +1,7 @@
 //! Game instance submodules split by responsibility.
 
 mod captures;
+mod chat_history;
 mod game_instance;
 mod hooks;
 mod moves;

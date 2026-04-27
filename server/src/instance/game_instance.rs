@@ -1,5 +1,6 @@
 //! Shared per-mode state container for live game instances.
 
+use super::chat_history::ChatHistory;
 use super::hooks::HookEventBuffer;
 use crate::colors::ColorManager;
 use crate::time::now_ms;
@@ -40,8 +41,7 @@ pub struct GameInstance {
     pub last_started_at: RwLock<TimestampMs>,
     pub move_unlock_at: RwLock<Option<TimestampMs>>,
     pub death_timestamps: RwLock<HashMap<PlayerId, TimestampMs>>,
-    pub chat_history: RwLock<VecDeque<ChatLine>>,
-    pub chat_message_ttl_ms: u32,
+    pub(super) chat_history: RwLock<ChatHistory>,
     pub(super) hook_events: RwLock<HookEventBuffer>,
     pub(super) queued_moves: RwLock<HashMap<PieceId, VecDeque<QueuedMoveRequest>>>,
 }
@@ -120,20 +120,12 @@ impl GameInstance {
 
     /// Appends one line to room chat history and trims to a fixed maximum.
     pub async fn push_chat_line(&self, line: ChatLine) {
-        const MAX_CHAT_HISTORY: usize = 120;
-        let mut history = self.chat_history.write().await;
-        prune_expired_chat_lines(&mut history, self.chat_message_ttl_ms, now_ms());
-        history.push_back(line);
-        while history.len() > MAX_CHAT_HISTORY {
-            history.pop_front();
-        }
+        self.chat_history.write().await.push(line, now_ms());
     }
 
     /// Returns a snapshot of room chat history.
     pub async fn chat_history_snapshot(&self) -> Vec<ChatLine> {
-        let mut history = self.chat_history.write().await;
-        prune_expired_chat_lines(&mut history, self.chat_message_ttl_ms, now_ms());
-        history.iter().cloned().collect()
+        self.chat_history.write().await.snapshot(now_ms())
     }
 
     /// Starts a queue countdown if configured for this mode instance.
@@ -254,8 +246,7 @@ impl GameInstance {
             last_started_at: RwLock::new(now),
             move_unlock_at: RwLock::new(None),
             death_timestamps: RwLock::new(HashMap::new()),
-            chat_history: RwLock::new(VecDeque::new()),
-            chat_message_ttl_ms,
+            chat_history: RwLock::new(ChatHistory::new(chat_message_ttl_ms)),
             hook_events: RwLock::new(HookEventBuffer::default()),
             queued_moves: RwLock::new(HashMap::new()),
         }
@@ -322,15 +313,5 @@ impl GameInstance {
         });
         game.shops
             .retain(|s| common::logic::is_within_board(s.position, board_size));
-    }
-}
-
-fn prune_expired_chat_lines(history: &mut VecDeque<ChatLine>, ttl_ms: u32, now: TimestampMs) {
-    let ttl_ms = ttl_ms.max(1) as i64;
-    while history
-        .front()
-        .is_some_and(|line| now.as_i64().saturating_sub(line.sent_at.as_i64()) >= ttl_ms)
-    {
-        history.pop_front();
     }
 }

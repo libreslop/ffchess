@@ -67,6 +67,7 @@ pub async fn connect_ws(
                                 set_stored_secret(&mode_id, session_secret);
                             }
                             let state = *state;
+                            let mode = *mode;
                             GameAction::SetInit(Box::new(InitPayload {
                                 player_id,
                                 session_secret,

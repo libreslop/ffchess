@@ -18,6 +18,7 @@ The documents below are written from the current code and config files in this r
 - [logic/npcs.md](logic/npcs.md): spawn rules and autonomous NPC movement.
 - [logic/world.md](logic/world.md): board sizing, spawn heuristics, shop spawning, and pruning.
 - [logic/matchmaking.md](logic/matchmaking.md): queue modes, preview boards, private matches, and connection binding.
+- [logic/chat.md](logic/chat.md): room selection, sender identity, retention, fade rules, and client rendering behavior.
 
 ## Reading Order
 
@@ -25,4 +26,4 @@ If you are new to the codebase, a practical order is:
 
 1. Read [README.md](../README.md).
 2. Read the four config reference files to understand the data model.
-3. Read `game_loop`, then `movement`, `combat`, `world`, `npcs`, and `matchmaking`.
+3. Read `game_loop`, then `movement`, `combat`, `world`, `npcs`, `matchmaking`, and `chat`.

@@ -89,12 +89,11 @@ pub fn use_mode_url_navigation_effect(
                 let reducer = reducer_ref.borrow().clone();
                 if should_leave_current_session(&reducer)
                     && let Some(sender) = tx_ref.borrow().as_ref()
+                    && let Err(error) = sender.0.try_send(ClientMessage::Leave)
                 {
-                    if let Err(error) = sender.0.try_send(ClientMessage::Leave) {
-                        web_sys::console::error_1(
-                            &format!("Failed to send Leave while navigating modes: {error}").into(),
-                        );
-                    }
+                    web_sys::console::error_1(
+                        &format!("Failed to send Leave while navigating modes: {error}").into(),
+                    );
                 }
 
                 rejoin_flow.set(RejoinFlow::Inactive);

@@ -77,6 +77,19 @@ of the random kit-cluster spawn used by sandbox modes.
 Each slot can also set `board_rotation_deg`, which is how bullet mode gives both players opposite
 perspectives on the same board.
 
+## Queue Countdown
+
+If `queue_countdown_ms > 0` on the mode config:
+
+- the private match still spawns all players and pieces immediately,
+- the server sets `move_unlock_at` on the instance,
+- the client removes the join overlay and renders the live board,
+- premoves are allowed during the countdown,
+- authoritative movement execution waits until `now >= move_unlock_at`.
+
+This is why bullet mode can show the full starting board for a few seconds before the first move is
+legal without delaying room creation or chat-room switching.
+
 ## Connection Binding Flow
 
 The server tracks three layers of association:

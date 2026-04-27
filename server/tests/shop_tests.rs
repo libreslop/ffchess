@@ -97,6 +97,7 @@ async fn shop_purchase_deducts_score_and_adds_piece() {
         None,
         Arc::new(piece_configs),
         Arc::new(HashMap::from([(shop_id.clone(), shop_config.clone())])),
+        10_000,
     );
 
     let (tx, _) = mpsc::channel(100);

@@ -14,6 +14,7 @@ The filename stem becomes the runtime `GameModeConfig.id`.
 | `max_players` | integer (`u32`) | Yes | none | Maximum simultaneous players in one instance. |
 | `queue_players` | integer (`u32`) | No | `0` | Queue threshold for private-match modes. Only values `>= 2` create matchmaking behavior. |
 | `preview_switch_delay_ms` | integer (`i64`) | No | `5000` | Delay before queue preview boards switch away from an ended private match. Only relevant for queue modes. |
+| `queue_countdown_ms` | integer (`i64`) | No | `0` | Match-start countdown for queue modes. Players and pieces are spawned immediately, overlays are removed, and premoves are allowed, but actual movement waits until this timer expires. |
 | `board_size` | expression string | Yes | none | Server-side expression evaluated with `player_count`. |
 | `camera_pan_limit` | expression string | Yes | none | Client-side expression evaluated with `player_piece_count` and `fog_of_war_radius`. |
 | `fog_of_war_radius` | expression string or `null` | No | `null` | Client-side expression evaluated with `player_piece_count`. `null` disables fog of war. |
@@ -132,6 +133,7 @@ If `queue_players >= 2`, the mode behaves differently:
 - the public instance is reused as a preview board,
 - when the queue fills, the server spawns a private `GameInstance`,
 - the private instance copies the mode config but zeroes `queue_players`,
+- if `queue_countdown_ms > 0`, the private instance publishes `move_unlock_at` and the client shows a center-screen countdown before moves unlock,
 - `queue_layout`, if present, controls the exact spawn positions for the private match.
 
 If `queue_layout.players.len()` is smaller than the number of queued players admitted into a match,
@@ -184,6 +186,7 @@ joining the extra slot fails at runtime.
   "max_players": 2,
   "queue_players": 2,
   "preview_switch_delay_ms": 5000,
+  "queue_countdown_ms": 5000,
   "board_size": "8",
   "camera_pan_limit": "8",
   "fog_of_war_radius": null,
