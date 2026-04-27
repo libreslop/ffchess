@@ -239,36 +239,21 @@ impl Renderer {
             );
         }
 
-        // Selected piece highlight
-        if let Some(sid) = selected_piece_id
-            && let Some(piece) = ghost_pieces.get(&sid)
-            && (piece.position.0 - king_pos.0).abs().max_element() <= view_radius_squares + 2
-        {
-            let highlight = if let Some(owner_id) = piece.owner_id {
-                if let Some(player) = state.players.get(&owner_id) {
-                    hex_to_rgba(player.color.as_ref(), 0.2)
-                } else {
-                    "rgba(59, 130, 246, 0.2)".to_string()
-                }
-            } else {
-                "rgba(59, 130, 246, 0.2)".to_string()
-            };
-            let mapped = map_grid(piece.position.0);
-            self.ctx.set_fill_style_str(&highlight);
-            self.ctx.fill_rect(
-                mapped.x as f64 * tile_size + offset_x + 2.0,
-                mapped.y as f64 * tile_size + offset_y + 2.0,
-                tile_size - 4.0,
-                tile_size - 4.0,
-            );
-        }
-
-        // Highlights for valid moves
+        // Markers for valid moves:
+        // - quiet move: center circle in team color
+        // - capture move: 4 corner triangles in team color (drawn above pieces later)
+        let mut quiet_move_markers: Vec<IVec2> = Vec::new();
+        let mut capture_move_markers: Vec<IVec2> = Vec::new();
+        let mut move_marker_color = "rgba(59, 130, 246, 0.4)".to_string();
         if let Some(sid) = selected_piece_id
             && let Some(piece) = ghost_pieces.get(&sid)
             && let Some(config) = self.piece_configs.get(&piece.piece_type)
         {
-            self.ctx.set_fill_style_str("rgba(34, 197, 94, 0.2)");
+            move_marker_color = piece
+                .owner_id
+                .and_then(|owner_id| state.players.get(&owner_id))
+                .map(|player| hex_to_rgba(player.color.as_ref(), 0.4))
+                .unwrap_or_else(|| "rgba(59, 130, 246, 0.4)".to_string());
             let range = 10;
             for x in (piece.position.0.x - range)..(piece.position.0.x + range + 1) {
                 for y in (piece.position.0.y - range)..(piece.position.0.y + range + 1) {
@@ -295,15 +280,30 @@ impl Renderer {
                         pieces: ghost_pieces,
                         moving_owner: piece.owner_id,
                     }) {
-                        let mapped = map_grid(t);
-                        self.ctx.fill_rect(
-                            mapped.x as f64 * tile_size + offset_x + 2.0,
-                            mapped.y as f64 * tile_size + offset_y + 2.0,
-                            tile_size - 4.0,
-                            tile_size - 4.0,
-                        );
+                        if is_capture {
+                            capture_move_markers.push(t);
+                        } else {
+                            quiet_move_markers.push(t);
+                        }
                     }
                 }
+            }
+
+            self.ctx.set_fill_style_str(&move_marker_color);
+            let circle_radius = tile_size * 0.16;
+            for target in &quiet_move_markers {
+                let mapped = map_grid(*target);
+                let center_x = mapped.x as f64 * tile_size + offset_x + tile_size / 2.0;
+                let center_y = mapped.y as f64 * tile_size + offset_y + tile_size / 2.0;
+                self.ctx.begin_path();
+                let _ = self.ctx.arc(
+                    center_x,
+                    center_y,
+                    circle_radius,
+                    0.0,
+                    std::f64::consts::PI * 2.0,
+                );
+                self.ctx.fill();
             }
         }
 
@@ -407,6 +407,45 @@ impl Renderer {
                         );
                     }
                 }
+            }
+        }
+
+        // Capture markers above pieces.
+        if selected_piece_id.is_some() {
+            self.ctx.set_fill_style_str(&move_marker_color);
+            let corner = tile_size * 0.22;
+            for target in &capture_move_markers {
+                let mapped = map_grid(*target);
+                let x = mapped.x as f64 * tile_size + offset_x;
+                let y = mapped.y as f64 * tile_size + offset_y;
+
+                self.ctx.begin_path();
+                self.ctx.move_to(x, y);
+                self.ctx.line_to(x + corner, y);
+                self.ctx.line_to(x, y + corner);
+                self.ctx.close_path();
+                self.ctx.fill();
+
+                self.ctx.begin_path();
+                self.ctx.move_to(x + tile_size, y);
+                self.ctx.line_to(x + tile_size - corner, y);
+                self.ctx.line_to(x + tile_size, y + corner);
+                self.ctx.close_path();
+                self.ctx.fill();
+
+                self.ctx.begin_path();
+                self.ctx.move_to(x, y + tile_size);
+                self.ctx.line_to(x + corner, y + tile_size);
+                self.ctx.line_to(x, y + tile_size - corner);
+                self.ctx.close_path();
+                self.ctx.fill();
+
+                self.ctx.begin_path();
+                self.ctx.move_to(x + tile_size, y + tile_size);
+                self.ctx.line_to(x + tile_size - corner, y + tile_size);
+                self.ctx.line_to(x + tile_size, y + tile_size - corner);
+                self.ctx.close_path();
+                self.ctx.fill();
             }
         }
 
