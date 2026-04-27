@@ -95,6 +95,7 @@ impl GameInstance {
             )
         };
 
+        let joined_player_name = name.clone();
         let player = Player {
             id: player_id,
             name,
@@ -109,6 +110,8 @@ impl GameInstance {
 
         game.players.insert(player_id, player);
         drop(game);
+
+        self.record_player_join_event(joined_player_name).await;
 
         if was_empty {
             *self.last_started_at.write().await = now;

@@ -40,6 +40,9 @@ The chat identity logic also depends on connection state:
 The sender color is stored in each `ChatLine` so spectators and reconnecting clients see the same
 identity that existed when the message was sent.
 
+System-generated hook messages are sent as `is_system = true` chat lines with yellow styling on
+the client.
+
 ## Retention, Fade, And Pruning
 
 Each room stores chat in a bounded history owned by the game instance.

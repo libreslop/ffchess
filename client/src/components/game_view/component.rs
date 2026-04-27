@@ -1,9 +1,9 @@
 //! Main in-game canvas view and input handling.
 
+use super::chat::GameChat;
 use super::geometry::{
     is_ui_exempt_target, local_board_rotated_180, read_window_size, screen_to_grid,
 };
-use super::chat::GameChat;
 use super::helpers::{MOVE_ANIM_MS, apply_visible_ghosts};
 use super::shop_context::ActiveShopMenuQuery;
 use super::types::{
@@ -843,9 +843,10 @@ pub fn game_view(props: &GameViewProps) -> Html {
                                 moving_owner: p.owner_id,
                             })
                         {
-                            let blocked_by_shop = reducer.pm_queue.iter().any(|pm| {
-                                pm.piece_id == sid && pm.shop_item_index.is_some()
-                            });
+                            let blocked_by_shop = reducer
+                                .pm_queue
+                                .iter()
+                                .any(|pm| pm.piece_id == sid && pm.shop_item_index.is_some());
                             if !blocked_by_shop {
                                 let _ = try_send_client_message(
                                     &tx,

@@ -129,13 +129,26 @@ impl GameInstance {
     }
 
     /// Starts a queue countdown if configured for this mode instance.
-    pub async fn start_queue_countdown(&self) {
+    pub async fn start_queue_countdown(self: &Arc<Self>) {
         let countdown = self.mode_config.queue_countdown_ms;
         if countdown <= common::types::DurationMs::zero() {
             *self.move_unlock_at.write().await = None;
             return;
         }
         *self.move_unlock_at.write().await = Some(now_ms() + countdown);
+
+        let countdown_seconds = (countdown.as_u64() / 1000) as u32;
+        if countdown_seconds == 0 {
+            return;
+        }
+
+        let instance = Arc::clone(self);
+        tokio::spawn(async move {
+            for seconds in (1..=countdown_seconds).rev() {
+                instance.record_queue_countdown_event(seconds).await;
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            }
+        });
     }
 
     /// Registers a passive connection channel for lobby/observer updates.

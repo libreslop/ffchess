@@ -331,6 +331,7 @@ impl SocketSession {
             sender_name,
             sender_color,
             message,
+            is_system: false,
             sent_at: now_ms(),
         };
         target_instance.push_chat_line(line.clone()).await;
@@ -371,6 +372,16 @@ impl SocketSession {
     pub(super) async fn cleanup_connection(&self) {
         if let Some(binding) = self.state.unbind_connection(self.conn_id).await {
             let (player_id, instance) = binding.into_parts();
+            let disconnected_name = instance
+                .game
+                .read()
+                .await
+                .players
+                .get(&player_id)
+                .map(|player| player.name.clone());
+            if let Some(player_name) = disconnected_name {
+                instance.record_player_disconnect_event(player_name).await;
+            }
             instance.remove_player(player_id).await;
             self.state.cleanup_private_games().await;
             return;

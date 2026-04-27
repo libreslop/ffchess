@@ -93,10 +93,11 @@ Untagged union: use exactly one of these objects.
 
 | Field | Type | Required | Default | Notes |
 | --- | --- | --- | --- | --- |
-| `trigger` | string enum | Yes | none | One of `OnCapture`, `OnCapturePieceActive`, `OnPlayerLeave`. |
+| `trigger` | string enum | Yes | none | One of `OnCapture`, `OnCapturePieceActive`, `OnPlayerLeave`, `OnPlayerJoin`, `OnPlayerDisconnect`, `OnPlayerKilled`, `OnQueueCountdown`. |
 | `target_piece_id` | piece id or `null` | No | `null` | Piece filter for capture hooks. `null` means "all piece types". |
 | `players_left` | integer (`u32`) or `null` | No | `null` | Only used by `OnPlayerLeave` / `WinRemaining`. |
-| `action` | string enum | Yes | none | One of `EliminateOwner`, `WinCapturer`, `WinRemaining`. |
+| `action` | string enum | Yes | none | One of `EliminateOwner`, `WinCapturer`, `WinRemaining`, `SystemChatMessage`. |
+| `capture` | boolean | No | `false` | If this hook matches, no later hooks in the mode list are evaluated for the same event batch. |
 | `title` | string or `null` | No | `null` | Optional victory title override. |
 | `message` | string or `null` | No | `null` | Optional victory message override. |
 | `victory_focus` | string enum or `null` | No | runtime-specific | One of `CaptureSquare` or `KeepCurrent`. |
@@ -111,6 +112,10 @@ executes these combinations:
 | `OnCapture` | `EliminateOwner` | Remove the owner of the captured piece from the match. |
 | `OnCapturePieceActive` | `WinCapturer` | Send a victory payload to the capturing player. |
 | `OnPlayerLeave` | `WinRemaining` | If the remaining player count matches, send a victory payload to the survivor. |
+| `OnPlayerJoin` | `SystemChatMessage` | Broadcast one system chat line (yellow) for each joined player event. |
+| `OnPlayerDisconnect` | `SystemChatMessage` | Broadcast one system chat line (yellow) for each disconnected player event. |
+| `OnPlayerKilled` | `SystemChatMessage` | Broadcast one system chat line (yellow) for each king-kill event; supports `{player}` and `{killer}` variables. |
+| `OnQueueCountdown` | `SystemChatMessage` | Broadcast one system chat line (yellow) for each countdown second; supports `{seconds}` variable. |
 
 Any other pairing deserializes successfully but is ignored by hook resolution.
 

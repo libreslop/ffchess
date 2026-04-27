@@ -38,6 +38,21 @@
             "trigger": "OnCapture",
             "target_piece_id": "king",
             "action": "EliminateOwner"
+        },
+        {
+            "trigger": "OnPlayerJoin",
+            "action": "SystemChatMessage",
+            "message": "{player} joined"
+        },
+        {
+            "trigger": "OnPlayerDisconnect",
+            "action": "SystemChatMessage",
+            "message": "{player} left"
+        },
+        {
+            "trigger": "OnPlayerKilled",
+            "action": "SystemChatMessage",
+            "message": "{player} was killed by {killer}"
         }
     ]
 }

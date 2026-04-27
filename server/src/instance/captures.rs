@@ -28,6 +28,18 @@ impl GameInstance {
         capturer_id: Option<PlayerId>,
         game: &mut GameState,
     ) -> Option<Piece> {
+        let killed_event = if captured_piece.piece_type.is_king() {
+            captured_piece.owner_id.and_then(|victim_id| {
+                game.players.get(&victim_id).map(|victim| {
+                    let killer_name = capturer_id
+                        .and_then(|killer_id| game.players.get(&killer_id).map(|p| p.name.clone()));
+                    (victim.name.clone(), killer_name)
+                })
+            })
+        } else {
+            None
+        };
+
         game.pieces.remove(&captured_piece.id)?;
         self.record_piece_removal(captured_piece.id).await;
 
@@ -42,6 +54,10 @@ impl GameInstance {
             captured_piece.position,
         )
         .await;
+        if let Some((victim_name, killer_name)) = killed_event {
+            self.record_player_killed_event(victim_name, killer_name)
+                .await;
+        }
 
         Some(captured_piece)
     }

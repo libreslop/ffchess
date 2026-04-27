@@ -23,6 +23,8 @@ pub struct ChatLine {
     pub sender_name: String,
     pub sender_color: ColorHex,
     pub message: String,
+    #[serde(default)]
+    pub is_system: bool,
     pub sent_at: TimestampMs,
 }
 

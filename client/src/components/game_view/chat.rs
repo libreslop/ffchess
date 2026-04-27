@@ -193,8 +193,8 @@ pub fn game_chat(props: &GameChatProps) -> Html {
             move |(lines, ttl_ms, clock_offset_ms)| {
                 let ttl_ms = *ttl_ms;
                 let clock_offset_ms = *clock_offset_ms;
-                let timeout = next_prune_delay_ms(lines, ttl_ms, clock_offset_ms).map(
-                    |next_delay_ms| {
+                let timeout =
+                    next_prune_delay_ms(lines, ttl_ms, clock_offset_ms).map(|next_delay_ms| {
                         let reducer = reducer.clone();
                         Timeout::new(clamp_timeout_ms(next_delay_ms), move || {
                             reducer.dispatch(GameAction::PruneExpiredChat {
@@ -202,8 +202,7 @@ pub fn game_chat(props: &GameChatProps) -> Html {
                                 ttl_ms,
                             });
                         })
-                    },
-                );
+                    });
                 move || drop(timeout)
             },
         );
@@ -299,6 +298,12 @@ pub fn game_chat(props: &GameChatProps) -> Html {
                                 display_sender_color(line.sender_color.as_ref(), surface);
                             let sender_shadow = theme.sender_shadow(sender_color);
                             let link_shadow = theme.link_shadow();
+                            let system_color = "#facc15";
+                            let system_shadow = shift_color_darker(system_color);
+                            let effective_sender_color = if line.is_system { system_color } else { sender_color };
+                            let effective_sender_shadow = if line.is_system { system_shadow.as_str() } else { sender_shadow.as_str() };
+                            let effective_message_color = if line.is_system { system_color } else { theme.message_color };
+                            let effective_message_shadow = if line.is_system { system_shadow.as_str() } else { theme.message_shadow };
                             html! {
                                 <div
                                     key={key.0.clone()}
@@ -308,12 +313,26 @@ pub fn game_chat(props: &GameChatProps) -> Html {
                                         CHAT_FADE_OUT_MS
                                     )}
                                 >
-                                    <span style={format!("color: {}; font-weight: 700; text-shadow: 1px 1px 0 {};", sender_color, sender_shadow)}>
-                                        {line.sender_name.clone()}
-                                    </span>
-                                    <span style={format!("color: {}; text-shadow: 1px 1px 0 {};", theme.message_color, theme.message_shadow)}>
-                                        {" : "}{render_chat_message_with_links(&line.message, theme.link_color, &link_shadow)}
-                                    </span>
+                                    {
+                                        if line.is_system {
+                                            html! {
+                                                <span style={format!("color: {}; text-shadow: 1px 1px 0 {};", effective_message_color, effective_message_shadow)}>
+                                                    {render_chat_message_with_links(&line.message, theme.link_color, &link_shadow)}
+                                                </span>
+                                            }
+                                        } else {
+                                            html! {
+                                                <>
+                                                    <span style={format!("color: {}; text-shadow: 1px 1px 0 {};", effective_sender_color, effective_sender_shadow)}>
+                                                        {line.sender_name.clone()}
+                                                    </span>
+                                                    <span style={format!("color: {}; text-shadow: 1px 1px 0 {};", effective_message_color, effective_message_shadow)}>
+                                                        {" : "}{render_chat_message_with_links(&line.message, theme.link_color, &link_shadow)}
+                                                    </span>
+                                                </>
+                                            }
+                                        }
+                                    }
                                 </div>
                             }
                         })
@@ -388,7 +407,8 @@ fn chat_surface(reducer: &GameStateReducer) -> ChatSurface {
 
 fn next_prune_delay_ms(lines: &[ChatLine], ttl_ms: u32, clock_offset_ms: i64) -> Option<i64> {
     let now = shifted_now_ms(clock_offset_ms);
-    lines.iter()
+    lines
+        .iter()
         .map(|line| {
             let age_ms = now.as_i64().saturating_sub(line.sent_at.as_i64());
             (ttl_ms.max(1) as i64 + CHAT_FADE_OUT_MS)

@@ -1,9 +1,13 @@
 //! Tick-batched hook event buffering and resolution.
 
 use super::GameInstance;
+use crate::time::now_ms;
 use common::models::{GameState, HookConfig, HookVictoryFocus, SupportedHook};
-use common::protocol::VictoryFocusTarget;
-use common::types::{BoardCoord, PieceTypeId, PlayerId};
+use common::protocol::{ChatLine, VictoryFocusTarget};
+use common::types::{BoardCoord, ColorHex, PieceTypeId, PlayerId};
+
+const SYSTEM_CHAT_NAME: &str = "System";
+const SYSTEM_CHAT_COLOR: &str = "#facc15";
 
 /// A captured piece event deferred until the end of a tick.
 #[derive(Debug, Clone)]
@@ -14,17 +18,51 @@ struct CaptureEvent {
     captured_position: BoardCoord,
 }
 
+/// A player-join event deferred until the end of a tick.
+#[derive(Debug, Clone)]
+struct PlayerJoinEvent {
+    player_name: String,
+}
+
+/// A player-disconnect event deferred until the end of a tick.
+#[derive(Debug, Clone)]
+struct PlayerDisconnectEvent {
+    player_name: String,
+}
+
+/// A player-killed event deferred until the end of a tick.
+#[derive(Debug, Clone)]
+struct PlayerKilledEvent {
+    player_name: String,
+    killer_name: Option<String>,
+}
+
+/// A queue-countdown event deferred until the end of a tick.
+#[derive(Debug, Clone)]
+struct QueueCountdownEvent {
+    seconds: u32,
+}
+
 /// Gameplay events observed across one tick.
 #[derive(Debug, Default)]
 struct TickHookEvents {
     captures: Vec<CaptureEvent>,
     player_left: bool,
+    player_joins: Vec<PlayerJoinEvent>,
+    player_disconnects: Vec<PlayerDisconnectEvent>,
+    player_kills: Vec<PlayerKilledEvent>,
+    queue_countdowns: Vec<QueueCountdownEvent>,
 }
 
 impl TickHookEvents {
     /// Returns whether the tick observed no hook-relevant events.
     fn is_empty(&self) -> bool {
-        self.captures.is_empty() && !self.player_left
+        self.captures.is_empty()
+            && !self.player_left
+            && self.player_joins.is_empty()
+            && self.player_disconnects.is_empty()
+            && self.player_kills.is_empty()
+            && self.queue_countdowns.is_empty()
     }
 
     /// Records a capture event.
@@ -46,6 +84,30 @@ impl TickHookEvents {
     /// Records that at least one player left during the tick.
     fn record_player_leave(&mut self) {
         self.player_left = true;
+    }
+
+    /// Records one player join event.
+    fn record_player_join(&mut self, player_name: String) {
+        self.player_joins.push(PlayerJoinEvent { player_name });
+    }
+
+    /// Records one player disconnect event.
+    fn record_player_disconnect(&mut self, player_name: String) {
+        self.player_disconnects
+            .push(PlayerDisconnectEvent { player_name });
+    }
+
+    /// Records one player killed event.
+    fn record_player_killed(&mut self, player_name: String, killer_name: Option<String>) {
+        self.player_kills.push(PlayerKilledEvent {
+            player_name,
+            killer_name,
+        });
+    }
+
+    /// Records one queue countdown tick event.
+    fn record_queue_countdown(&mut self, seconds: u32) {
+        self.queue_countdowns.push(QueueCountdownEvent { seconds });
     }
 
     /// Returns player ids whose owned pieces were captured by hooks matching `hook`.
@@ -107,6 +169,27 @@ impl HookEventBuffer {
         self.target_buffer().record_player_leave();
     }
 
+    /// Records a player join into the active tick or the next queued tick.
+    fn record_player_join(&mut self, player_name: String) {
+        self.target_buffer().record_player_join(player_name);
+    }
+
+    /// Records a player disconnect into the active tick or the next queued tick.
+    fn record_player_disconnect(&mut self, player_name: String) {
+        self.target_buffer().record_player_disconnect(player_name);
+    }
+
+    /// Records a player killed event into the active tick or the next queued tick.
+    fn record_player_killed(&mut self, player_name: String, killer_name: Option<String>) {
+        self.target_buffer()
+            .record_player_killed(player_name, killer_name);
+    }
+
+    /// Records a queue countdown tick into the active tick or the next queued tick.
+    fn record_queue_countdown(&mut self, seconds: u32) {
+        self.target_buffer().record_queue_countdown(seconds);
+    }
+
     /// Returns the buffer currently receiving events.
     fn target_buffer(&mut self) -> &mut TickHookEvents {
         if self.tick_in_progress {
@@ -162,6 +245,37 @@ impl VictoryMessage {
     }
 }
 
+/// Hook message template variables for chat-system events.
+#[derive(Debug, Clone, Default)]
+struct HookMessageContext {
+    player_name: Option<String>,
+    killer_name: Option<String>,
+    seconds: Option<u32>,
+}
+
+impl HookMessageContext {
+    fn render_message(&self, template: &str) -> String {
+        let mut rendered = template.to_string();
+        if let Some(player_name) = &self.player_name {
+            rendered = rendered.replace("{player}", player_name);
+        }
+        if let Some(killer_name) = &self.killer_name {
+            rendered = rendered.replace("{killer}", killer_name);
+        }
+        if let Some(seconds) = self.seconds {
+            rendered = rendered.replace("{seconds}", &seconds.to_string());
+        }
+        rendered
+    }
+}
+
+/// Result of applying one hook entry.
+#[derive(Debug, Default)]
+struct HookApplyResult {
+    matched: bool,
+    victory: Option<VictoryMessage>,
+}
+
 impl GameInstance {
     /// Records a capture event for hook processing at the end of the current tick.
     pub(super) async fn record_capture_event(
@@ -184,6 +298,42 @@ impl GameInstance {
         self.hook_events.write().await.record_player_leave();
     }
 
+    /// Records one player join event for hook processing.
+    pub(super) async fn record_player_join_event(&self, player_name: String) {
+        self.hook_events
+            .write()
+            .await
+            .record_player_join(player_name);
+    }
+
+    /// Records one player disconnect event for hook processing.
+    pub(crate) async fn record_player_disconnect_event(&self, player_name: String) {
+        self.hook_events
+            .write()
+            .await
+            .record_player_disconnect(player_name);
+    }
+
+    /// Records one player killed event for hook processing.
+    pub(super) async fn record_player_killed_event(
+        &self,
+        player_name: String,
+        killer_name: Option<String>,
+    ) {
+        self.hook_events
+            .write()
+            .await
+            .record_player_killed(player_name, killer_name);
+    }
+
+    /// Records one queue countdown event for hook processing.
+    pub(super) async fn record_queue_countdown_event(&self, seconds: u32) {
+        self.hook_events
+            .write()
+            .await
+            .record_queue_countdown(seconds);
+    }
+
     /// Starts collecting hook events for the current tick.
     pub(super) async fn start_tick_hooks(&self) {
         self.hook_events.write().await.begin_tick();
@@ -201,10 +351,12 @@ impl GameInstance {
         {
             let mut game = self.game.write().await;
             for hook in &self.mode_config.hooks {
-                if let Some(new_message) = self.apply_hook(hook, &hook_events, &mut game).await
-                    && victory_message.is_none()
-                {
-                    victory_message = Some(new_message);
+                let apply_result = self.apply_tick_hook(hook, &hook_events, &mut game).await;
+                if victory_message.is_none() {
+                    victory_message = apply_result.victory;
+                }
+                if apply_result.matched && hook.capture {
+                    break;
                 }
             }
         }
@@ -221,25 +373,57 @@ impl GameInstance {
     }
 
     /// Applies one configured hook to the completed tick's events.
-    async fn apply_hook(
+    async fn apply_tick_hook(
         &self,
         hook: &HookConfig,
         hook_events: &TickHookEvents,
         game: &mut GameState,
-    ) -> Option<VictoryMessage> {
+    ) -> HookApplyResult {
         match hook.supported_hook() {
-            Some(SupportedHook::EliminateOwnerOnCapture) => {
-                self.apply_eliminate_owner_hook(hook, hook_events, game)
-                    .await;
-                None
-            }
-            Some(SupportedHook::WinCapturerOnActiveCapture) => hook_events
-                .winning_capture_event(hook)
-                .and_then(|event| VictoryMessage::capturer(hook, event)),
+            Some(SupportedHook::EliminateOwnerOnCapture) => HookApplyResult {
+                matched: self
+                    .apply_eliminate_owner_hook(hook, hook_events, game)
+                    .await,
+                victory: None,
+            },
+            Some(SupportedHook::WinCapturerOnActiveCapture) => HookApplyResult {
+                matched: hook_events.winning_capture_event(hook).is_some(),
+                victory: hook_events
+                    .winning_capture_event(hook)
+                    .and_then(|event| VictoryMessage::capturer(hook, event)),
+            },
             Some(SupportedHook::WinRemainingOnPlayerLeave) => {
-                self.find_remaining_player_victory(hook, hook_events, game)
+                let victory = self.find_remaining_player_victory(hook, hook_events, game);
+                HookApplyResult {
+                    matched: victory.is_some(),
+                    victory,
+                }
             }
-            _ => None,
+            Some(SupportedHook::SystemChatOnPlayerJoin) => HookApplyResult {
+                matched: self
+                    .emit_system_chat_for_joins(hook, &hook_events.player_joins)
+                    .await,
+                victory: None,
+            },
+            Some(SupportedHook::SystemChatOnPlayerDisconnect) => HookApplyResult {
+                matched: self
+                    .emit_system_chat_for_disconnects(hook, &hook_events.player_disconnects)
+                    .await,
+                victory: None,
+            },
+            Some(SupportedHook::SystemChatOnPlayerKilled) => HookApplyResult {
+                matched: self
+                    .emit_system_chat_for_kills(hook, &hook_events.player_kills)
+                    .await,
+                victory: None,
+            },
+            Some(SupportedHook::SystemChatOnQueueCountdown) => HookApplyResult {
+                matched: self
+                    .emit_system_chat_for_countdown(hook, &hook_events.queue_countdowns)
+                    .await,
+                victory: None,
+            },
+            _ => HookApplyResult::default(),
         }
     }
 
@@ -249,12 +433,14 @@ impl GameInstance {
         hook: &HookConfig,
         hook_events: &TickHookEvents,
         game: &mut GameState,
-    ) {
+    ) -> bool {
+        let mut matched = false;
         let mut all_removed_piece_ids = Vec::new();
         for player_id in hook_events.captured_players(hook) {
             if game.players.contains_key(&player_id) {
                 let (removed, piece_ids) = self.remove_player_state(player_id, game).await;
                 if removed {
+                    matched = true;
                     // Elimination-by-capture is not a disconnect/leave event.
                     // Keeping this out of OnPlayerLeave avoids delayed "opponent disconnected" wins.
                     all_removed_piece_ids.extend(piece_ids);
@@ -266,6 +452,8 @@ impl GameInstance {
             self.clear_queued_moves_for_pieces(all_removed_piece_ids)
                 .await;
         }
+
+        matched
     }
 
     /// Returns the remaining-player victory, if this tick's leave events satisfy `hook`.
@@ -288,5 +476,112 @@ impl GameInstance {
 
         let (&player_id, _) = game.players.iter().next()?;
         (players_left == 1).then(|| VictoryMessage::remaining_player(hook, player_id))
+    }
+
+    async fn emit_system_chat_for_joins(
+        &self,
+        hook: &HookConfig,
+        events: &[PlayerJoinEvent],
+    ) -> bool {
+        let mut sent = false;
+        let template = hook
+            .message
+            .clone()
+            .unwrap_or_else(|| "{player} joined the game".to_string());
+        for event in events {
+            let context = HookMessageContext {
+                player_name: Some(event.player_name.clone()),
+                ..Default::default()
+            };
+            self.emit_system_chat_message(context.render_message(&template))
+                .await;
+            sent = true;
+        }
+        sent
+    }
+
+    async fn emit_system_chat_for_disconnects(
+        &self,
+        hook: &HookConfig,
+        events: &[PlayerDisconnectEvent],
+    ) -> bool {
+        let mut sent = false;
+        let template = hook
+            .message
+            .clone()
+            .unwrap_or_else(|| "{player} disconnected".to_string());
+        for event in events {
+            let context = HookMessageContext {
+                player_name: Some(event.player_name.clone()),
+                ..Default::default()
+            };
+            self.emit_system_chat_message(context.render_message(&template))
+                .await;
+            sent = true;
+        }
+        sent
+    }
+
+    async fn emit_system_chat_for_kills(
+        &self,
+        hook: &HookConfig,
+        events: &[PlayerKilledEvent],
+    ) -> bool {
+        let mut sent = false;
+        let template = hook
+            .message
+            .clone()
+            .unwrap_or_else(|| "{player} was killed by {killer}".to_string());
+        for event in events {
+            let context = HookMessageContext {
+                player_name: Some(event.player_name.clone()),
+                killer_name: Some(
+                    event
+                        .killer_name
+                        .clone()
+                        .unwrap_or_else(|| "NPC".to_string()),
+                ),
+                ..Default::default()
+            };
+            self.emit_system_chat_message(context.render_message(&template))
+                .await;
+            sent = true;
+        }
+        sent
+    }
+
+    async fn emit_system_chat_for_countdown(
+        &self,
+        hook: &HookConfig,
+        events: &[QueueCountdownEvent],
+    ) -> bool {
+        let mut sent = false;
+        let template = hook
+            .message
+            .clone()
+            .unwrap_or_else(|| "Match starts in {seconds}".to_string());
+        for event in events {
+            let context = HookMessageContext {
+                seconds: Some(event.seconds),
+                ..Default::default()
+            };
+            self.emit_system_chat_message(context.render_message(&template))
+                .await;
+            sent = true;
+        }
+        sent
+    }
+
+    async fn emit_system_chat_message(&self, message: String) {
+        let line = ChatLine {
+            sender_name: SYSTEM_CHAT_NAME.to_string(),
+            sender_color: ColorHex::from(SYSTEM_CHAT_COLOR),
+            message,
+            is_system: true,
+            sent_at: now_ms(),
+        };
+        self.push_chat_line(line.clone()).await;
+        self.broadcast(common::protocol::ServerMessage::Chat { line })
+            .await;
     }
 }

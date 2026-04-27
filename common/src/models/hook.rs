@@ -10,6 +10,14 @@ pub enum HookTrigger {
     OnCapturePieceActive,
     #[serde(rename = "OnPlayerLeave")]
     OnPlayerLeave,
+    #[serde(rename = "OnPlayerJoin")]
+    OnPlayerJoin,
+    #[serde(rename = "OnPlayerDisconnect")]
+    OnPlayerDisconnect,
+    #[serde(rename = "OnPlayerKilled")]
+    OnPlayerKilled,
+    #[serde(rename = "OnQueueCountdown")]
+    OnQueueCountdown,
 }
 
 /// Effect applied when a hook trigger matches.
@@ -21,6 +29,8 @@ pub enum HookAction {
     WinCapturer,
     #[serde(rename = "WinRemaining")]
     WinRemaining,
+    #[serde(rename = "SystemChatMessage")]
+    SystemChatMessage,
 }
 
 /// Camera focus policy for victory overlays produced by hooks.
@@ -38,6 +48,10 @@ pub enum SupportedHook {
     EliminateOwnerOnCapture,
     WinCapturerOnActiveCapture,
     WinRemainingOnPlayerLeave,
+    SystemChatOnPlayerJoin,
+    SystemChatOnPlayerDisconnect,
+    SystemChatOnPlayerKilled,
+    SystemChatOnQueueCountdown,
 }
 
 /// Trigger-action hook for game events.
@@ -48,6 +62,8 @@ pub struct HookConfig {
     #[serde(default)]
     pub players_left: Option<u32>,
     pub action: HookAction,
+    #[serde(default)]
+    pub capture: bool,
     #[serde(default)]
     pub title: Option<String>,
     #[serde(default)]
@@ -68,6 +84,18 @@ impl HookConfig {
             }
             (HookTrigger::OnPlayerLeave, HookAction::WinRemaining) => {
                 Some(SupportedHook::WinRemainingOnPlayerLeave)
+            }
+            (HookTrigger::OnPlayerJoin, HookAction::SystemChatMessage) => {
+                Some(SupportedHook::SystemChatOnPlayerJoin)
+            }
+            (HookTrigger::OnPlayerDisconnect, HookAction::SystemChatMessage) => {
+                Some(SupportedHook::SystemChatOnPlayerDisconnect)
+            }
+            (HookTrigger::OnPlayerKilled, HookAction::SystemChatMessage) => {
+                Some(SupportedHook::SystemChatOnPlayerKilled)
+            }
+            (HookTrigger::OnQueueCountdown, HookAction::SystemChatMessage) => {
+                Some(SupportedHook::SystemChatOnQueueCountdown)
             }
             _ => None,
         }
@@ -100,6 +128,10 @@ impl HookConfig {
             SupportedHook::WinCapturerOnActiveCapture => HookVictoryFocus::CaptureSquare,
             SupportedHook::WinRemainingOnPlayerLeave => HookVictoryFocus::KeepCurrent,
             SupportedHook::EliminateOwnerOnCapture => HookVictoryFocus::KeepCurrent,
+            SupportedHook::SystemChatOnPlayerJoin
+            | SupportedHook::SystemChatOnPlayerDisconnect
+            | SupportedHook::SystemChatOnPlayerKilled
+            | SupportedHook::SystemChatOnQueueCountdown => HookVictoryFocus::KeepCurrent,
         })
     }
 }

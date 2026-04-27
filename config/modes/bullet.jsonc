@@ -145,6 +145,7 @@
             "trigger": "OnCapturePieceActive",
             "target_piece_id": "bullet_king",
             "action": "WinCapturer",
+            "capture": true,
             "victory_focus": "CaptureSquare",
             "title": "VICTORY",
             "message": ""
@@ -153,9 +154,30 @@
             "trigger": "OnPlayerLeave",
             "players_left": 1,
             "action": "WinRemaining",
+            "capture": true,
             "victory_focus": "KeepCurrent",
             "title": "VICTORY",
             "message": "Opponent disconnected"
+        },
+        {
+            "trigger": "OnPlayerJoin",
+            "action": "SystemChatMessage",
+            "message": "{player} joined"
+        },
+        {
+            "trigger": "OnPlayerDisconnect",
+            "action": "SystemChatMessage",
+            "message": "{player} left"
+        },
+        {
+            "trigger": "OnPlayerKilled",
+            "action": "SystemChatMessage",
+            "message": "{player} was killed by {killer}"
+        },
+        {
+            "trigger": "OnQueueCountdown",
+            "action": "SystemChatMessage",
+            "message": "Match starts in {seconds}"
         }
     ]
 }
