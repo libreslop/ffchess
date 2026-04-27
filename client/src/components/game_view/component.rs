@@ -196,12 +196,17 @@ pub fn game_view(props: &GameViewProps) -> Html {
         let canvas_ref = canvas_ref.clone();
         let input_blocked = has_match_result;
         let globals = props.globals.clone();
+        let mode = props.reducer.mode.clone();
         use_effect_with(
-            (canvas_ref.clone(), input_blocked),
-            move |(canvas_ref, input_blocked)| {
+            (canvas_ref.clone(), input_blocked, mode),
+            move |(canvas_ref, input_blocked, mode)| {
                 if let Some(canvas) = canvas_ref.cast::<web_sys::HtmlElement>() {
                     let manager_ref = manager_ref.clone();
                     let input_blocked = *input_blocked;
+                    let camera_movement_disabled = mode
+                        .as_ref()
+                        .map(|m| m.disable_camera_movement)
+                        .unwrap_or(false);
                     let zoom_min = globals.camera_zoom_min;
                     let zoom_max = globals.camera_zoom_max;
                     let scroll_base = globals.scroll_zoom_base;
@@ -214,7 +219,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
                         let delta = e.delta_y();
                         let factor = scroll_base.max(1.01).powf(-delta / 100.0);
                         let mut manager = manager_ref.borrow_mut();
-                        if manager.input_locked {
+                        if manager.input_locked || camera_movement_disabled {
                             return;
                         }
                         manager.mouse_pos = vec2(e.client_x() as f64, e.client_y() as f64);
@@ -519,10 +524,10 @@ pub fn game_view(props: &GameViewProps) -> Html {
 
             let board_size = reducer.state.board_size;
             let mut is_interactive = false;
-            let panning_disabled = reducer
+            let camera_movement_disabled = reducer
                 .mode
                 .as_ref()
-                .map(|m| m.disable_screen_panning)
+                .map(|m| m.disable_camera_movement)
                 .unwrap_or(false);
 
             if !input.is_right_click && is_within_board(BoardCoord(target), board_size) {
@@ -555,7 +560,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
             }
             drag_start.set(Some(DragStart {
                 pos: input.pos,
-                allow_panning: !is_interactive && !panning_disabled,
+                allow_panning: !is_interactive && !camera_movement_disabled,
             }));
             manager.velocity = Vec2::ZERO;
         })
@@ -580,12 +585,12 @@ pub fn game_view(props: &GameViewProps) -> Html {
                 if !start.allow_panning {
                     return;
                 }
-                let panning_disabled = reducer
+                let camera_movement_disabled = reducer
                     .mode
                     .as_ref()
-                    .map(|m| m.disable_screen_panning)
+                    .map(|m| m.disable_camera_movement)
                     .unwrap_or(false);
-                if panning_disabled {
+                if camera_movement_disabled {
                     manager.velocity = Vec2::ZERO;
                     return;
                 }
@@ -1016,12 +1021,12 @@ pub fn game_view(props: &GameViewProps) -> Html {
                         if let Some(prev) = mgr.last_touch_dist {
                             let factor = (dist / prev).powf(0.8); // dampen sensitivity
                             mgr.mouse_pos = center;
-                            let panning_disabled = reducer
+                            let camera_movement_disabled = reducer
                                 .mode
                                 .as_ref()
-                                .map(|m| m.disable_screen_panning)
+                                .map(|m| m.disable_camera_movement)
                                 .unwrap_or(false);
-                            if !panning_disabled
+                            if !camera_movement_disabled
                                 && let Some(prev_center) = mgr.last_touch_center
                             {
                                 let pan = center - prev_center;
@@ -1037,26 +1042,30 @@ pub fn game_view(props: &GameViewProps) -> Html {
                                 mgr.target_camera = mgr.camera;
                             }
                             mgr.last_touch_center = Some(center);
-                            let old_zoom = mgr.zoom;
-                            let new_zoom = (old_zoom * factor).clamp(zoom_min, zoom_max);
-                            if (new_zoom - old_zoom).abs() > 0.000001
-                                && let Some(canvas) =
-                                    canvas_ref.cast::<web_sys::HtmlCanvasElement>()
-                            {
-                                let rect = canvas.get_bounding_client_rect();
-                                let screen_pos = center - vec2(rect.left(), rect.top());
-                                let canvas_center =
-                                    vec2(canvas.width() as f64 / 2.0, canvas.height() as f64 / 2.0);
-                                let mut mouse_delta = screen_pos - canvas_center;
-                                if local_board_rotated_180(&reducer.state, reducer.player_id) {
-                                    mouse_delta = -mouse_delta;
+                            if !camera_movement_disabled {
+                                let old_zoom = mgr.zoom;
+                                let new_zoom = (old_zoom * factor).clamp(zoom_min, zoom_max);
+                                if (new_zoom - old_zoom).abs() > 0.000001
+                                    && let Some(canvas) =
+                                        canvas_ref.cast::<web_sys::HtmlCanvasElement>()
+                                {
+                                    let rect = canvas.get_bounding_client_rect();
+                                    let screen_pos = center - vec2(rect.left(), rect.top());
+                                    let canvas_center = vec2(
+                                        canvas.width() as f64 / 2.0,
+                                        canvas.height() as f64 / 2.0,
+                                    );
+                                    let mut mouse_delta = screen_pos - canvas_center;
+                                    if local_board_rotated_180(&reducer.state, reducer.player_id) {
+                                        mouse_delta = -mouse_delta;
+                                    }
+                                    let ratio = new_zoom / old_zoom;
+                                    mgr.camera = (mgr.camera + mouse_delta) * ratio - mouse_delta;
+                                    mgr.target_camera = mgr.camera;
                                 }
-                                let ratio = new_zoom / old_zoom;
-                                mgr.camera = (mgr.camera + mouse_delta) * ratio - mouse_delta;
-                                mgr.target_camera = mgr.camera;
+                                mgr.target_zoom = new_zoom;
+                                mgr.zoom = new_zoom; // apply immediately for smooth pinch
                             }
-                            mgr.target_zoom = new_zoom;
-                            mgr.zoom = new_zoom; // apply immediately for smooth pinch
                             mgr.velocity = Vec2::ZERO;
                             mgr.last_touch_dist = Some(dist);
                             let new_cam = mgr.camera;

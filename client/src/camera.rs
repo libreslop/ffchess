@@ -18,6 +18,8 @@ pub struct CameraManager {
     pub velocity: Vec2,
     pub input_locked: bool,
     pub was_alive: bool,
+    pub last_tracked_king_id: Option<PieceId>,
+    pub last_tracked_join_time: Option<TimestampMs>,
     pub last_king_grid_pos: glam::IVec2,
     pub last_touch_dist: Option<f64>,
     pub last_touch_center: Option<Vec2>,
@@ -35,6 +37,8 @@ impl CameraManager {
             velocity: Vec2::ZERO,
             input_locked: false,
             was_alive: false,
+            last_tracked_king_id: None,
+            last_tracked_join_time: None,
             last_king_grid_pos: glam::IVec2::ZERO,
             last_touch_dist: None,
             last_touch_center: None,
@@ -142,29 +146,41 @@ pub fn update_camera(manager: &mut CameraManager, params: CameraUpdateParams<'_>
         if let Some(p) = player
             && let Some(king) = params.state.pieces.get(&p.king_id)
         {
-            let tile_size = params.tile_size_px * manager.zoom;
-            let kpx = king.position.0.x as f64 * tile_size + tile_size / 2.0;
-            let kpy = king.position.0.y as f64 * tile_size + tile_size / 2.0;
-            let king_pos = Vec2::new(kpx, kpy);
-
-            if !manager.was_alive {
-                // Respawn or First Join: Set target to king and start panning
-                manager.target_zoom = 1.0;
-                let join_tile_size = params.tile_size_px * manager.target_zoom;
+            let fresh_alive_entry = !manager.was_alive
+                || manager.last_tracked_king_id != Some(p.king_id)
+                || manager.last_tracked_join_time != Some(p.join_time);
+            if fresh_alive_entry {
+                // A new live session must not inherit stale death/menu camera state.
+                let join_zoom = 1.0;
+                let join_tile_size = params.tile_size_px * join_zoom;
                 let join_king_pos = Vec2::new(
                     king.position.0.x as f64 * join_tile_size + join_tile_size / 2.0,
                     king.position.0.y as f64 * join_tile_size + join_tile_size / 2.0,
                 );
-                manager.target_camera =
+                let join_camera =
                     join_focus_camera_pos(&params, p.king_id, join_tile_size, join_king_pos);
+                manager.camera = join_camera;
+                manager.target_camera = join_camera;
+                manager.zoom = join_zoom;
+                manager.target_zoom = join_zoom;
+                manager.velocity = Vec2::ZERO;
                 manager.last_king_grid_pos = king.position.into();
-                manager.input_locked = true;
+                manager.last_tracked_king_id = Some(p.king_id);
+                manager.last_tracked_join_time = Some(p.join_time);
+                manager.input_locked = false;
                 manager.was_alive = true;
                 changed = true;
             } else {
                 manager.last_king_grid_pos = king.position.into();
+                manager.last_tracked_king_id = Some(p.king_id);
+                manager.last_tracked_join_time = Some(p.join_time);
                 // We don't update target_camera here, allowing for free-panning
             }
+
+            let tile_size = params.tile_size_px * manager.zoom;
+            let kpx = king.position.0.x as f64 * tile_size + tile_size / 2.0;
+            let kpy = king.position.0.y as f64 * tile_size + tile_size / 2.0;
+            let king_pos = Vec2::new(kpx, kpy);
 
             // 4. Global Clamping (Respect camera_pan_limit)
             if let Some(m) = params.mode {
@@ -222,6 +238,8 @@ pub fn update_camera(manager: &mut CameraManager, params: CameraUpdateParams<'_>
                 manager.target_zoom = target_zoom.clamp(params.zoom_min, params.zoom_max);
             }
             manager.was_alive = false;
+            manager.last_tracked_king_id = None;
+            manager.last_tracked_join_time = None;
             manager.velocity = Vec2::ZERO;
             manager.input_locked = false;
             changed = true;
@@ -231,21 +249,15 @@ pub fn update_camera(manager: &mut CameraManager, params: CameraUpdateParams<'_>
         // In this coordinate system, (0,0) is the center of the board
         manager.target_camera = Vec2::ZERO;
         manager.target_zoom = 1.0;
-        let panning_disabled = params
-            .mode
-            .as_ref()
-            .map(|m| m.disable_screen_panning)
-            .unwrap_or(false);
-        if panning_disabled {
-            manager.camera = Vec2::ZERO;
-            manager.zoom = 1.0;
-            manager.velocity = Vec2::ZERO;
-        }
         manager.was_alive = false;
+        manager.last_tracked_king_id = None;
+        manager.last_tracked_join_time = None;
         manager.input_locked = false;
         changed = true;
     } else {
         manager.was_alive = false;
+        manager.last_tracked_king_id = None;
+        manager.last_tracked_join_time = None;
         manager.input_locked = false;
     }
 
@@ -289,10 +301,9 @@ fn join_focus_camera_pos(
     };
     let focus = &mode.join_camera_center;
     match focus {
-        JoinCameraCenterConfig::Position { position } => Vec2::new(
-            position[0] * tile_size + tile_size / 2.0,
-            position[1] * tile_size + tile_size / 2.0,
-        ),
+        JoinCameraCenterConfig::Position { position } => {
+            Vec2::new(position[0] * tile_size, position[1] * tile_size)
+        }
         JoinCameraCenterConfig::Piece { piece_id } => {
             let player_id = params.player_id.unwrap_or_else(PlayerId::nil);
             let target_piece = params.state.pieces.get(&king_id).and_then(|king| {

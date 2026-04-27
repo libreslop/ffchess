@@ -33,7 +33,7 @@ pub struct GameModeClientConfig {
     })]
     pub join_camera_center: JoinCameraCenterConfig,
     #[educe(Default = false)]
-    pub disable_screen_panning: bool,
+    pub disable_camera_movement: bool,
     #[educe(Default = DurationMs::zero())]
     pub respawn_cooldown_ms: DurationMs,
     pub kits: Vec<KitSummary>,

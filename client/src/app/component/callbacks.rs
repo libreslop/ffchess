@@ -28,9 +28,10 @@ pub fn build_on_rejoin(
                 return;
             }
             let rejoin_single_kit = single_kit.clone().or_else(|| {
-                reducer.mode.as_ref().and_then(|mode| {
-                    (mode.kits.len() == 1).then(|| mode.kits[0].name.clone())
-                })
+                reducer
+                    .mode
+                    .as_ref()
+                    .and_then(|mode| (mode.kits.len() == 1).then(|| mode.kits[0].name.clone()))
             });
             rejoin_flow.set(RejoinFlow::Active);
             reducer.dispatch(GameAction::Reset);

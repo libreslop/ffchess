@@ -41,7 +41,7 @@ fn calculate_board_size_clamps_minimum() {
         join_camera_center: JoinCameraCenterConfig::Piece {
             piece_id: "king".into(),
         },
-        disable_screen_panning: false,
+        disable_camera_movement: false,
         respawn_cooldown_ms: DurationMs::zero(),
         npc_limits: vec![NpcLimitConfig {
             piece_id: "pawn".into(),

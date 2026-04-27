@@ -149,7 +149,7 @@ pub struct GameModeConfig {
     })]
     pub join_camera_center: JoinCameraCenterConfig,
     #[educe(Default = false)]
-    pub disable_screen_panning: bool,
+    pub disable_camera_movement: bool,
     #[educe(Default = DurationMs::zero())]
     pub respawn_cooldown_ms: DurationMs,
     pub npc_limits: Vec<NpcLimitConfig>,
@@ -183,7 +183,7 @@ impl GameModeConfig {
             fog_of_war_radius: self.fog_of_war_radius.clone(),
             show_scoreboard: self.show_scoreboard,
             join_camera_center: self.join_camera_center.clone(),
-            disable_screen_panning: self.disable_screen_panning,
+            disable_camera_movement: self.disable_camera_movement,
             respawn_cooldown_ms: self.respawn_cooldown_ms,
             kits: self
                 .kits

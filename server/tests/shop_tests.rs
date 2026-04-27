@@ -70,7 +70,7 @@ async fn shop_purchase_deducts_score_and_adds_piece() {
         join_camera_center: JoinCameraCenterConfig::Piece {
             piece_id: PieceTypeId::from("king"),
         },
-        disable_screen_panning: false,
+        disable_camera_movement: false,
         respawn_cooldown_ms: DurationMs::zero(),
         npc_limits: vec![NpcLimitConfig {
             piece_id: PieceTypeId::from("pawn"),
