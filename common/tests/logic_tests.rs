@@ -250,8 +250,9 @@ fn test_select_shop_group_by_piece_type() {
         display_name: "Test Shop".to_string(),
         default_uses: 1,
         color: None,
+        auto_upgrade_single_item: false,
         groups: vec![pawn_group.clone()],
-        default_group: default_group.clone(),
+        default_group: Some(default_group.clone()),
     };
 
     let pawn_piece = Piece {
@@ -264,10 +265,12 @@ fn test_select_shop_group_by_piece_type() {
     };
 
     let selected = common::logic::select_shop_group(&shop_config, Some(&pawn_piece));
+    let selected = selected.expect("pawn group should be selected");
     assert_eq!(selected.items.len(), 1);
     assert_eq!(selected.items[0].display_name, "Pawn Upgrade");
 
     let selected_default = common::logic::select_shop_group(&shop_config, None);
+    let selected_default = selected_default.expect("default group should be selected");
     assert_eq!(selected_default.items.len(), 0);
 }
 

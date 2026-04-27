@@ -1,0 +1,12 @@
+{
+    "display_name": "Pawn",
+    "svg_path": "pawn.svg",
+    "score_value": 10,
+    "cooldown_ms": 1000,
+    "move_paths": [
+        [[1, 0]], [[-1, 0]], [[0, 1]], [[0, -1]]
+    ],
+    "capture_paths": [
+        [[1, 1]], [[1, -1]], [[-1, 1]], [[-1, -1]]
+    ]
+}

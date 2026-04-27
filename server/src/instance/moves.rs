@@ -177,9 +177,11 @@ impl GameInstance {
             piece.position = target;
             piece.last_move_time = now_ms();
             piece.cooldown_ms = piece_config.cooldown_ms;
-            return Ok(());
+        } else {
+            return Err(GameError::PieceNotFound);
         }
 
-        Err(GameError::PieceNotFound)
+        self.try_auto_upgrade_single_item(game, player_id, target);
+        Ok(())
     }
 }

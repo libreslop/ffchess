@@ -13,9 +13,10 @@ The `shop_id` is automatically derived from the filename stem (e.g., `spawn_shop
 |-----------|------|-------------|----------|---------|
 | `display_name` | `String` | The name of the shop displayed in the UI. | No | - |
 | `default_uses` | `u32` | How many times the shop can be used by any player before it vanishes. | No | - |
-| `color` | `String (Hex)` | Hex color code for the shop's visual representation. | Yes | - |
+| `color` | `String` | Any valid CSS color string (e.g. `#3b82f6`, `rgba(59,130,246,0.2)`). | Yes | - |
+| `auto_upgrade_single_item` | `bool` | If `true`, automatically buys the only item when exactly one item applies to the piece on the shop. | Yes | `false` |
 | `groups` | `Array<ShopGroup>` | Specific item groups that only apply to certain piece types. | Yes | `[]` |
-| `default_group` | `ShopGroup` | The fallback group of items available to all pieces. | No | - |
+| `default_group` | `ShopGroup \| null` | Optional fallback group; if `null`, pieces outside configured groups see no shop menu. | Yes | `null` |
 
 ### ShopGroup Attributes
 

@@ -1,7 +1,7 @@
 use crate::models::hook::HookConfig;
 use crate::models::summary::{GameModeClientConfig, KitSummary};
 use crate::types::{
-    ColorHex, DurationMs, ExprString, KitId, ModeId, PieceTypeId, PlayerCount, Score, ShopId,
+    DurationMs, ExprString, KitId, ModeId, PieceTypeId, PlayerCount, Score, ShopId,
 };
 use glam::IVec2;
 use serde::{Deserialize, Serialize};
@@ -40,9 +40,11 @@ pub struct ShopConfig {
     pub id: ShopId,
     pub display_name: String,
     pub default_uses: u32,
-    pub color: Option<ColorHex>,
+    pub color: Option<String>,
+    #[serde(default)]
+    pub auto_upgrade_single_item: bool,
     pub groups: Vec<ShopGroupConfig>,
-    pub default_group: ShopGroupConfig,
+    pub default_group: Option<ShopGroupConfig>,
 }
 
 /// A player starting kit definition.
@@ -65,6 +67,20 @@ pub struct NpcLimitConfig {
 pub struct ShopCountConfig {
     pub shop_id: ShopId,
     pub count: u32,
+}
+
+/// Fixed shop placement at an absolute board coordinate.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct FixedShopConfig {
+    pub shop_id: ShopId,
+    pub position: [i32; 2],
+}
+
+impl FixedShopConfig {
+    /// Returns the configured board coordinate for this shop.
+    pub fn board_coord(&self) -> crate::types::BoardCoord {
+        crate::types::BoardCoord(IVec2::new(self.position[0], self.position[1]))
+    }
 }
 
 /// One piece placement in a queue-mode preset layout.
@@ -111,6 +127,8 @@ pub struct GameModeConfig {
     pub respawn_cooldown_ms: DurationMs,
     pub npc_limits: Vec<NpcLimitConfig>,
     pub shop_counts: Vec<ShopCountConfig>,
+    #[serde(default)]
+    pub fixed_shops: Vec<FixedShopConfig>,
     pub kits: Vec<KitConfig>,
     #[serde(default)]
     pub queue_layout: Option<QueuePresetLayoutConfig>,

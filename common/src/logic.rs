@@ -111,15 +111,15 @@ pub fn calculate_cooldown(piece_config: &PieceConfig) -> DurationMs {
 pub fn select_shop_group<'a>(
     shop_config: &'a ShopConfig,
     piece_on_shop: Option<&Piece>,
-) -> &'a ShopGroupConfig {
+) -> Option<&'a ShopGroupConfig> {
     if let Some(piece) = piece_on_shop {
         shop_config
             .groups
             .iter()
             .find(|g| g.applies_to.contains(&piece.piece_type))
-            .unwrap_or(&shop_config.default_group)
+            .or(shop_config.default_group.as_ref())
     } else {
-        &shop_config.default_group
+        shop_config.default_group.as_ref()
     }
 }
 

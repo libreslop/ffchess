@@ -43,8 +43,9 @@ async fn shop_purchase_deducts_score_and_adds_piece() {
         display_name: "Test Shop".to_string(),
         default_uses: 1,
         color: None,
+        auto_upgrade_single_item: false,
         groups: vec![],
-        default_group: ShopGroupConfig {
+        default_group: Some(ShopGroupConfig {
             applies_to: vec![],
             items: vec![ShopItemConfig {
                 display_name: "Hire Pawn".to_string(),
@@ -52,7 +53,7 @@ async fn shop_purchase_deducts_score_and_adds_piece() {
                 replace_with: None,
                 add_pieces: vec![PieceTypeId::from("pawn")],
             }],
-        },
+        }),
     };
 
     let mode_config = GameModeConfig {
@@ -73,6 +74,7 @@ async fn shop_purchase_deducts_score_and_adds_piece() {
             shop_id: shop_id.clone(),
             count: 0,
         }],
+        fixed_shops: vec![],
         kits: vec![KitConfig {
             name: KitId::from("basic"),
             description: "Basic".to_string(),

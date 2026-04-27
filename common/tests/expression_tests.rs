@@ -44,6 +44,7 @@ fn calculate_board_size_clamps_minimum() {
             shop_id: "shop".into(),
             count: 0,
         }],
+        fixed_shops: vec![],
         kits: vec![KitConfig {
             name: KitId::from("basic"),
             description: "Basic".to_string(),

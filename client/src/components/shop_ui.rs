@@ -24,7 +24,14 @@ pub struct ShopUIProps {
 ///
 /// `props` provides shop context, piece configs, and send channel. Returns rendered HTML.
 pub fn shop_ui(props: &ShopUIProps) -> Html {
-    let group = common::logic::select_shop_group(&props.shop_config, props.piece_on_shop.as_ref());
+    let Some(group) =
+        common::logic::select_shop_group(&props.shop_config, props.piece_on_shop.as_ref())
+    else {
+        return Html::default();
+    };
+    if group.items.is_empty() {
+        return Html::default();
+    }
 
     let vars = common::logic::build_price_vars(
         props.player_pieces_count,

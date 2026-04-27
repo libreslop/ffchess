@@ -21,6 +21,7 @@ The `mode_id` is automatically derived from the filename stem (e.g., `ffa.jsonc`
 | `respawn_cooldown_ms` | `u32` | Cooldown period before a player can respawn. | No | - |
 | `npc_limits` | `Array<NpcLimit>` | List of limits for different NPC types. | No | - |
 | `shop_counts` | `Array<ShopCount>` | Number of shops of each type to spawn. | No | - |
+| `fixed_shops` | `Array<FixedShop>` | Absolute shop placements that spawn exactly at configured positions. | Yes | `[]` |
 | `kits` | `Array<Kit>` | Starting piece kits available for selection. | No | - |
 | `queue_layout` | `QueueLayout` | Fixed spawn layout for queued matches; if set, players spawn from this preset instead of kit-random spawn. | Yes | `null` |
 | `hooks` | `Array<Hook>` | Custom gameplay event hooks. | No | - |
@@ -38,6 +39,13 @@ The `mode_id` is automatically derived from the filename stem (e.g., `ffa.jsonc`
 |-----------|------|-------------|
 | `shop_id` | `String` | The ID of the shop type. |
 | `count` | `u32` | Number of shops to spawn. |
+
+### Fixed Shop (`FixedShop`)
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `shop_id` | `String` | The ID of the shop type. |
+| `position` | `[i32, i32]` | Absolute board coordinate for this shop spawn. |
 
 ### Kit (`Kit`)
 

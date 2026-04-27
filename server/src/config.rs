@@ -187,7 +187,9 @@ fn parse_shop_jsonc_with_id(content: &str, path: &Path, id: &str) -> ShopConfig 
 
     if let serde_json::Value::Object(obj) = &mut value {
         obj.insert("id".to_string(), serde_json::Value::String(id.to_string()));
-        if let Some(serde_json::Value::Object(group_obj)) = obj.get_mut("default_group") {
+        if let Some(default_group) = obj.get_mut("default_group")
+            && let serde_json::Value::Object(group_obj) = default_group
+        {
             group_obj
                 .entry("applies_to")
                 .or_insert_with(|| serde_json::Value::Array(vec![]));

@@ -121,7 +121,7 @@ impl AsRef<str> for PieceTypeId {
 impl PieceTypeId {
     /// Returns true when the piece type is the configured king.
     pub fn is_king(&self) -> bool {
-        self.0 == "king"
+        self.0 == "king" || self.0.ends_with("_king")
     }
 }
 

@@ -1,0 +1,38 @@
+{
+    "display_name": "Pawn Promotion",
+    "default_uses": 9999,
+    "color": "rgba(253, 224, 71, 0.35)",
+    "auto_upgrade_single_item": false,
+    "groups": [
+        {
+            "applies_to": ["bullet_pawn_northbound_moved", "bullet_pawn_southbound_moved"],
+            "items": [
+                {
+                    "display_name": "Promote to Queen",
+                    "price_expr": "250 + player_piece_count * 20",
+                    "replace_with": "bullet_queen",
+                    "add_pieces": []
+                },
+                {
+                    "display_name": "Promote to Rook",
+                    "price_expr": "100 + player_piece_count * 10",
+                    "replace_with": "bullet_rook",
+                    "add_pieces": []
+                },
+                {
+                    "display_name": "Promote to Bishop",
+                    "price_expr": "50 + player_piece_count * 5",
+                    "replace_with": "bullet_bishop",
+                    "add_pieces": []
+                },
+                {
+                    "display_name": "Promote to Knight",
+                    "price_expr": "50 + player_piece_count * 5",
+                    "replace_with": "bullet_knight",
+                    "add_pieces": []
+                }
+            ]
+        }
+    ],
+    "default_group": null
+}
