@@ -185,8 +185,7 @@ pub fn app() -> Html {
                 .iter()
                 .position(|mode| mode.id == current_id)
                 .unwrap_or(0) as i32;
-            let max_index = options.len().saturating_sub(1) as i32;
-            let next_index = (current_index + delta).clamp(0, max_index) as usize;
+            let next_index = (current_index + delta) as usize;
             if let Some(next_mode) = options.get(next_index) {
                 if next_mode.id == current_id {
                     return;

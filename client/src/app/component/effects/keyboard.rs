@@ -70,8 +70,24 @@ pub fn use_keyboard_shortcuts_effect(inputs: KeyboardShortcutEffectInputs) {
             queueing,
             kits.clone(),
             single_kit.clone(),
+            on_join.clone(),
+            on_cycle_mode.clone(),
+            on_rejoin.clone(),
         ),
-        move |&(joined, dead, victory, step, lc, disc, queueing, ref kits, ref single_kit)| {
+        move |&(
+            joined,
+            dead,
+            victory,
+            step,
+            lc,
+            disc,
+            queueing,
+            ref kits,
+            ref single_kit,
+            ref on_join,
+            ref on_cycle_mode,
+            ref on_rejoin,
+        )| {
             let on_join = on_join.clone();
             let on_cycle_mode = on_cycle_mode.clone();
             let on_rejoin = on_rejoin.clone();

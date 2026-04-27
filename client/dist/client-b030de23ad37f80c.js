@@ -960,7 +960,7 @@ function __wbg_get_imports() {
             return addHeapObject(ret);
         },
         __wbindgen_cast_0000000000000009: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { dtor_idx: 81, function: Function { arguments: [Ref(NamedExternref("Event"))], shim_idx: 82, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { dtor_idx: 84, function: Function { arguments: [Ref(NamedExternref("Event"))], shim_idx: 85, ret: Unit, inner_ret: Some(Unit) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm.__wasm_bindgen_func_elem_2231, __wasm_bindgen_func_elem_2232);
             return addHeapObject(ret);
         },
