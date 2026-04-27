@@ -1,0 +1,39 @@
+{
+    "display_name": "Pawn Promotion",
+    "default_uses": 9999,
+    "color": "rgba(253, 224, 71, 0)",
+    "focus_color": "#fde047",
+    "auto_upgrade_single_item": false,
+    "groups": [
+        {
+            "applies_to": ["blitz_pawn_northbound_moved", "blitz_pawn_southbound_moved"],
+            "items": [
+                {
+                    "display_name": "Queen",
+                    "price_expr": null,
+                    "replace_with": "blitz_queen",
+                    "add_pieces": []
+                },
+                {
+                    "display_name": "Rook",
+                    "price_expr": null,
+                    "replace_with": "blitz_rook",
+                    "add_pieces": []
+                },
+                {
+                    "display_name": "Bishop",
+                    "price_expr": null,
+                    "replace_with": "blitz_bishop",
+                    "add_pieces": []
+                },
+                {
+                    "display_name": "Knight",
+                    "price_expr": null,
+                    "replace_with": "blitz_knight",
+                    "add_pieces": []
+                }
+            ]
+        }
+    ],
+    "default_group": null
+}
