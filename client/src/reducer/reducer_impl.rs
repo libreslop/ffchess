@@ -36,7 +36,9 @@ impl Reducible for GameStateReducer {
                 next.sync_interval_ms = sync_interval_ms;
                 next.pm_queue.clear();
                 next.error = None;
-                next.queue_status = None;
+                if player_id != PlayerId::nil() {
+                    next.queue_status = None;
+                }
                 next.clear_disconnect_ui();
                 next.clear_victory_state();
 

@@ -27,9 +27,14 @@ pub fn build_on_rejoin(
             if reducer.disconnected {
                 return;
             }
+            let rejoin_single_kit = single_kit.clone().or_else(|| {
+                reducer.mode.as_ref().and_then(|mode| {
+                    (mode.kits.len() == 1).then(|| mode.kits[0].name.clone())
+                })
+            });
             rejoin_flow.set(RejoinFlow::Active);
             reducer.dispatch(GameAction::Reset);
-            if let Some(kit_id) = single_kit.clone() {
+            if let Some(kit_id) = rejoin_single_kit {
                 join_step.set(JoinStep::SelectKit);
                 on_join.emit(kit_id);
             } else {

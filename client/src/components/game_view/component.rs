@@ -580,6 +580,15 @@ pub fn game_view(props: &GameViewProps) -> Html {
                 if !start.allow_panning {
                     return;
                 }
+                let panning_disabled = reducer
+                    .mode
+                    .as_ref()
+                    .map(|m| m.disable_screen_panning)
+                    .unwrap_or(false);
+                if panning_disabled {
+                    manager.velocity = Vec2::ZERO;
+                    return;
+                }
                 let delta = input.pos - start.pos;
                 if delta.x.abs().max(delta.y.abs()) > 0.1 {
                     *did_pan.borrow_mut() = true;

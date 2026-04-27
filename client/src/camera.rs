@@ -149,9 +149,14 @@ pub fn update_camera(manager: &mut CameraManager, params: CameraUpdateParams<'_>
 
             if !manager.was_alive {
                 // Respawn or First Join: Set target to king and start panning
-                manager.target_camera =
-                    join_focus_camera_pos(&params, p.king_id, tile_size, king_pos);
                 manager.target_zoom = 1.0;
+                let join_tile_size = params.tile_size_px * manager.target_zoom;
+                let join_king_pos = Vec2::new(
+                    king.position.0.x as f64 * join_tile_size + join_tile_size / 2.0,
+                    king.position.0.y as f64 * join_tile_size + join_tile_size / 2.0,
+                );
+                manager.target_camera =
+                    join_focus_camera_pos(&params, p.king_id, join_tile_size, join_king_pos);
                 manager.last_king_grid_pos = king.position.into();
                 manager.input_locked = true;
                 manager.was_alive = true;
@@ -226,6 +231,16 @@ pub fn update_camera(manager: &mut CameraManager, params: CameraUpdateParams<'_>
         // In this coordinate system, (0,0) is the center of the board
         manager.target_camera = Vec2::ZERO;
         manager.target_zoom = 1.0;
+        let panning_disabled = params
+            .mode
+            .as_ref()
+            .map(|m| m.disable_screen_panning)
+            .unwrap_or(false);
+        if panning_disabled {
+            manager.camera = Vec2::ZERO;
+            manager.zoom = 1.0;
+            manager.velocity = Vec2::ZERO;
+        }
         manager.was_alive = false;
         manager.input_locked = false;
         changed = true;
@@ -253,7 +268,10 @@ pub fn update_camera(manager: &mut CameraManager, params: CameraUpdateParams<'_>
         let close_enough = delta.x.abs() < 1.0 && delta.y.abs() < 1.0;
         let zoom_synced = (manager.target_zoom - manager.zoom).abs() < 0.01;
         if close_enough && zoom_synced {
+            manager.camera = manager.target_camera;
+            manager.zoom = manager.target_zoom;
             manager.input_locked = false;
+            changed = true;
         }
     }
 
