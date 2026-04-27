@@ -29,13 +29,6 @@ enum ChatSurface {
     DarkOverlay,
 }
 
-/// Whether the shadow should be darker or lighter than the foreground color.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum ShadowTone {
-    Darker,
-    Lighter,
-}
-
 /// Chat color palette chosen for the current UI surface.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct ChatTheme {
@@ -44,7 +37,6 @@ struct ChatTheme {
     input_color: &'static str,
     input_shadow: &'static str,
     link_color: &'static str,
-    shadow_tone: ShadowTone,
 }
 
 impl ChatTheme {
@@ -57,27 +49,25 @@ impl ChatTheme {
                 input_color: "#6b7280",
                 input_shadow: "#374151",
                 link_color: "#1d4ed8",
-                shadow_tone: ShadowTone::Darker,
             },
             ChatSurface::DarkOverlay => Self {
                 message_color: "#d1d5db",
-                message_shadow: "#f3f4f6",
+                message_shadow: "#374151",
                 input_color: "#d1d5db",
-                input_shadow: "#f3f4f6",
+                input_shadow: "#374151",
                 link_color: "#93c5fd",
-                shadow_tone: ShadowTone::Lighter,
             },
         }
     }
 
     /// Returns the link drop-shadow color for this theme.
     fn link_shadow(self) -> String {
-        shift_color(self.link_color, self.shadow_tone)
+        shift_color_darker(self.link_color)
     }
 
     /// Returns the sender-name drop-shadow color for this theme.
     fn sender_shadow(self, sender_color: &str) -> String {
-        shift_color(sender_color, self.shadow_tone)
+        shift_color_darker(sender_color)
     }
 }
 
@@ -219,7 +209,8 @@ pub fn game_chat(props: &GameChatProps) -> Html {
         );
     }
 
-    let theme = ChatTheme::for_surface(chat_surface(&props.reducer));
+    let surface = chat_surface(&props.reducer);
+    let theme = ChatTheme::for_surface(surface);
     let chat_char_count = (*chat_text).chars().count() as u32;
     let chat_max_chars = props.globals.chat_message_max_chars.max(1);
     let chat_warning_chars = props.globals.chat_warning_chars.min(chat_max_chars);
@@ -304,7 +295,9 @@ pub fn game_chat(props: &GameChatProps) -> Html {
                         for props.reducer.chat_lines.iter().map(|line| {
                             let key = ChatLineKey::for_line(line);
                             let is_expired = expired_line_keys.contains(&key);
-                            let sender_shadow = theme.sender_shadow(line.sender_color.as_ref());
+                            let sender_color =
+                                display_sender_color(line.sender_color.as_ref(), surface);
+                            let sender_shadow = theme.sender_shadow(sender_color);
                             let link_shadow = theme.link_shadow();
                             html! {
                                 <div
@@ -315,7 +308,7 @@ pub fn game_chat(props: &GameChatProps) -> Html {
                                         CHAT_FADE_OUT_MS
                                     )}
                                 >
-                                    <span style={format!("color: {}; font-weight: 700; text-shadow: 1px 1px 0 {};", line.sender_color.as_ref(), sender_shadow)}>
+                                    <span style={format!("color: {}; font-weight: 700; text-shadow: 1px 1px 0 {};", sender_color, sender_shadow)}>
                                         {line.sender_name.clone()}
                                     </span>
                                     <span style={format!("color: {}; text-shadow: 1px 1px 0 {};", theme.message_color, theme.message_shadow)}>
@@ -373,6 +366,14 @@ pub fn game_chat(props: &GameChatProps) -> Html {
     }
 }
 
+fn display_sender_color(sender_color: &str, surface: ChatSurface) -> &str {
+    if surface == ChatSurface::DarkOverlay && sender_color.eq_ignore_ascii_case("#555555") {
+        "#9ca3af"
+    } else {
+        sender_color
+    }
+}
+
 fn current_chat_line_keys(lines: &[ChatLine]) -> HashSet<ChatLineKey> {
     lines.iter().map(ChatLineKey::for_line).collect()
 }
@@ -405,7 +406,7 @@ fn clamp_timeout_ms(delay_ms: i64) -> u32 {
     delay_ms.clamp(0, u32::MAX as i64) as u32
 }
 
-fn shift_color(hex: &str, tone: ShadowTone) -> String {
+fn shift_color_darker(hex: &str) -> String {
     let hex = hex.trim();
     if hex.len() == 7
         && hex.starts_with('#')
@@ -415,18 +416,10 @@ fn shift_color(hex: &str, tone: ShadowTone) -> String {
             u8::from_str_radix(&hex[5..7], 16),
         )
     {
-        let convert = |v: u8| match tone {
-            ShadowTone::Darker => ((v as f32 * 0.45).round() as u8).max(10),
-            ShadowTone::Lighter => {
-                v.saturating_add(((255u16 - v as u16) as f32 * 0.45).round() as u8)
-            }
-        };
+        let convert = |v: u8| ((v as f32 * 0.45).round() as u8).max(10);
         return format!("#{:02x}{:02x}{:02x}", convert(r), convert(g), convert(b));
     }
-    match tone {
-        ShadowTone::Darker => "#111827".to_string(),
-        ShadowTone::Lighter => "#f3f4f6".to_string(),
-    }
+    "#111827".to_string()
 }
 
 fn render_chat_message_with_links(message: &str, link_color: &str, link_shadow: &str) -> Html {
