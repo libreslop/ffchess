@@ -10,7 +10,7 @@ use effects::{
     use_joining_reset_effect, use_keyboard_shortcuts_effect, use_landing_cooldown_effect,
     use_mode_refresh_effect, use_mode_url_navigation_effect, use_player_name_sync_effect,
     use_preview_default_effect, use_rejoin_cooldown_effect, use_rejoin_flow_reset_effect,
-    use_ws_connection_effect,
+    use_team_favicon_effect, use_ws_connection_effect,
 };
 use view::{AppViewProps, render_app};
 
@@ -124,6 +124,12 @@ pub fn app() -> Html {
         reducer_ref.clone(),
         tx.clone(),
         global_cfg.clone(),
+    );
+    use_team_favicon_effect(
+        reducer
+            .player_id
+            .and_then(|player_id| reducer.state.players.get(&player_id))
+            .map(|player| player.color.as_ref().to_string()),
     );
 
     let on_join = build_on_join(

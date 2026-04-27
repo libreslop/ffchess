@@ -2,6 +2,7 @@
 
 use crate::app::GlobalClientConfig;
 use crate::app::config::order_modes;
+use crate::app::favicon::set_team_favicon;
 use crate::app::ws::connect_ws;
 use crate::reducer::{ClientPhase, GameAction, GameStateReducer, MsgSender};
 use crate::ui_state::{CooldownSeconds, JoinStep, RejoinFlow};
@@ -21,6 +22,8 @@ use wasm_bindgen_futures::spawn_local;
 use yew::hook;
 use yew::prelude::*;
 
+const DEFAULT_FAVICON_COLOR: &str = "#dc2626";
+
 /// Inputs for keyboard shortcut handling on the landing and end screens.
 pub struct KeyboardShortcutEffectInputs {
     pub is_joined: bool,
@@ -37,6 +40,15 @@ pub struct KeyboardShortcutEffectInputs {
     pub on_join: Callback<KitId>,
     pub on_rejoin: Callback<MouseEvent>,
     pub rc_ref: Rc<RefCell<CooldownSeconds>>,
+}
+
+/// Keeps the browser tab favicon synced with the local player's team color.
+#[hook]
+pub fn use_team_favicon_effect(team_color: Option<String>) {
+    use_effect_with(team_color, move |team_color| {
+        set_team_favicon(team_color.as_deref().unwrap_or(DEFAULT_FAVICON_COLOR));
+        || ()
+    });
 }
 
 /// Keeps the mode list refreshed on an interval.

@@ -2,6 +2,7 @@
 
 mod component;
 mod config;
+mod favicon;
 mod ws;
 
 pub use component::App;
