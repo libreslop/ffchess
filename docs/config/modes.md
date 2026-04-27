@@ -19,7 +19,7 @@ The filename stem becomes the runtime `GameModeConfig.id`.
 | `fog_of_war_radius` | expression string or `null` | No | `null` | Client-side expression evaluated with `player_piece_count`. `null` disables fog of war. |
 | `show_scoreboard` | boolean | No | `true` | Shows or hides the in-game leaderboard overlay. |
 | `join_camera_center` | `JoinCameraCenter` | No | `{ "piece_id": "king" }` | Initial camera focus when entering `Alive` (first spawn/rejoin). |
-| `disable_screen_panning` | boolean | No | `false` | Disables drag/touch panning by the player. Camera can still auto-focus/follow. |
+| `disable_camera_movement` | boolean | No | `false` | Disables player-controlled camera drag and zoom input. Automatic camera focus and scripted panning still run. |
 | `respawn_cooldown_ms` | integer (`i64`) | Yes | none | Time after elimination before the same stored player id may respawn. |
 | `npc_limits` | `NpcLimit[]` | Yes | none | Per-piece NPC cap formulas. |
 | `shop_counts` | `ShopCount[]` | Yes | none | Randomly spawned shops for the mode. |
@@ -86,7 +86,7 @@ Untagged union: use exactly one of these objects.
 | Shape | Required fields | Notes |
 | --- | --- | --- |
 | Piece target | `piece_id` | Focuses the local player's first owned piece with this type id (falls back to king if missing). |
-| Position target | `position` | Focuses a board-space position `[x, y]` (`f64`); integer values target a tile center and fractions are allowed. |
+| Position target | `position` | Focuses a board-space point `[x, y]` (`f64`) measured in tile units from the board origin. `[0, 0]` is the board origin, and square centers are typically half-integers such as `[0.5, 0.5]`. |
 
 ### `Hook`
 
@@ -187,6 +187,9 @@ joining the extra slot fails at runtime.
   "board_size": "8",
   "camera_pan_limit": "8",
   "fog_of_war_radius": null,
+  "show_scoreboard": false,
+  "join_camera_center": { "position": [0, 0] },
+  "disable_camera_movement": true,
   "respawn_cooldown_ms": 0,
   "npc_limits": [],
   "shop_counts": [],

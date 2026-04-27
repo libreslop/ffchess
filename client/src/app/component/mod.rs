@@ -4,13 +4,14 @@ mod callbacks;
 mod effects;
 mod view;
 
+use crate::app::browser::PageMetadata;
 use callbacks::{build_on_join, build_on_name_input, build_on_name_submit, build_on_rejoin};
 use effects::{
     KeyboardShortcutEffectInputs, use_disconnected_overlay_effect, use_fatal_error_reset_effect,
     use_joining_reset_effect, use_keyboard_shortcuts_effect, use_landing_cooldown_effect,
-    use_mode_refresh_effect, use_mode_url_navigation_effect, use_player_name_sync_effect,
-    use_preview_default_effect, use_rejoin_cooldown_effect, use_rejoin_flow_reset_effect,
-    use_team_favicon_effect, use_ws_connection_effect,
+    use_mode_refresh_effect, use_mode_url_navigation_effect, use_page_metadata_effect,
+    use_player_name_sync_effect, use_preview_default_effect, use_rejoin_cooldown_effect,
+    use_rejoin_flow_reset_effect, use_ws_connection_effect,
 };
 use view::{AppViewProps, render_app};
 
@@ -18,7 +19,7 @@ use crate::app::config::{load_global_config, order_modes};
 use crate::reducer::{ClientPhase, GameStateReducer, MsgSender};
 use crate::ui_state::{CooldownSeconds, JoinStep, RejoinFlow};
 use crate::utils::{get_death_info, get_stored_name};
-use common::models::ModeSummary;
+use common::models::{GameModeClientConfig, ModeSummary};
 use common::types::{ModeId, PlayerId};
 use gloo_utils::document;
 use yew::prelude::*;
@@ -36,19 +37,7 @@ pub fn app() -> Html {
     let has_interacted = use_state(|| false);
     let show_disconnected = use_state(|| false);
     let preview_default_ref = use_mut_ref(|| None::<bool>);
-    // Read initial mode list injected into index.html for immediate render
-    let injected_modes: Vec<ModeSummary> = {
-        let doc = document();
-        if let Some(el) = doc.get_element_by_id("initial-modes") {
-            if let Some(text) = el.text_content() {
-                serde_json::from_str::<Vec<ModeSummary>>(&text).unwrap_or_default()
-            } else {
-                Vec::new()
-            }
-        } else {
-            Vec::new()
-        }
-    };
+    let injected_modes = injected_modes();
     let injected_modes_copy = injected_modes.clone();
 
     let mode_options = {
@@ -60,25 +49,9 @@ pub fn app() -> Html {
     let injected_mode_info: Option<ModeSummary> = injected_modes_copy.first().cloned();
 
     // Determine current mode id from hash or global order/injected info
-    let initial_mode_id = {
-        let hash = web_sys::window()
-            .unwrap()
-            .location()
-            .hash()
-            .unwrap_or_default()
-            .trim_start_matches('#')
-            .to_string();
-        if !hash.is_empty() {
-            ModeId::from(hash)
-        } else if let Some(first) = global_cfg.game_order.first() {
-            first.clone()
-        } else if let Some(m) = injected_mode_info.as_ref() {
-            m.id.clone()
-        } else {
-            ModeId::from("ffa")
-        }
-    };
+    let initial_mode_id = initial_mode_id(&global_cfg, injected_mode_info.as_ref());
     let current_mode_id = use_state(|| initial_mode_id.clone());
+    let page_metadata = resolve_page_metadata(&reducer, &current_mode_id, &mode_options);
 
     use_mode_refresh_effect(
         mode_options.clone(),
@@ -125,12 +98,7 @@ pub fn app() -> Html {
         tx.clone(),
         global_cfg.clone(),
     );
-    use_team_favicon_effect(
-        reducer
-            .player_id
-            .and_then(|player_id| reducer.state.players.get(&player_id))
-            .map(|player| player.color.as_ref().to_string()),
-    );
+    use_page_metadata_effect(page_metadata);
 
     let on_join = build_on_join(
         tx.clone(),
@@ -256,4 +224,71 @@ pub fn app() -> Html {
     };
 
     render_app(view_props)
+}
+
+fn injected_modes() -> Vec<ModeSummary> {
+    let doc = document();
+    if let Some(el) = doc.get_element_by_id("initial-modes")
+        && let Some(text) = el.text_content()
+    {
+        serde_json::from_str::<Vec<ModeSummary>>(&text).unwrap_or_default()
+    } else {
+        Vec::new()
+    }
+}
+
+fn initial_mode_id(
+    global_cfg: &crate::app::GlobalClientConfig,
+    injected_mode_info: Option<&ModeSummary>,
+) -> ModeId {
+    let hash = web_sys::window()
+        .unwrap()
+        .location()
+        .hash()
+        .unwrap_or_default()
+        .trim_start_matches('#')
+        .to_string();
+    if !hash.is_empty() {
+        ModeId::from(hash)
+    } else if let Some(first) = global_cfg.game_order.first() {
+        first.clone()
+    } else if let Some(mode) = injected_mode_info {
+        mode.id.clone()
+    } else {
+        ModeId::from("ffa")
+    }
+}
+
+fn resolve_page_metadata(
+    reducer: &GameStateReducer,
+    current_mode_id: &ModeId,
+    mode_options: &[ModeSummary],
+) -> PageMetadata {
+    PageMetadata::new(
+        selected_mode_name(current_mode_id, mode_options, reducer.mode.as_ref()),
+        local_team_color(reducer),
+    )
+}
+
+fn selected_mode_name(
+    current_mode_id: &ModeId,
+    mode_options: &[ModeSummary],
+    reducer_mode: Option<&GameModeClientConfig>,
+) -> Option<String> {
+    mode_options
+        .iter()
+        .find(|mode| mode.id == *current_mode_id)
+        .map(|mode| mode.display_name.clone())
+        .or_else(|| {
+            reducer_mode
+                .filter(|mode| mode.id == *current_mode_id)
+                .map(|mode| mode.display_name.clone())
+        })
+}
+
+fn local_team_color(reducer: &GameStateReducer) -> Option<String> {
+    reducer
+        .player_id
+        .and_then(|player_id| reducer.state.players.get(&player_id))
+        .map(|player| player.color.as_ref().to_string())
 }

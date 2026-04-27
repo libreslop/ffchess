@@ -1,8 +1,8 @@
 //! Root application module wiring config, websocket, and top-level UI.
 
+mod browser;
 mod component;
 mod config;
-mod favicon;
 mod ws;
 
 pub use component::App;
