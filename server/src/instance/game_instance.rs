@@ -15,6 +15,7 @@ use std::sync::Arc;
 use tokio::sync::{RwLock, mpsc};
 
 /// Queued move request stored server-side for cooldown chaining.
+#[derive(Clone, Copy)]
 pub(super) struct QueuedMoveRequest {
     pub player_id: PlayerId,
     pub target: BoardCoord,

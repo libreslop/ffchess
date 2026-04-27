@@ -233,6 +233,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
         let renderer_state = renderer_state.clone();
         let reducer = props.reducer.clone();
         let shop_configs = props.reducer.shop_configs.clone();
+        let piece_configs = props.reducer.piece_configs.clone();
         let globals = props.globals.clone();
         let piece_anims = piece_anims.clone();
         let submitted_shop_actions = submitted_shop_actions.clone();
@@ -268,7 +269,13 @@ pub fn game_view(props: &GameViewProps) -> Html {
                 if let Some(renderer) = renderer_state.as_ref() {
                     let selected_piece_id = if *has_match_result { None } else { *sid };
                     let mut ghosts = state.pieces.clone();
-                    apply_visible_ghosts(&mut ghosts, pm_queue, state, shop_configs);
+                    apply_visible_ghosts(
+                        &mut ghosts,
+                        pm_queue,
+                        state,
+                        shop_configs,
+                        &piece_configs,
+                    );
                     let visible_pm: Vec<_> = pm_queue
                         .iter()
                         .filter(|pm| pm_visible(pm, state))
@@ -497,6 +504,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
                     &reducer.pm_queue,
                     &reducer.state,
                     &reducer.shop_configs,
+                    &reducer.piece_configs,
                 );
 
                 if ghosts.values().any(|p| p.position == target) {
@@ -649,6 +657,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
                 &reducer.pm_queue,
                 &reducer.state,
                 &reducer.shop_configs,
+                &reducer.piece_configs,
             );
             let selected_id = *selected_piece_id;
 
@@ -798,6 +807,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
         &props.reducer.pm_queue,
         &props.reducer.state,
         &props.reducer.shop_configs,
+        &props.reducer.piece_configs,
     );
 
     let cam = *cam_state;

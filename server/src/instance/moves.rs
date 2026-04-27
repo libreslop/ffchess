@@ -5,6 +5,7 @@ use crate::time::now_ms;
 use common::models::GameState;
 use common::protocol::{GameError, ServerMessage};
 use common::types::{BoardCoord, PieceId, PlayerId};
+use std::collections::VecDeque;
 
 impl GameInstance {
     /// Validates and applies a move for a player's piece.
@@ -28,6 +29,22 @@ impl GameInstance {
         };
 
         if should_queue || self.piece_has_queued_moves(piece_id).await {
+            let game_snapshot = self.game.read().await.clone();
+            let existing_queue = self
+                .queued_moves
+                .read()
+                .await
+                .get(&piece_id)
+                .cloned()
+                .unwrap_or_default();
+            self.validate_queued_move_before_enqueue(
+                &game_snapshot,
+                piece_id,
+                &existing_queue,
+                player_id,
+                target,
+            )?;
+
             let mut queued_moves = self.queued_moves.write().await;
             let queue = queued_moves.entry(piece_id).or_default();
             if queue.len() < 100 {
@@ -176,6 +193,87 @@ impl GameInstance {
         if let Some(piece) = game.pieces.get_mut(&piece_id) {
             piece.position = target;
             piece.last_move_time = now_ms();
+            piece.cooldown_ms = piece_config.cooldown_ms;
+        } else {
+            return Err(GameError::PieceNotFound);
+        }
+
+        self.try_auto_upgrade_single_item(game, player_id, target);
+        Ok(())
+    }
+
+    fn validate_queued_move_before_enqueue(
+        &self,
+        base_game: &GameState,
+        piece_id: PieceId,
+        existing_queue: &VecDeque<QueuedMoveRequest>,
+        player_id: PlayerId,
+        target: BoardCoord,
+    ) -> Result<(), GameError> {
+        let mut projected = base_game.clone();
+        for queued in existing_queue {
+            self.validate_and_apply_projected_move(
+                &mut projected,
+                piece_id,
+                queued.player_id,
+                queued.target,
+            )?;
+        }
+        self.validate_and_apply_projected_move(&mut projected, piece_id, player_id, target)
+    }
+
+    fn validate_and_apply_projected_move(
+        &self,
+        game: &mut GameState,
+        piece_id: PieceId,
+        player_id: PlayerId,
+        target: BoardCoord,
+    ) -> Result<(), GameError> {
+        let (piece_type, start_pos, piece_owner) = {
+            let piece = game.pieces.get(&piece_id).ok_or(GameError::PieceNotFound)?;
+            if piece.owner_id != Some(player_id) {
+                return Err(GameError::NotYourPiece);
+            }
+            (piece.piece_type.clone(), piece.position, piece.owner_id)
+        };
+
+        let target_piece = game
+            .pieces
+            .values()
+            .find(|piece| piece.position == target && piece.id != piece_id)
+            .cloned();
+        let is_capture = if let Some(ref target_piece) = target_piece {
+            if target_piece.owner_id == Some(player_id) {
+                return Err(GameError::TargetFriendly);
+            }
+            true
+        } else {
+            false
+        };
+
+        let piece_config = self
+            .piece_configs
+            .get(&piece_type)
+            .ok_or_else(|| GameError::Internal("Piece config not found".to_string()))?;
+
+        if !common::logic::is_valid_move(common::logic::MoveValidationParams {
+            piece_config,
+            start: start_pos,
+            end: target,
+            is_capture,
+            board_size: game.board_size,
+            pieces: &game.pieces,
+            moving_owner: piece_owner,
+        }) {
+            return Err(GameError::InvalidMove);
+        }
+
+        if let Some(target_piece) = target_piece {
+            game.pieces.remove(&target_piece.id);
+        }
+
+        if let Some(piece) = game.pieces.get_mut(&piece_id) {
+            piece.position = target;
             piece.cooldown_ms = piece_config.cooldown_ms;
         } else {
             return Err(GameError::PieceNotFound);

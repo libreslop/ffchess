@@ -1,8 +1,8 @@
 //! Helper utilities for the game view component.
 
 use crate::reducer::Pmove;
-use common::models::{GameState, Piece, Shop, ShopConfig};
-use common::types::{BoardCoord, PieceId, ShopId};
+use common::models::{GameState, Piece, PieceConfig, Shop, ShopConfig};
+use common::types::{BoardCoord, PieceId, PieceTypeId, ShopId};
 use std::collections::HashMap;
 
 /// Duration of a single move animation in milliseconds.
@@ -17,6 +17,7 @@ pub fn apply_visible_ghosts(
     pm_queue: &[Pmove],
     state: &GameState,
     shop_configs: &HashMap<ShopId, ShopConfig>,
+    piece_configs: &HashMap<PieceTypeId, PieceConfig>,
 ) {
     let mut virtual_shops = state.shops.clone();
 
@@ -35,6 +36,15 @@ pub fn apply_visible_ghosts(
                 item_index,
             );
         } else {
+            if !validate_move_against_ghosts(
+                ghosts,
+                piece_configs,
+                state.board_size,
+                pm.piece_id,
+                BoardCoord(pm.target),
+            ) {
+                continue;
+            }
             if let Some(p) = ghosts.get_mut(&pm.piece_id) {
                 p.position = BoardCoord(pm.target);
             }
@@ -56,6 +66,41 @@ pub fn apply_visible_ghosts(
 pub fn pm_visible(pm: &Pmove, state: &GameState) -> bool {
     // Show ghosts/paths for any queued move as long as the piece still exists.
     state.pieces.contains_key(&pm.piece_id)
+}
+
+fn validate_move_against_ghosts(
+    ghosts: &HashMap<PieceId, Piece>,
+    piece_configs: &HashMap<PieceTypeId, PieceConfig>,
+    board_size: common::types::BoardSize,
+    piece_id: PieceId,
+    target: BoardCoord,
+) -> bool {
+    let Some(piece) = ghosts.get(&piece_id) else {
+        return false;
+    };
+    let Some(config) = piece_configs.get(&piece.piece_type) else {
+        return false;
+    };
+    let target_piece = ghosts
+        .values()
+        .find(|gp| gp.position == target && gp.id != piece_id);
+    if target_piece
+        .map(|tp| tp.owner_id == piece.owner_id)
+        .unwrap_or(false)
+    {
+        return false;
+    }
+    let is_capture = target_piece.is_some();
+
+    common::logic::is_valid_move(common::logic::MoveValidationParams {
+        piece_config: config,
+        start: piece.position,
+        end: target,
+        is_capture,
+        board_size,
+        pieces: ghosts,
+        moving_owner: piece.owner_id,
+    })
 }
 
 /// Applies auto single-item shop actions to a ghost piece after a premove lands.

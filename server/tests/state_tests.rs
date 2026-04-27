@@ -3,7 +3,7 @@
 #[cfg(test)]
 mod tests {
     use common::models::Piece;
-    use common::protocol::ServerMessage;
+    use common::protocol::{GameError, ServerMessage};
     use common::types::{
         BoardCoord, DurationMs, KitId, ModeId, PieceId, PieceTypeId, Score, TimestampMs,
     };
@@ -427,6 +427,45 @@ mod tests {
                 second_target
             );
         }
+    }
+
+    #[tokio::test]
+    /// Verifies premoves are validated when queued against the projected queued state.
+    async fn test_server_side_invalid_chained_premove_rejected_on_queue() {
+        let state = ServerState::new();
+        let instance = state
+            .get_joinable_game(&ModeId::from("duel"))
+            .await
+            .expect("Duel game should exist");
+        let (tx, _rx) = mpsc::channel(100);
+
+        let (player_id, _) = instance
+            .add_player("P1".to_string(), KitId::from("Standard"), tx, None, None)
+            .await
+            .expect("P1 join should succeed");
+
+        let king_id = {
+            let mut game = instance.game.write().await;
+            let king_id = game.players.get(&player_id).expect("player exists").king_id;
+            game.pieces.retain(|id, _| *id == king_id);
+
+            let king = game.pieces.get_mut(&king_id).expect("king exists");
+            king.position = BoardCoord(IVec2::new(0, 0));
+            king.last_move_time = now_ms();
+            king.cooldown_ms = DurationMs::from_millis(10_000);
+            king_id
+        };
+
+        instance
+            .handle_move(player_id, king_id, BoardCoord(IVec2::new(1, 0)))
+            .await
+            .expect("First premove should be queued");
+
+        let err = instance
+            .handle_move(player_id, king_id, BoardCoord(IVec2::new(3, 0)))
+            .await
+            .expect_err("Invalid chained premove should be rejected");
+        assert!(matches!(err, GameError::InvalidMove));
     }
 
     #[tokio::test]
