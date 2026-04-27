@@ -1,7 +1,7 @@
 //! Data structures used by the canvas renderer.
 
 use crate::math::Vec2;
-use crate::reducer::Pmove;
+use crate::components::game_view::helpers::VisiblePremoveLine;
 use common::models::{GameModeClientConfig, GameState, Piece, PieceConfig, ShopConfig};
 use common::types::{PieceId, PieceTypeId, PlayerId, ShopId};
 use std::cell::RefCell;
@@ -77,7 +77,7 @@ pub struct RenderParams<'a> {
     pub state: &'a GameState,
     pub player_id: PlayerId,
     pub selected_piece_id: Option<PieceId>,
-    pub pm_queue: &'a [Pmove],
+    pub pmove_lines: &'a [VisiblePremoveLine],
     pub ghost_pieces: &'a HashMap<PieceId, Piece>,
     pub animated_positions: &'a HashMap<PieceId, Vec2>,
     pub camera_pos: Vec2,

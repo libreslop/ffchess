@@ -3,7 +3,7 @@
 use super::geometry::{
     is_ui_exempt_target, local_board_rotated_180, read_window_size, screen_to_grid,
 };
-use super::helpers::{MOVE_ANIM_MS, apply_visible_ghosts, pm_visible};
+use super::helpers::{MOVE_ANIM_MS, apply_visible_ghosts};
 use super::types::{
     DragStart, FpsCounter, InputEnd, InputMove, InputStart, LastTap, LatestStateSnapshot, PieceAnim,
 };
@@ -269,18 +269,13 @@ pub fn game_view(props: &GameViewProps) -> Html {
                 if let Some(renderer) = renderer_state.as_ref() {
                     let selected_piece_id = if *has_match_result { None } else { *sid };
                     let mut ghosts = state.pieces.clone();
-                    apply_visible_ghosts(
+                    let projection = apply_visible_ghosts(
                         &mut ghosts,
                         pm_queue,
                         state,
                         shop_configs,
                         &piece_configs,
                     );
-                    let visible_pm: Vec<_> = pm_queue
-                        .iter()
-                        .filter(|pm| pm_visible(pm, state))
-                        .cloned()
-                        .collect();
                     let active_shop_highlight_pos = active_shop_menu_context(
                         state,
                         &ghosts,
@@ -317,7 +312,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
                         state,
                         player_id: player_id.unwrap_or_else(PlayerId::nil),
                         selected_piece_id,
-                        pm_queue: &visible_pm,
+                        pmove_lines: &projection.lines,
                         ghost_pieces: &ghosts,
                         animated_positions: &animated_positions,
                         camera_pos: **cam,
@@ -464,6 +459,34 @@ pub fn game_view(props: &GameViewProps) -> Html {
         );
     }
 
+    {
+        let reducer = props.reducer.clone();
+        use_effect_with(
+            (
+                reducer.pm_queue.clone(),
+                reducer.state.clone(),
+                reducer.shop_configs.clone(),
+                reducer.piece_configs.clone(),
+            ),
+            move |(pm_queue, state, shop_configs, piece_configs)| {
+                if !pm_queue.is_empty() {
+                    let mut ghosts = state.pieces.clone();
+                    let projection = apply_visible_ghosts(
+                        &mut ghosts,
+                        pm_queue,
+                        state,
+                        shop_configs,
+                        piece_configs,
+                    );
+                    for invalid_id in projection.invalid_pmove_ids {
+                        reducer.dispatch(GameAction::RemovePm(invalid_id));
+                    }
+                }
+                || ()
+            },
+        );
+    }
+
     let handle_input_start = {
         let selected_piece_id = selected_piece_id.clone();
         let drag_start = drag_start.clone();
@@ -499,7 +522,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
 
             if !input.is_right_click && is_within_board(BoardCoord(target), board_size) {
                 let mut ghosts = reducer.state.pieces.clone();
-                apply_visible_ghosts(
+                let _ = apply_visible_ghosts(
                     &mut ghosts,
                     &reducer.pm_queue,
                     &reducer.state,
@@ -652,7 +675,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
             }
 
             let mut current_ghosts = reducer.state.pieces.clone();
-            apply_visible_ghosts(
+            let _ = apply_visible_ghosts(
                 &mut current_ghosts,
                 &reducer.pm_queue,
                 &reducer.state,
@@ -802,7 +825,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
         .filter(|p| p.owner_id == Some(player_id))
         .count();
     let mut ui_ghosts = props.reducer.state.pieces.clone();
-    apply_visible_ghosts(
+    let _ = apply_visible_ghosts(
         &mut ui_ghosts,
         &props.reducer.pm_queue,
         &props.reducer.state,

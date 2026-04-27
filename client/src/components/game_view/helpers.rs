@@ -8,6 +8,21 @@ use std::collections::HashMap;
 /// Duration of a single move animation in milliseconds.
 pub const MOVE_ANIM_MS: f64 = 200.0;
 
+/// One validated movement segment from the projected premove queue.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct VisiblePremoveLine {
+    pub piece_id: PieceId,
+    pub start: BoardCoord,
+    pub target: BoardCoord,
+}
+
+/// Result of projecting currently visible premoves.
+#[derive(Clone, Debug, Default)]
+pub struct VisibleProjection {
+    pub lines: Vec<VisiblePremoveLine>,
+    pub invalid_pmove_ids: Vec<u64>,
+}
+
 /// Applies visible queued moves to ghost piece positions.
 ///
 /// `ghosts` is the mutable ghost map, `pm_queue` is the pending move list,
@@ -18,8 +33,9 @@ pub fn apply_visible_ghosts(
     state: &GameState,
     shop_configs: &HashMap<ShopId, ShopConfig>,
     piece_configs: &HashMap<PieceTypeId, PieceConfig>,
-) {
+) -> VisibleProjection {
     let mut virtual_shops = state.shops.clone();
+    let mut projection = VisibleProjection::default();
 
     for pm in pm_queue {
         if !pm_visible(pm, state) {
@@ -27,7 +43,7 @@ pub fn apply_visible_ghosts(
         }
 
         if let Some(item_index) = pm.shop_item_index {
-            apply_manual_shop_action_for_premove(
+            let applied = apply_manual_shop_action_for_premove(
                 ghosts,
                 &mut virtual_shops,
                 shop_configs,
@@ -35,7 +51,11 @@ pub fn apply_visible_ghosts(
                 BoardCoord(pm.target),
                 item_index,
             );
+            if !applied {
+                projection.invalid_pmove_ids.push(pm.id);
+            }
         } else {
+            let start = ghosts.get(&pm.piece_id).map(|piece| piece.position);
             if !validate_move_against_ghosts(
                 ghosts,
                 piece_configs,
@@ -43,10 +63,18 @@ pub fn apply_visible_ghosts(
                 pm.piece_id,
                 BoardCoord(pm.target),
             ) {
+                projection.invalid_pmove_ids.push(pm.id);
                 continue;
             }
             if let Some(p) = ghosts.get_mut(&pm.piece_id) {
                 p.position = BoardCoord(pm.target);
+            }
+            if let Some(start) = start {
+                projection.lines.push(VisiblePremoveLine {
+                    piece_id: pm.piece_id,
+                    start,
+                    target: BoardCoord(pm.target),
+                });
             }
 
             apply_auto_shop_action_for_premove(
@@ -58,6 +86,7 @@ pub fn apply_visible_ghosts(
             );
         }
     }
+    projection
 }
 
 /// Determines if a pending move is visible based on current game state.
@@ -166,12 +195,12 @@ fn apply_manual_shop_action_for_premove(
     piece_id: PieceId,
     shop_pos: BoardCoord,
     item_index: usize,
-) {
+) -> bool {
     let Some(piece_on_shop) = ghosts.get(&piece_id).cloned() else {
-        return;
+        return false;
     };
     if piece_on_shop.position != shop_pos {
-        return;
+        return false;
     }
 
     let Some((shop_index, shop_id)) = virtual_shops
@@ -180,17 +209,17 @@ fn apply_manual_shop_action_for_premove(
         .find(|(_, shop)| shop.position == shop_pos)
         .map(|(i, shop)| (i, shop.shop_id.clone()))
     else {
-        return;
+        return false;
     };
 
     let Some(shop_config) = shop_configs.get(&shop_id) else {
-        return;
+        return false;
     };
     let Some(group) = common::logic::select_shop_group(shop_config, Some(&piece_on_shop)) else {
-        return;
+        return false;
     };
     let Some(item) = group.items.get(item_index) else {
-        return;
+        return false;
     };
 
     if let Some(replace_with) = &item.replace_with
@@ -211,4 +240,5 @@ fn apply_manual_shop_action_for_premove(
     {
         virtual_shops.remove(shop_index);
     }
+    true
 }

@@ -43,7 +43,7 @@ impl Renderer {
             state,
             player_id,
             selected_piece_id,
-            pm_queue,
+            pmove_lines,
             ghost_pieces,
             animated_positions,
             camera_pos,
@@ -307,12 +307,9 @@ impl Renderer {
             }
         }
 
-        // Pmove lines
-        for pm in pm_queue {
-            if pm.shop_item_index.is_some() {
-                continue;
-            }
-            if let Some(real_p) = state.pieces.get(&pm.piece_id) {
+        // Premove lines (already validated against projected ghost state)
+        for line in pmove_lines {
+            if let Some(real_p) = state.pieces.get(&line.piece_id) {
                 let color = if let Some(owner_id) = real_p.owner_id {
                     if let Some(player) = state.players.get(&owner_id) {
                         hex_to_rgba(player.color.as_ref(), 0.5)
@@ -326,17 +323,8 @@ impl Renderer {
                 self.ctx.set_stroke_style_str(&color);
                 self.ctx.set_line_width(2.0);
 
-                let mut start_pos = real_p.position;
-                for prev in pm_queue {
-                    if prev == pm {
-                        break;
-                    }
-                    if prev.piece_id == pm.piece_id {
-                        start_pos = common::types::BoardCoord(prev.target);
-                    }
-                }
-                let mapped_start = map_grid(start_pos.0);
-                let mapped_target = map_grid(pm.target);
+                let mapped_start = map_grid(line.start.0);
+                let mapped_target = map_grid(line.target.0);
                 self.ctx.begin_path();
                 self.ctx.move_to(
                     mapped_start.x as f64 * tile_size + offset_x + tile_size / 2.0,

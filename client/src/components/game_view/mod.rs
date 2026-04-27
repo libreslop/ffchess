@@ -2,7 +2,7 @@
 
 mod component;
 mod geometry;
-mod helpers;
+pub(crate) mod helpers;
 mod types;
 
 pub use component::GameView;
