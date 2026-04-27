@@ -43,6 +43,7 @@ async fn shop_purchase_deducts_score_and_adds_piece() {
         display_name: "Test Shop".to_string(),
         default_uses: 1,
         color: None,
+        focus_color: None,
         auto_upgrade_single_item: false,
         groups: vec![],
         default_group: Some(ShopGroupConfig {

@@ -250,6 +250,7 @@ fn test_select_shop_group_by_piece_type() {
         display_name: "Test Shop".to_string(),
         default_uses: 1,
         color: None,
+        focus_color: None,
         auto_upgrade_single_item: false,
         groups: vec![pawn_group.clone()],
         default_group: Some(default_group.clone()),

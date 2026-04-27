@@ -16,6 +16,7 @@ The filename stem becomes the runtime `ShopConfig.id`.
 | `display_name` | string | Yes | Label shown in the client UI. |
 | `default_uses` | integer (`u32`) | Yes | Number of successful purchases before the shop depletes. When it reaches zero, the server removes the shop and respawns a fresh copy elsewhere. |
 | `color` | string or `null` | No | `null` | CSS color string used when drawing the shop tile. Transparent RGBA values are valid and used in bullet mode. |
+| `focus_color` | string or `null` | No | `null` | CSS color string used when highlighting the active/focused shop square. If omitted, the client falls back to `color`. |
 | `auto_upgrade_single_item` | boolean | No | `false` | If `true` and the selected group contains exactly one item, landing on the shop auto-purchases that item after a move succeeds. |
 | `groups` | `ShopGroup[]` | Yes | none | Piece-specific groups checked before `default_group`. |
 | `default_group` | `ShopGroup` or `null` | No | `null` | Fallback group used when no specific group matches. |
@@ -106,6 +107,7 @@ Important runtime details:
   "display_name": "Pawn Promotion",
   "default_uses": 9999,
   "color": "rgba(253, 224, 71, 0)",
+  "focus_color": "#fde047",
   "auto_upgrade_single_item": false,
   "groups": [
     {

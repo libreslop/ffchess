@@ -226,7 +226,7 @@ impl Renderer {
                 .iter()
                 .find(|shop| shop.position == highlight_pos)
                 .and_then(|shop| shop_configs.get(&shop.shop_id))
-                .and_then(|c| c.color.as_ref())
+                .and_then(|c| c.focus_color.as_ref().or(c.color.as_ref()))
                 .map(|s| s.as_ref())
                 .unwrap_or("rgba(253, 224, 71, 0.35)");
             let mapped = map_grid(highlight_pos.0);

@@ -41,6 +41,7 @@ pub struct ShopConfig {
     pub display_name: String,
     pub default_uses: u32,
     pub color: Option<String>,
+    pub focus_color: Option<String>,
     #[serde(default)]
     pub auto_upgrade_single_item: bool,
     pub groups: Vec<ShopGroupConfig>,

@@ -2,6 +2,7 @@
     "display_name": "Pawn Promotion",
     "default_uses": 9999,
     "color": "rgba(253, 224, 71, 0)",
+    "focus_color": "#fde047",
     "auto_upgrade_single_item": false,
     "groups": [
         {
