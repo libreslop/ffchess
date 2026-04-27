@@ -142,6 +142,11 @@
             "action": "EliminateOwner"
         },
         {
+            "trigger": "OnPlayerKilled",
+            "action": "SystemChatMessage",
+            "message": "{player} was killed by {killer}"
+        },
+        {
             "trigger": "OnCapturePieceActive",
             "target_piece_id": "bullet_king",
             "action": "WinCapturer",
@@ -149,6 +154,11 @@
             "victory_focus": "CaptureSquare",
             "title": "VICTORY",
             "message": ""
+        },
+        {
+            "trigger": "OnPlayerDisconnect",
+            "action": "SystemChatMessage",
+            "message": "{player} left"
         },
         {
             "trigger": "OnPlayerLeave",
@@ -163,16 +173,6 @@
             "trigger": "OnPlayerJoin",
             "action": "SystemChatMessage",
             "message": "{player} joined"
-        },
-        {
-            "trigger": "OnPlayerDisconnect",
-            "action": "SystemChatMessage",
-            "message": "{player} left"
-        },
-        {
-            "trigger": "OnPlayerKilled",
-            "action": "SystemChatMessage",
-            "message": "{player} was killed by {killer}"
         },
         {
             "trigger": "OnQueueCountdown",
