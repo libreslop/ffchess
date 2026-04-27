@@ -67,5 +67,6 @@ pub enum GameAction {
         title: Option<String>,
         msg: Option<String>,
     },
+    ResetForRejoin,
     Reset,
 }

@@ -34,7 +34,7 @@ pub fn build_on_rejoin(
                     .and_then(|mode| (mode.kits.len() == 1).then(|| mode.kits[0].name.clone()))
             });
             rejoin_flow.set(RejoinFlow::Active);
-            reducer.dispatch(GameAction::Reset);
+            reducer.dispatch(GameAction::ResetForRejoin);
             if let Some(kit_id) = rejoin_single_kit {
                 join_step.set(JoinStep::SelectKit);
                 on_join.emit(kit_id);

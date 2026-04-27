@@ -185,6 +185,21 @@ impl Reducible for GameStateReducer {
                     next.clear_victory_state();
                 }
             }
+            GameAction::ResetForRejoin => {
+                next.player_id = Some(PlayerId::nil());
+                next.session_secret = None;
+                next.move_unlock_at = None;
+                next.state = next.menu_preview_state.clone().unwrap_or_default();
+                next.pm_queue.clear();
+                next.error = None;
+                next.clear_disconnect_ui();
+                next.fatal_error = false;
+                next.is_dead = false;
+                next.clear_victory_state();
+                next.queue_status = None;
+                // Preserve chat context/lines while rejoin UI is shown so room chat
+                // remains visible until the next Init snapshot confirms a room switch.
+            }
             GameAction::Reset => {
                 next.player_id = Some(PlayerId::nil());
                 next.session_secret = None;
