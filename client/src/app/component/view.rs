@@ -35,6 +35,7 @@ pub struct AppViewProps {
     pub mode_options: Vec<ModeSummary>,
     pub selected_mode_id: ModeId,
     pub on_select_mode: Callback<ModeId>,
+    pub on_cycle_mode: Callback<i32>,
     pub on_rejoin: Callback<MouseEvent>,
     pub rejoin_cooldown: CooldownSeconds,
 }
@@ -150,6 +151,7 @@ pub fn render_app(props: AppViewProps) -> Html {
                     mode_options={props.mode_options.clone()}
                     selected_mode_id={props.selected_mode_id.clone()}
                     on_select_mode={props.on_select_mode.clone()}
+                    on_cycle_mode={props.on_cycle_mode.clone()}
                 />
             }
 

@@ -3,6 +3,7 @@
 use super::actions::UpdateStatePayload;
 use super::time::now_timestamp_ms;
 use crate::reducer::types::GameStateReducer;
+use std::collections::{HashMap, HashSet};
 
 impl GameStateReducer {
     /// Applies a server update payload to this reducer state.
@@ -17,6 +18,47 @@ impl GameStateReducer {
         }
 
         let now_ms = now_timestamp_ms();
+        let incoming_piece_ids: HashSet<_> = params.pieces.iter().map(|piece| piece.id).collect();
+        let mut reassigned_piece_ids = HashMap::new();
+
+        for incoming_piece in &params.pieces {
+            if self.state.pieces.contains_key(&incoming_piece.id) {
+                continue;
+            }
+            let mut candidates = self
+                .state
+                .pieces
+                .values()
+                .filter(|existing_piece| {
+                    existing_piece.owner_id == incoming_piece.owner_id
+                        && existing_piece.position == incoming_piece.position
+                        && !incoming_piece_ids.contains(&existing_piece.id)
+                })
+                .map(|piece| piece.id);
+
+            let first_candidate = candidates.next();
+            let has_multiple = candidates.next().is_some();
+            if !has_multiple
+                && let Some(old_id) = first_candidate
+            {
+                reassigned_piece_ids.insert(old_id, incoming_piece.id);
+            }
+        }
+
+        if !reassigned_piece_ids.is_empty() {
+            for pending_move in &mut self.pm_queue {
+                if let Some(new_id) = reassigned_piece_ids.get(&pending_move.piece_id) {
+                    web_sys::console::log_1(
+                        &format!(
+                            "Remapping queued move piece id {} -> {} after server update.",
+                            pending_move.piece_id, new_id
+                        )
+                        .into(),
+                    );
+                    pending_move.piece_id = *new_id;
+                }
+            }
+        }
 
         for player in params.players {
             if let Some(_) = local_player_id

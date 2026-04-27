@@ -136,6 +136,8 @@ pub struct GameModeConfig {
     pub queue_players: PlayerCount,
     #[educe(Default = DurationMs::from_millis(5000))]
     pub preview_switch_delay_ms: DurationMs,
+    #[educe(Default = DurationMs::zero())]
+    pub queue_countdown_ms: DurationMs,
     #[educe(Default = ExprString::from("1"))]
     pub board_size: ExprString,
     #[educe(Default = ExprString::from("0"))]
@@ -179,6 +181,7 @@ impl GameModeConfig {
             id: self.id.clone(),
             display_name: self.display_name.clone(),
             queue_players: self.queue_players,
+            queue_countdown_ms: self.queue_countdown_ms,
             camera_pan_limit: self.camera_pan_limit.clone(),
             fog_of_war_radius: self.fog_of_war_radius.clone(),
             show_scoreboard: self.show_scoreboard,

@@ -15,7 +15,7 @@ use crate::utils::request_fullscreen;
 use common::logic::is_within_board;
 use common::models::{GameState, Piece, Shop, ShopConfig};
 use common::protocol::ClientMessage;
-use common::types::{BoardCoord, PieceId, PlayerId, Score, ShopId};
+use common::types::{BoardCoord, DurationMs, PieceId, PlayerId, Score, ShopId, TimestampMs};
 use gloo_events::EventListener;
 use gloo_render::{AnimationFrame, request_animation_frame};
 use std::cell::RefCell;
@@ -431,10 +431,11 @@ pub fn game_view(props: &GameViewProps) -> Html {
                             .unwrap_or(false)
                     });
                 }
-                if let Some(pm) = pm_queue
+                let pending_shop_pm = pm_queue
                     .iter()
                     .find(|pm| pm.shop_item_index.is_some())
-                    .cloned()
+                    .cloned();
+                if let Some(pm) = pending_shop_pm.clone()
                     && let Some(piece) = pieces.get(&pm.piece_id)
                     && piece.owner_id == Some(player_id)
                     && piece.position == BoardCoord(pm.target)
@@ -444,6 +445,14 @@ pub fn game_view(props: &GameViewProps) -> Html {
                 {
                     let item_index = pm.shop_item_index.unwrap_or_default();
                     if item_index >= group.items.len() {
+                        web_sys::console::error_1(
+                            &format!(
+                                "Shop action dropped: invalid item index {} for group size {}",
+                                item_index,
+                                group.items.len()
+                            )
+                            .into(),
+                        );
                         reducer.dispatch(GameAction::RemovePm(pm.id));
                     } else {
                         {
@@ -453,12 +462,24 @@ pub fn game_view(props: &GameViewProps) -> Html {
                                 submitted.push(key);
                             }
                         }
-                        let _ = tx.0.try_send(ClientMessage::BuyPiece {
-                            shop_pos: piece.position,
-                            item_index,
-                        });
+                        let _ = try_send_client_message(
+                            &tx,
+                            ClientMessage::BuyPiece {
+                                shop_pos: piece.position,
+                                item_index,
+                            },
+                            "failed to send BuyPiece",
+                        );
                         reducer.dispatch(GameAction::RemovePm(pm.id));
                     }
+                } else if let Some(pm) = pending_shop_pm {
+                    web_sys::console::error_1(
+                        &format!(
+                            "Shop action dropped: unresolved shop premove {} for piece {}",
+                            pm.id, pm.piece_id
+                        )
+                        .into(),
+                    );
                 }
                 || ()
             },
@@ -712,8 +733,11 @@ pub fn game_view(props: &GameViewProps) -> Html {
             });
 
             if let Some(p) = actual_piece_at_target {
-                let _ =
-                    tx.0.try_send(ClientMessage::ClearPremoves { piece_id: p.id });
+                let _ = try_send_client_message(
+                    &tx,
+                    ClientMessage::ClearPremoves { piece_id: p.id },
+                    "failed to send ClearPremoves",
+                );
                 reducer.dispatch(GameAction::ClearPm(p.id));
                 if selected_id == Some(p.id) {
                     selected_piece_id.set(None);
@@ -755,10 +779,14 @@ pub fn game_view(props: &GameViewProps) -> Html {
                                 moving_owner: p.owner_id,
                             })
                         {
-                            let _ = tx.0.try_send(ClientMessage::MovePiece {
-                                piece_id: sid,
-                                target: BoardCoord(target),
-                            });
+                            let _ = try_send_client_message(
+                                &tx,
+                                ClientMessage::MovePiece {
+                                    piece_id: sid,
+                                    target: BoardCoord(target),
+                                },
+                                "failed to send MovePiece",
+                            );
                             let pm_id = {
                                 let mut next_id = next_pm_id.borrow_mut();
                                 let id = *next_id;
@@ -844,6 +872,10 @@ pub fn game_view(props: &GameViewProps) -> Html {
         .values()
         .filter(|p| p.owner_id == Some(player_id))
         .count();
+    let queue_countdown_secs = queue_countdown_remaining_secs(
+        props.reducer.move_unlock_at,
+        props.reducer.clock_offset_ms,
+    );
     let mut ui_ghosts = props.reducer.state.pieces.clone();
     let _ = apply_visible_ghosts(
         &mut ui_ghosts,
@@ -877,18 +909,28 @@ pub fn game_view(props: &GameViewProps) -> Html {
         let shop_menu_context = shop_menu_context.clone();
         Callback::from(move |item_index: usize| {
             let Some(piece) = piece_on_shop.as_ref() else {
+                web_sys::console::error_1(
+                    &"Shop click ignored: no player piece is currently on a shop.".into(),
+                );
                 return;
             };
             let Some((shop_pos, shop_id, _)) = shop_menu_context.as_ref() else {
+                web_sys::console::error_1(&"Shop click ignored: no active shop context.".into());
                 return;
             };
             let Some(shop_config) = reducer.shop_configs.get(shop_id) else {
+                web_sys::console::error_1(
+                    &format!("Shop click ignored: missing shop config for {}.", shop_id).into(),
+                );
                 return;
             };
             if shop_config.auto_upgrade_single_item
                 && let Some(group) = common::logic::select_shop_group(shop_config, Some(piece))
                 && group.items.len() == 1
             {
+                web_sys::console::log_1(
+                    &"Shop click ignored: auto-upgrade shop has only one item.".into(),
+                );
                 return;
             }
             let pm_id = {
@@ -1166,6 +1208,15 @@ pub fn game_view(props: &GameViewProps) -> Html {
                 class="block w-full h-full"
             />
 
+            if let Some(remaining_secs) = queue_countdown_secs {
+                <div
+                    class="pointer-events-none absolute left-1/2 top-1/2"
+                    style="transform: translate(-50%, -50%); color: #fde047; font-size: clamp(42px, 9vw, 88px); font-weight: 900; line-height: 1; text-shadow: 0 2px 0 rgba(0,0,0,0.55); z-index: 120;"
+                >
+                    {remaining_secs.to_string()}
+                </div>
+            }
+
             <div class="absolute top-4 left-4 flex flex-col gap-2 pointer-events-none">
                 <div class="bg-white/90 backdrop-blur px-3 py-1.5 rounded-lg border border-slate-200"
                      style="box-shadow: 4px 4px 0 rgba(15, 23, 42, 0.2);">
@@ -1249,4 +1300,22 @@ impl ActiveShopMenuQuery<'_> {
             .submitted_shop_actions
             .contains(&(piece.id, shop_position))
     }
+}
+
+fn try_send_client_message(tx: &MsgSender, message: ClientMessage, context: &str) -> bool {
+    if tx.0.try_send(message).is_err() {
+        web_sys::console::error_1(&context.into());
+        return false;
+    }
+    true
+}
+
+fn queue_countdown_remaining_secs(
+    move_unlock_at: Option<TimestampMs>,
+    clock_offset_ms: i64,
+) -> Option<u64> {
+    let unlock_at = move_unlock_at?;
+    let now = TimestampMs::from_millis(js_sys::Date::now() as i64 + clock_offset_ms);
+    let remaining = unlock_at - now;
+    (remaining > DurationMs::zero()).then_some(remaining.as_u64().div_ceil(1000))
 }

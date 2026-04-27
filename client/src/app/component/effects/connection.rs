@@ -90,7 +90,11 @@ pub fn use_mode_url_navigation_effect(
                 if should_leave_current_session(&reducer)
                     && let Some(sender) = tx_ref.borrow().as_ref()
                 {
-                    let _ = sender.0.try_send(ClientMessage::Leave);
+                    if let Err(error) = sender.0.try_send(ClientMessage::Leave) {
+                        web_sys::console::error_1(
+                            &format!("Failed to send Leave while navigating modes: {error}").into(),
+                        );
+                    }
                 }
 
                 rejoin_flow.set(RejoinFlow::Inactive);
@@ -135,13 +139,22 @@ pub fn use_ws_connection_effect(
         tx_handle.set(Some(sender.clone()));
 
         let ping_sender = sender.clone();
-        let _ = ping_sender
+        if let Err(error) = ping_sender
             .0
-            .try_send(ClientMessage::Ping(js_sys::Date::now() as u64));
+            .try_send(ClientMessage::Ping(js_sys::Date::now() as u64))
+        {
+            web_sys::console::error_1(
+                &format!("Initial ping send failed: {error}").into(),
+            );
+        }
         let ping_interval_ms = global_cfg.ping_interval_ms.max(500);
         let ping_interval = Interval::new(ping_interval_ms, move || {
             let now = js_sys::Date::now() as u64;
-            let _ = ping_sender.0.try_send(ClientMessage::Ping(now));
+            if let Err(error) = ping_sender.0.try_send(ClientMessage::Ping(now)) {
+                web_sys::console::error_1(
+                    &format!("Periodic ping send failed: {error}").into(),
+                );
+            }
         });
 
         let listener_reducer_ref = reducer_ref.clone();

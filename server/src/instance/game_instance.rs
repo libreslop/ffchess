@@ -38,6 +38,7 @@ pub struct GameInstance {
     pub color_manager: RwLock<ColorManager>,
     pub last_viewed_at: RwLock<TimestampMs>,
     pub last_started_at: RwLock<TimestampMs>,
+    pub move_unlock_at: RwLock<Option<TimestampMs>>,
     pub death_timestamps: RwLock<HashMap<PlayerId, TimestampMs>>,
     pub(super) hook_events: RwLock<HookEventBuffer>,
     pub(super) queued_moves: RwLock<HashMap<PieceId, VecDeque<QueuedMoveRequest>>>,
@@ -89,6 +90,21 @@ impl GameInstance {
     /// Returns the last time this instance transitioned from empty to active.
     pub async fn last_started_at(&self) -> TimestampMs {
         *self.last_started_at.read().await
+    }
+
+    /// Returns the timestamp when player move execution is unlocked.
+    pub async fn move_unlock_at(&self) -> Option<TimestampMs> {
+        *self.move_unlock_at.read().await
+    }
+
+    /// Starts a queue countdown if configured for this mode instance.
+    pub async fn start_queue_countdown(&self) {
+        let countdown = self.mode_config.queue_countdown_ms;
+        if countdown <= common::types::DurationMs::zero() {
+            *self.move_unlock_at.write().await = None;
+            return;
+        }
+        *self.move_unlock_at.write().await = Some(now_ms() + countdown);
     }
 
     /// Registers a passive connection channel for lobby/observer updates.
@@ -196,6 +212,7 @@ impl GameInstance {
             color_manager: RwLock::new(ColorManager::new()),
             last_viewed_at: RwLock::new(now),
             last_started_at: RwLock::new(now),
+            move_unlock_at: RwLock::new(None),
             death_timestamps: RwLock::new(HashMap::new()),
             hook_events: RwLock::new(HookEventBuffer::default()),
             queued_moves: RwLock::new(HashMap::new()),

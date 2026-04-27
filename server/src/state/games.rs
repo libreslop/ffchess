@@ -43,10 +43,12 @@ impl ServerState {
             .map(|mode| mode.to_client_config())
             .unwrap_or_else(|| instance.client_mode_config());
         let mut state = instance.game.read().await.clone();
+        let move_unlock_at = instance.move_unlock_at().await;
         state.mode_id = instance.public_mode_id().clone();
         let _ = tx.try_send(ServerMessage::Init {
             player_id,
             session_secret,
+            move_unlock_at,
             state: Box::new(state),
             mode,
             pieces: instance.piece_config_snapshot(),

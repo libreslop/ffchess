@@ -163,6 +163,7 @@ impl ServerState {
             self.piece_configs.clone(),
             self.shop_configs.clone(),
         ));
+        match_instance.start_queue_countdown().await;
         match_instance.spawn_initial_shops().await;
 
         self.games

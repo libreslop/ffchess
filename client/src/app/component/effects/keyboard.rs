@@ -25,6 +25,7 @@ pub struct KeyboardShortcutEffectInputs {
     pub player_name: UseStateHandle<String>,
     pub has_interacted: UseStateHandle<bool>,
     pub on_join: Callback<KitId>,
+    pub on_cycle_mode: Callback<i32>,
     pub on_rejoin: Callback<MouseEvent>,
     pub rc_ref: Rc<RefCell<CooldownSeconds>>,
 }
@@ -45,6 +46,7 @@ pub fn use_keyboard_shortcuts_effect(inputs: KeyboardShortcutEffectInputs) {
         player_name,
         has_interacted,
         on_join,
+        on_cycle_mode,
         on_rejoin,
         rc_ref,
     } = inputs;
@@ -53,6 +55,7 @@ pub fn use_keyboard_shortcuts_effect(inputs: KeyboardShortcutEffectInputs) {
     let landing_cooldown = landing_cooldown.clone();
     let has_interacted = has_interacted.clone();
     let on_join = on_join.clone();
+    let on_cycle_mode = on_cycle_mode.clone();
     let on_rejoin = on_rejoin.clone();
     let rc_ref = rc_ref.clone();
 
@@ -70,6 +73,7 @@ pub fn use_keyboard_shortcuts_effect(inputs: KeyboardShortcutEffectInputs) {
         ),
         move |&(joined, dead, victory, step, lc, disc, queueing, ref kits, ref single_kit)| {
             let on_join = on_join.clone();
+            let on_cycle_mode = on_cycle_mode.clone();
             let on_rejoin = on_rejoin.clone();
             let rc_ref = rc_ref.clone();
             let kits = kits.clone();
@@ -78,6 +82,18 @@ pub fn use_keyboard_shortcuts_effect(inputs: KeyboardShortcutEffectInputs) {
             let listener = EventListener::new(&web_sys::window().unwrap(), "keydown", move |e| {
                 let e = e.dyn_ref::<web_sys::KeyboardEvent>().unwrap();
                 let key = e.key();
+                if !joined
+                    && !dead
+                    && !victory
+                    && step.is_enter_name()
+                    && !disc
+                    && !queueing
+                    && (key == "ArrowUp" || key == "ArrowDown")
+                {
+                    e.prevent_default();
+                    on_cycle_mode.emit(if key == "ArrowUp" { -1 } else { 1 });
+                    return;
+                }
                 if key == "Enter" {
                     if !joined && !dead && !victory {
                         try_submit_join(JoinShortcutContext {

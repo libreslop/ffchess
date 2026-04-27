@@ -5,13 +5,16 @@ use common::models::{
     GameModeClientConfig, GameState, Piece, PieceConfig, Player, Shop, ShopConfig,
 };
 use common::protocol::{GameError, VictoryFocusTarget};
-use common::types::{BoardSize, PieceId, PieceTypeId, PlayerId, Score, SessionSecret, ShopId};
+use common::types::{
+    BoardSize, PieceId, PieceTypeId, PlayerId, Score, SessionSecret, ShopId, TimestampMs,
+};
 use std::collections::HashMap;
 
 /// Initial game snapshot payload delivered on connect.
 pub struct InitPayload {
     pub player_id: PlayerId,
     pub session_secret: SessionSecret,
+    pub move_unlock_at: Option<TimestampMs>,
     pub state: GameState,
     pub mode: GameModeClientConfig,
     pub pieces: HashMap<PieceTypeId, PieceConfig>,

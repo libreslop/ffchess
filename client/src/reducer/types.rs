@@ -4,6 +4,7 @@ use common::models::{GameModeClientConfig, GameState, PieceConfig, ShopConfig};
 use common::protocol::{ClientMessage, GameError, VictoryFocusTarget};
 use common::types::{
     PieceId, PieceTypeId, PlayerCount, PlayerId, QueuePosition, Score, SessionSecret, ShopId,
+    TimestampMs,
 };
 use glam::IVec2;
 use std::collections::HashMap;
@@ -53,6 +54,7 @@ pub struct GameStateReducer {
     pub shop_configs: HashMap<ShopId, ShopConfig>,
     pub player_id: Option<PlayerId>,
     pub session_secret: Option<SessionSecret>,
+    pub move_unlock_at: Option<TimestampMs>,
     pub error: Option<GameError>,
     pub pm_queue: Vec<Pmove>,
     pub last_score: Score,

@@ -1,6 +1,6 @@
 //! Piece drawing routines for the canvas renderer.
 
-use crate::canvas::color::{PieceIconColors, piece_icon_colors};
+use crate::canvas::color::{NPC_PIECE_COLOR, PieceIconColors, piece_icon_colors};
 use crate::canvas::types::{PieceDrawParams, PieceNameDrawParams, PieceSvgKey, Renderer};
 use crate::math::{Vec2, vec2};
 use common::types::PieceTypeId;
@@ -76,7 +76,7 @@ impl Renderer {
                     .get(&owner_id)
                     .map(|player| player.color.as_ref().to_string())
             })
-            .unwrap_or_else(|| "#555555".to_string())
+            .unwrap_or_else(|| NPC_PIECE_COLOR.to_string())
     }
 
     fn draw_piece_fallback(

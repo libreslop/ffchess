@@ -8,6 +8,9 @@ pub(crate) struct PieceIconColors {
     pub tertiary: String,
 }
 
+/// Default color used for neutral NPC-owned piece rendering.
+pub const NPC_PIECE_COLOR: &str = "#555555";
+
 /// Converts a hex color string into an rgba() CSS string.
 ///
 /// `hex` is a `#rgb` or `#rrggbb` string, `alpha` is the opacity.

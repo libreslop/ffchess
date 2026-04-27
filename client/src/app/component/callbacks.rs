@@ -85,6 +85,11 @@ pub fn build_on_join(
                 player_id: stored_id,
                 session_secret: stored_secret,
             });
+            if let Err(error) = &join_result {
+                web_sys::console::error_1(
+                    &format!("Join request could not be sent: {error}").into(),
+                );
+            }
             is_joining.set(join_result.is_ok());
         } else {
             is_joining.set(false);

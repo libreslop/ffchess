@@ -22,6 +22,7 @@ pub struct JoinScreenProps {
     pub mode_options: Vec<ModeSummary>,
     pub selected_mode_id: ModeId,
     pub on_select_mode: Callback<ModeId>,
+    pub on_cycle_mode: Callback<i32>,
 }
 
 #[function_component(JoinScreen)]
@@ -65,6 +66,19 @@ pub fn join_screen(props: &JoinScreenProps) -> Html {
                     <form onsubmit={props.on_name_submit.clone()}>
                         <div style="display: flex; flex-direction: column; gap: 15px; align-items: center;">
                             <input type="text" name="player_name" value={props.player_name.clone()} oninput={props.on_name_input.clone()} placeholder="This is a tale of..." autofocus=true
+                                autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+                                onkeydown={{
+                                    let on_cycle_mode = props.on_cycle_mode.clone();
+                                    Callback::from(move |e: KeyboardEvent| {
+                                        if e.key() == "ArrowUp" {
+                                            e.prevent_default();
+                                            on_cycle_mode.emit(-1);
+                                        } else if e.key() == "ArrowDown" {
+                                            e.prevent_default();
+                                            on_cycle_mode.emit(1);
+                                        }
+                                    })
+                                }}
                                 style="padding: 12px 20px; border-radius: 0; border: 2px solid #cbd5e1; width: 100%; box-sizing: border-box; font-size: 1.2em; outline: none; background: #fff; text-align: center;"/>
                             <button type="submit" disabled={props.landing_cooldown.is_active() || props.is_loading}
                                 style={format!("padding: 10px 40px; background: {}; color: #fff; border: 3px solid {}; border-radius: 0; font-weight: 900; cursor: {}; font-size: 1.2em; width: auto; text-transform: uppercase; letter-spacing: 1px;",

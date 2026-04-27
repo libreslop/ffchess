@@ -22,6 +22,8 @@ pub struct GameModeClientConfig {
     pub display_name: String,
     #[educe(Default = PlayerCount::zero())]
     pub queue_players: PlayerCount,
+    #[educe(Default = DurationMs::zero())]
+    pub queue_countdown_ms: DurationMs,
     #[educe(Default = ExprString::from("0"))]
     pub camera_pan_limit: ExprString,
     #[educe(Default = None)]

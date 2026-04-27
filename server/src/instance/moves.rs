@@ -24,6 +24,10 @@ impl GameInstance {
         piece_id: PieceId,
         target: BoardCoord,
     ) -> Result<(), GameError> {
+        let moves_locked = self
+            .move_unlock_at()
+            .await
+            .is_some_and(|unlock_at| now_ms() < unlock_at);
         let should_queue = {
             let game = self.game.read().await;
             let piece = game.pieces.get(&piece_id).ok_or(GameError::PieceNotFound)?;
@@ -31,7 +35,7 @@ impl GameInstance {
                 return Err(GameError::NotYourPiece);
             }
             let elapsed = now_ms() - piece.last_move_time;
-            elapsed < piece.cooldown_ms
+            moves_locked || elapsed < piece.cooldown_ms
         };
 
         if should_queue || self.piece_has_queued_moves(piece_id).await {
@@ -66,6 +70,14 @@ impl GameInstance {
 
     /// Tries to execute server-queued premoves for pieces whose cooldown has elapsed.
     pub async fn process_queued_moves(&self) {
+        if self
+            .move_unlock_at()
+            .await
+            .is_some_and(|unlock_at| now_ms() < unlock_at)
+        {
+            return;
+        }
+
         let mut game = self.game.write().await;
         let mut queued_moves = self.queued_moves.write().await;
         let mut move_errors = Vec::<(PlayerId, GameError)>::new();

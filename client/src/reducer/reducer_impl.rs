@@ -21,6 +21,7 @@ impl Reducible for GameStateReducer {
                 let InitPayload {
                     player_id,
                     session_secret,
+                    move_unlock_at,
                     state,
                     mode,
                     pieces,
@@ -29,6 +30,7 @@ impl Reducible for GameStateReducer {
                 } = *payload;
                 next.player_id = Some(player_id);
                 next.session_secret = Some(session_secret);
+                next.move_unlock_at = move_unlock_at;
                 next.state = state;
                 next.mode = Some(mode);
                 next.piece_configs = pieces;
@@ -74,7 +76,20 @@ impl Reducible for GameStateReducer {
             }
             GameAction::SetError(e) => {
                 next.error = (!matches!(e, GameError::TargetFriendly)).then_some(e.clone());
-                if is_move_error(&e)
+                if matches!(e, GameError::PieceNotFound) {
+                    let before = next.pm_queue.len();
+                    next.pm_queue
+                        .retain(|pm| next.state.pieces.contains_key(&pm.piece_id));
+                    if before != next.pm_queue.len() {
+                        web_sys::console::error_1(
+                            &format!(
+                                "Dropped {} stale premoves after PieceNotFound.",
+                                before - next.pm_queue.len()
+                            )
+                            .into(),
+                        );
+                    }
+                } else if is_move_error(&e)
                     && !next.pm_queue.is_empty()
                     && let Some(index) = next
                         .pm_queue
@@ -158,6 +173,7 @@ impl Reducible for GameStateReducer {
             GameAction::Reset => {
                 next.player_id = Some(PlayerId::nil());
                 next.session_secret = None;
+                next.move_unlock_at = None;
                 next.state = next.menu_preview_state.clone().unwrap_or_default();
                 next.pm_queue.clear();
                 next.error = None;

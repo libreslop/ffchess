@@ -172,6 +172,28 @@ pub fn app() -> Html {
 
     let disconnected = reducer.disconnected;
     let queueing = is_queueing;
+    let on_cycle_mode = {
+        let mode_options = mode_options.clone();
+        let current_mode_id = current_mode_id.clone();
+        Callback::from(move |delta: i32| {
+            let options = (*mode_options).clone();
+            if options.is_empty() {
+                return;
+            }
+            let current_id = (*current_mode_id).clone();
+            let current_index = options
+                .iter()
+                .position(|mode| mode.id == current_id)
+                .unwrap_or(0) as i32;
+            let len = options.len() as i32;
+            let next_index = (current_index + delta).rem_euclid(len) as usize;
+            if let Some(next_mode) = options.get(next_index) {
+                let window = web_sys::window().unwrap();
+                let _ = window.location().set_hash(&format!("#{}", next_mode.id.as_ref()));
+            }
+        })
+    };
+
     use_keyboard_shortcuts_effect(KeyboardShortcutEffectInputs {
         is_joined,
         is_dead,
@@ -185,6 +207,7 @@ pub fn app() -> Html {
         player_name: player_name.clone(),
         has_interacted: has_interacted.clone(),
         on_join: on_join.clone(),
+        on_cycle_mode: on_cycle_mode.clone(),
         on_rejoin: on_rejoin.clone(),
         rc_ref: rc_ref.clone(),
     });
@@ -219,6 +242,7 @@ pub fn app() -> Html {
         mode_options: (*mode_options).clone(),
         selected_mode_id: (*current_mode_id).clone(),
         on_select_mode,
+        on_cycle_mode,
         on_rejoin,
         rejoin_cooldown: *rejoin_cooldown,
     };
@@ -287,6 +311,9 @@ fn selected_mode_name(
 }
 
 fn local_team_color(reducer: &GameStateReducer) -> Option<String> {
+    if reducer.phase != ClientPhase::Alive || reducer.is_dead || reducer.is_victory {
+        return None;
+    }
     reducer
         .player_id
         .and_then(|player_id| reducer.state.players.get(&player_id))

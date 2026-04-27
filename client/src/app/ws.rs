@@ -31,19 +31,29 @@ pub async fn connect_ws(
 
             spawn_local(async move {
                 while let Some(m) = internal_rx.recv().await {
-                    let _ = write.send(m).await;
+                    if let Err(error) = write.send(m).await {
+                        web_sys::console::error_1(
+                            &format!("WebSocket send failed: {error}").into(),
+                        );
+                    }
                 }
             });
 
             while let Some(msg) = read.next().await {
-                if let Ok(Message::Text(text)) = msg
-                    && let Ok(server_msg) = serde_json::from_str::<ServerMessage>(&text)
-                {
-                    let current_reducer = listener_reducer_ref.borrow().clone();
-                    current_reducer.dispatch(match server_msg {
+                match msg {
+                    Ok(Message::Text(text)) => {
+                        let Ok(server_msg) = serde_json::from_str::<ServerMessage>(&text) else {
+                            web_sys::console::error_1(
+                                &format!("Failed to decode server message: {text}").into(),
+                            );
+                            continue;
+                        };
+                        let current_reducer = listener_reducer_ref.borrow().clone();
+                        current_reducer.dispatch(match server_msg {
                         ServerMessage::Init {
                             player_id,
                             session_secret,
+                            move_unlock_at,
                             state,
                             mode,
                             pieces,
@@ -58,6 +68,7 @@ pub async fn connect_ws(
                             GameAction::SetInit(Box::new(InitPayload {
                                 player_id,
                                 session_secret,
+                                move_unlock_at,
                                 state,
                                 mode,
                                 pieces,
@@ -132,7 +143,14 @@ pub async fn connect_ws(
                             time_survived_secs,
                         },
                         ServerMessage::Pong(t, server_time) => GameAction::Pong(t, server_time),
-                    });
+                        });
+                    }
+                    Ok(_) => {}
+                    Err(error) => {
+                        web_sys::console::error_1(
+                            &format!("WebSocket receive failed: {error}").into(),
+                        );
+                    }
                 }
             }
             *current_ws_tx.borrow_mut() = None;
@@ -147,6 +165,7 @@ pub async fn connect_ws(
             }
             gloo_timers::future::TimeoutFuture::new(1500).await;
         } else {
+            web_sys::console::error_1(&"WebSocket open failed; retrying.".into());
             // Avoid tight spin if socket creation fails
             let current_reducer = listener_reducer_ref.borrow().clone();
             if !current_reducer.disconnected && !current_reducer.fatal_error {

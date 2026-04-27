@@ -1,9 +1,9 @@
 //! Browser page metadata helpers.
 
+use crate::canvas::color::NPC_PIECE_COLOR;
 use crate::canvas::color::piece_icon_colors;
 
 const APP_TITLE: &str = "FFChess";
-const DEFAULT_TEAM_COLOR: &str = "#dc2626";
 const KING_FAVICON_TEMPLATE: &str = include_str!("../../../assets/pieces/king.svg");
 
 /// Browser metadata derived from the selected mode and the local player's team.
@@ -36,7 +36,7 @@ impl PageMetadata {
     }
 
     fn favicon_color(&self) -> &str {
-        self.team_color.as_deref().unwrap_or(DEFAULT_TEAM_COLOR)
+        self.team_color.as_deref().unwrap_or(NPC_PIECE_COLOR)
     }
 }
 

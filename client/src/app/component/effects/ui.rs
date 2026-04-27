@@ -208,9 +208,13 @@ pub fn use_preview_default_effect(
                     return;
                 }
                 *last_sent = Some(should_force);
-                let _ = sender.0.try_send(ClientMessage::SetPreviewDefault {
+                if let Err(error) = sender.0.try_send(ClientMessage::SetPreviewDefault {
                     enabled: should_force,
-                });
+                }) {
+                    web_sys::console::error_1(
+                        &format!("Failed to send SetPreviewDefault: {error}").into(),
+                    );
+                }
             }
         },
     );

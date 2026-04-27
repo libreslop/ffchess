@@ -50,6 +50,7 @@ pub enum ServerMessage {
     Init {
         player_id: PlayerId,
         session_secret: SessionSecret,
+        move_unlock_at: Option<TimestampMs>,
         state: Box<GameState>,
         mode: GameModeClientConfig,
         pieces: HashMap<PieceTypeId, PieceConfig>,
