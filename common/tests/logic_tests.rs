@@ -240,7 +240,7 @@ fn test_select_shop_group_by_piece_type() {
         applies_to: vec![pawn_id.clone()],
         items: vec![ShopItemConfig {
             display_name: "Pawn Upgrade".to_string(),
-            price_expr: ExprString::from("1"),
+            price_expr: Some(ExprString::from("1")),
             replace_with: None,
             add_pieces: vec![],
         }],

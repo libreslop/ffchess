@@ -8,26 +8,26 @@
             "applies_to": ["bullet_pawn_northbound_moved", "bullet_pawn_southbound_moved"],
             "items": [
                 {
-                    "display_name": "Promote to Queen",
-                    "price_expr": "250 + player_piece_count * 20",
+                    "display_name": "Queen",
+                    "price_expr": null,
                     "replace_with": "bullet_queen",
                     "add_pieces": []
                 },
                 {
-                    "display_name": "Promote to Rook",
-                    "price_expr": "100 + player_piece_count * 10",
+                    "display_name": "Rook",
+                    "price_expr": null,
                     "replace_with": "bullet_rook",
                     "add_pieces": []
                 },
                 {
-                    "display_name": "Promote to Bishop",
-                    "price_expr": "50 + player_piece_count * 5",
+                    "display_name": "Bishop",
+                    "price_expr": null,
                     "replace_with": "bullet_bishop",
                     "add_pieces": []
                 },
                 {
-                    "display_name": "Promote to Knight",
-                    "price_expr": "50 + player_piece_count * 5",
+                    "display_name": "Knight",
+                    "price_expr": null,
                     "replace_with": "bullet_knight",
                     "add_pieces": []
                 }

@@ -9,7 +9,7 @@
             "items": [
                 {
                     "display_name": "Advance Discipline",
-                    "price_expr": "0",
+                    "price_expr": null,
                     "replace_with": "bullet_pawn_southbound_moved",
                     "add_pieces": []
                 }

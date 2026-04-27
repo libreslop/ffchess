@@ -264,7 +264,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
                 if let Some(renderer) = renderer_state.as_ref() {
                     let selected_piece_id = if *has_match_result { None } else { *sid };
                     let mut ghosts = state.pieces.clone();
-                    apply_visible_ghosts(&mut ghosts, pm_queue, state);
+                    apply_visible_ghosts(&mut ghosts, pm_queue, state, shop_configs);
                     let visible_pm: Vec<_> = pm_queue
                         .iter()
                         .filter(|pm| pm_visible(pm, state))
@@ -415,7 +415,12 @@ pub fn game_view(props: &GameViewProps) -> Html {
 
             if !input.is_right_click && is_within_board(BoardCoord(target), board_size) {
                 let mut ghosts = reducer.state.pieces.clone();
-                apply_visible_ghosts(&mut ghosts, &reducer.pm_queue, &reducer.state);
+                apply_visible_ghosts(
+                    &mut ghosts,
+                    &reducer.pm_queue,
+                    &reducer.state,
+                    &reducer.shop_configs,
+                );
 
                 if ghosts.values().any(|p| p.position == target) {
                     is_interactive = true;
@@ -561,7 +566,12 @@ pub fn game_view(props: &GameViewProps) -> Html {
             }
 
             let mut current_ghosts = reducer.state.pieces.clone();
-            apply_visible_ghosts(&mut current_ghosts, &reducer.pm_queue, &reducer.state);
+            apply_visible_ghosts(
+                &mut current_ghosts,
+                &reducer.pm_queue,
+                &reducer.state,
+                &reducer.shop_configs,
+            );
             let selected_id = *selected_piece_id;
 
             // Check if clicking on an ACTUAL piece that has premoves (to clear them)

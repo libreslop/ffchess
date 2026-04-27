@@ -100,7 +100,11 @@ impl GameInstance {
             }),
         );
 
-        let price = Score::from(common::logic::evaluate_expression(&item.price_expr, &vars) as u64);
+        let price = item
+            .price_expr
+            .as_ref()
+            .map(|expr| Score::from(common::logic::evaluate_expression(expr, &vars) as u64))
+            .unwrap_or_else(Score::zero);
 
         let player = game
             .players

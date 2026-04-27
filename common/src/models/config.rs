@@ -22,7 +22,7 @@ pub struct PieceConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ShopItemConfig {
     pub display_name: String,
-    pub price_expr: ExprString,
+    pub price_expr: Option<ExprString>,
     pub replace_with: Option<PieceTypeId>,
     pub add_pieces: Vec<PieceTypeId>,
 }

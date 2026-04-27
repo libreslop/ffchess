@@ -49,7 +49,7 @@ async fn shop_purchase_deducts_score_and_adds_piece() {
             applies_to: vec![],
             items: vec![ShopItemConfig {
                 display_name: "Hire Pawn".to_string(),
-                price_expr: ExprString::from("10"),
+                price_expr: Some(ExprString::from("10")),
                 replace_with: None,
                 add_pieces: vec![PieceTypeId::from("pawn")],
             }],

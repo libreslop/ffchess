@@ -30,13 +30,13 @@ The `shop_id` is automatically derived from the filename stem (e.g., `spawn_shop
 | Attribute | Type | Description | Optional | Default |
 |-----------|------|-------------|----------|---------|
 | `display_name` | `String` | The name of the item. | No | - |
-| `price_expr` | `String` | A mathematical expression for the price. Can use variables (see below). | No | - |
+| `price_expr` | `String \| null` | A mathematical expression for the price. `null` means free (`0`) and hides the price tag in UI. Can use variables (see below). | Yes | `null` |
 | `replace_with` | `String (piece_id)` | If set, the current piece at the shop is replaced with this type. | Yes | `null` |
 | `add_pieces` | `Array<String>` | List of `piece_id`s to add to the player's collection. | Yes | `[]` |
 
 ### Pricing Expressions
 
-The `price_expr` is evaluated using a simple math expression parser. Available variables:
+When set, `price_expr` is evaluated using a simple math expression parser. Available variables:
 - `player_piece_count`: Total number of pieces owned by the player.
 - `<piece_id>_count`: Number of pieces of a specific type owned by the player (e.g., `pawn_count`).
 

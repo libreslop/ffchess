@@ -46,7 +46,11 @@ pub fn shop_ui(props: &ShopUIProps) -> Html {
             <div style="display: flex; gap: 4px; flex-wrap: wrap; justify-content: center; pointer-events: auto;">
                 {
                     group.items.iter().enumerate().map(|(idx, item)| {
-                        let price = Score::from(common::logic::evaluate_expression(&item.price_expr, &vars) as u64);
+                        let price = item
+                            .price_expr
+                            .as_ref()
+                            .map(|expr| Score::from(common::logic::evaluate_expression(expr, &vars) as u64))
+                            .unwrap_or_else(Score::zero);
                         let can_afford = props.player_score >= price;
                         let shop_pos = props.shop_pos;
                         let tx = props.tx.clone();
@@ -72,9 +76,11 @@ pub fn shop_ui(props: &ShopUIProps) -> Html {
                                 <span style="font-size: 0.7rem; font-weight: 900; line-height: 1.1; text-align: center; margin-bottom: 2px; text-transform: uppercase;">
                                     { &item.display_name }
                                 </span>
-                                <span style="font-size: 0.65rem; font-family: monospace; font-weight: 600;">
-                                    { price.to_string() }
-                                </span>
+                                if item.price_expr.is_some() {
+                                    <span style="font-size: 0.65rem; font-family: monospace; font-weight: 600;">
+                                        { price.to_string() }
+                                    </span>
+                                }
                             </button>
                         }
                     }).collect::<Html>()
