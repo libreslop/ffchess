@@ -40,6 +40,10 @@ pub enum GameAction {
     SetQueueStatus(QueueStatus),
     UpdateState(Box<UpdateStatePayload>),
     PushChatLine(ChatLine),
+    PruneExpiredChat {
+        now: TimestampMs,
+        ttl_ms: u32,
+    },
     SetError(GameError),
     SetVictory {
         title: String,

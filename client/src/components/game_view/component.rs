@@ -63,6 +63,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
     let chat_input_ref = use_node_ref();
     let chat_log_ref = use_node_ref();
     let chat_text = use_state(String::new);
+    let chat_now_ms = use_state(|| js_sys::Date::now() as i64);
 
     // Drive a steady render heartbeat with requestAnimationFrame so visual elements (e.g., cooldown bars) update every frame
     {
@@ -138,6 +139,31 @@ pub fn game_view(props: &GameViewProps) -> Html {
             chat_text.set(String::new());
             || ()
         });
+    }
+
+    {
+        let reducer = props.reducer.clone();
+        let chat_now_ms = chat_now_ms.clone();
+        let chat_ttl_ms = props.globals.chat_message_ttl_ms;
+        let clock_offset_ms = props.reducer.clock_offset_ms;
+        use_effect_with(
+            (
+                chat_ttl_ms,
+                clock_offset_ms,
+                props.reducer.chat_room_key.clone(),
+            ),
+            move |_| {
+                let interval = gloo_timers::callback::Interval::new(250, move || {
+                    let now = js_sys::Date::now() as i64 + clock_offset_ms;
+                    chat_now_ms.set(now);
+                    reducer.dispatch(GameAction::PruneExpiredChat {
+                        now: TimestampMs::from_millis(now),
+                        ttl_ms: chat_ttl_ms,
+                    });
+                });
+                move || drop(interval)
+            },
+        );
     }
 
     // Initialize renderer when canvas is bound
@@ -923,6 +949,10 @@ pub fn game_view(props: &GameViewProps) -> Html {
         .values()
         .filter(|p| p.owner_id == Some(player_id))
         .count();
+    let chat_char_count = (*chat_text).chars().count() as u32;
+    let chat_max_chars = props.globals.chat_message_max_chars.max(1);
+    let chat_warning_chars = props.globals.chat_warning_chars.min(chat_max_chars);
+    let show_chat_counter = chat_char_count >= chat_warning_chars;
     let queue_countdown_secs =
         queue_countdown_remaining_secs(props.reducer.move_unlock_at, props.reducer.clock_offset_ms);
     let mut ui_ghosts = props.reducer.state.pieces.clone();
@@ -1346,25 +1376,29 @@ pub fn game_view(props: &GameViewProps) -> Html {
             <div
                 data-ui-exempt="true"
                 data-chat-ui="true"
-                style="position: absolute; right: 12px; bottom: 12px; width: min(420px, calc(100vw - 24px)); max-height: 38vh; display: flex; flex-direction: column; gap: 8px; z-index: 160;"
+                style="position: absolute; left: 12px; bottom: 12px; width: min(460px, calc(100vw - 24px)); max-height: 38vh; display: flex; flex-direction: column; gap: 0; z-index: 160;"
             >
                 <div
                     data-chat-ui="true"
                     ref={chat_log_ref}
-                    style="border-radius: 6px; border: 1px solid #cbd5e1; background: rgba(255, 255, 255, 0.88); backdrop-filter: blur(4px); padding: 8px; overflow-y: auto; box-shadow: 0 4px 16px rgba(15,23,42,0.20);"
+                    style="padding: 0; overflow-y: auto;"
                 >
                     {
                         if props.reducer.chat_lines.is_empty() {
-                            html! { <div style="font-size: 12px; color: #64748b;">{"No messages yet."}</div> }
+                            html! {}
                         } else {
                             html! {
                                 for props.reducer.chat_lines.iter().map(|line| {
+                                    let ttl_ms = props.globals.chat_message_ttl_ms.max(1) as i64;
+                                    let age_ms = (*chat_now_ms).saturating_sub(line.sent_at.as_i64());
+                                    let remaining_ratio = 1.0f64 - (age_ms.max(0) as f64 / ttl_ms as f64);
+                                    let opacity = remaining_ratio.clamp(0.0, 1.0);
                                     html! {
-                                        <div style="font-size: 12px; line-height: 1.6; overflow-wrap: anywhere;">
+                                        <div style={format!("font-size: 12px; line-height: 1.6; min-height: 1.6em; overflow-wrap: anywhere; color: #ffffff; text-shadow: 2px 2px 0 rgba(0,0,0,0.75); opacity: {:.3};", opacity)}>
                                             <span style={format!("color: {}; font-weight: 700;", line.sender_color.as_ref())}>
-                                                {format!("[{}]", line.sender_name)}
+                                                {line.sender_name.clone()}
                                             </span>
-                                            <span style="color: #0f172a;">{" : "}{line.message.clone()}</span>
+                                            <span>{" : "}{line.message.clone()}</span>
                                         </div>
                                     }
                                 })
@@ -1373,20 +1407,36 @@ pub fn game_view(props: &GameViewProps) -> Html {
                     }
                 </div>
                 <form data-chat-ui="true" onsubmit={on_chat_submit}>
-                    <input
-                        ref={chat_input_ref}
-                        data-ui-exempt="true"
-                        data-chat-ui="true"
-                        data-chat-input="true"
-                        type="text"
-                        value={(*chat_text).clone()}
-                        oninput={chat_on_input}
-                        onkeydown={chat_on_keydown}
-                        maxlength="280"
-                        placeholder={props.reducer.chat_room_key.clone().map(|key| format!("Chat ({key})")).unwrap_or_else(|| "Chat".to_string())}
-                        style="width: 100%; border-radius: 6px; border: 1px solid #cbd5e1; background: rgba(255,255,255,0.9); color: #0f172a; font-size: 14px; padding: 8px 10px; outline: none;"
-                        autocomplete="off"
-                    />
+                    <div data-chat-ui="true" style="position: relative; min-height: 1.6em;">
+                        <input
+                            ref={chat_input_ref}
+                            data-ui-exempt="true"
+                            data-chat-ui="true"
+                            data-chat-input="true"
+                            type="text"
+                            value={(*chat_text).clone()}
+                            oninput={chat_on_input}
+                            onkeydown={chat_on_keydown}
+                            maxlength={chat_max_chars.to_string()}
+                            placeholder={props.reducer.chat_room_key.clone().map(|key| format!("Chat ({key})")).unwrap_or_else(|| "Chat".to_string())}
+                            style="width: 100%; border: 0; background: transparent; color: #ffffff; text-shadow: 2px 2px 0 rgba(0,0,0,0.75); font-size: 12px; line-height: 1.6; min-height: 1.6em; padding: 0; padding-right: 68px; outline: none;"
+                            autocomplete="off"
+                        />
+                        {
+                            if show_chat_counter {
+                                html! {
+                                    <span
+                                        data-chat-ui="true"
+                                        style="position: absolute; right: 0; top: 0; font-size: 12px; line-height: 1.6; color: #ffffff; text-shadow: 2px 2px 0 rgba(0,0,0,0.75); pointer-events: none;"
+                                    >
+                                        {format!("{}/{}", chat_char_count, chat_max_chars)}
+                                    </span>
+                                }
+                            } else {
+                                html! {}
+                            }
+                        }
+                    </div>
                 </form>
             </div>
 

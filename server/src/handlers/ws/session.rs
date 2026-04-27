@@ -1,4 +1,5 @@
 use crate::state::{MatchQueueEntry, QueueJoinResult, ServerState};
+use crate::time::now_ms;
 use crate::types::ConnectionId;
 use common::protocol::{ChatLine, ClientMessage, GameError, ServerMessage};
 use common::types::ColorHex;
@@ -302,7 +303,10 @@ impl SocketSession {
         if trimmed.is_empty() {
             return;
         }
-        let message = trimmed.chars().take(280).collect::<String>();
+        let message = trimmed
+            .chars()
+            .take(self.state.chat_message_max_chars())
+            .collect::<String>();
 
         let target_instance = if let Some(binding) = self.state.get_binding(self.conn_id).await {
             binding.instance().clone()
@@ -327,6 +331,7 @@ impl SocketSession {
             sender_name,
             sender_color,
             message,
+            sent_at: now_ms(),
         };
         target_instance.push_chat_line(line.clone()).await;
         target_instance

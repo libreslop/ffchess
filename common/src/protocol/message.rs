@@ -23,6 +23,7 @@ pub struct ChatLine {
     pub sender_name: String,
     pub sender_color: ColorHex,
     pub message: String,
+    pub sent_at: TimestampMs,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

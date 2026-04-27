@@ -176,6 +176,7 @@ impl ServerState {
                 .map(Arc::new),
             self.piece_configs.clone(),
             self.shop_configs.clone(),
+            self.config_manager.global.chat_message_ttl_ms,
         ));
         match_instance.start_queue_countdown().await;
         match_instance.spawn_initial_shops().await;

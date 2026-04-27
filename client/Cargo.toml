@@ -33,6 +33,7 @@ web-sys = { version = "0.3", features = [
     "TouchEvent"
 ] }
 serde = { version = "1.0", features = ["derive"] }
+educe = "0.6"
 serde_json = "1.0"
 gloo-net = "0.5"
 gloo-timers = { version = "0.3", features = ["futures"] }

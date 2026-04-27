@@ -86,6 +86,9 @@ impl Reducible for GameStateReducer {
                     next.chat_lines.drain(0..drop_count);
                 }
             }
+            GameAction::PruneExpiredChat { now, ttl_ms } => {
+                prune_expired_chat_lines(&mut next.chat_lines, now, ttl_ms);
+            }
             GameAction::SetError(e) => {
                 next.error = (!matches!(e, GameError::TargetFriendly)).then_some(e.clone());
                 if matches!(e, GameError::PieceNotFound) {
@@ -270,4 +273,13 @@ fn compute_phase(state: &GameStateReducer) -> ClientPhase {
         return ClientPhase::Alive;
     }
     ClientPhase::Joining
+}
+
+fn prune_expired_chat_lines(
+    lines: &mut Vec<common::protocol::ChatLine>,
+    now: common::types::TimestampMs,
+    ttl_ms: u32,
+) {
+    let ttl_ms = ttl_ms.max(1) as i64;
+    lines.retain(|line| now.as_i64().saturating_sub(line.sent_at.as_i64()) < ttl_ms);
 }

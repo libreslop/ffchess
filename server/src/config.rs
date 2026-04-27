@@ -2,6 +2,7 @@
 
 use common::models::{GameModeConfig, PieceConfig, ShopConfig};
 use common::types::{ModeId, PieceTypeId, ShopId};
+use educe::Educe;
 use jsonc_parser::parse_to_serde_value;
 use serde::de::DeserializeOwned;
 use std::collections::HashMap;
@@ -17,14 +18,16 @@ pub struct NamePool {
 }
 
 /// Global server settings.
-#[derive(Default, serde::Deserialize, Clone)]
+#[derive(serde::Deserialize, Clone, Educe)]
+#[serde(default)]
+#[educe(Default)]
 pub struct ServerGlobalConfig {
-    #[serde(default = "default_sync_interval")]
+    #[educe(Default = 10000)]
     pub sync_interval_ms: u32,
-}
-
-fn default_sync_interval() -> u32 {
-    10000
+    #[educe(Default = 10000)]
+    pub chat_message_ttl_ms: u32,
+    #[educe(Default = 150)]
+    pub chat_message_max_chars: u32,
 }
 
 /// Loads and stores all runtime configuration.

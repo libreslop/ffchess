@@ -1,5 +1,7 @@
 {
   "sync_interval_ms": 10000,
+  "chat_message_ttl_ms": 10000,
+  "chat_message_max_chars": 150,
   "default_name": {
     "adjectives": [
       "Swift", "Brave", "Silent", "Iron", "Gold", "Shadow", "Grand", "Quick", "Old", "New",

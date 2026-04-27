@@ -19,5 +19,8 @@
     "pan_lerp_dead": 0.08,
     "tile_size_px": 40.0,
     "death_zoom": 1.3,
-    "scroll_zoom_base": 1.2
+    "scroll_zoom_base": 1.2,
+    "chat_message_ttl_ms": 10000,
+    "chat_message_max_chars": 150,
+    "chat_warning_chars": 100
 }

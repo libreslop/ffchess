@@ -41,6 +41,7 @@ pub struct GameInstance {
     pub move_unlock_at: RwLock<Option<TimestampMs>>,
     pub death_timestamps: RwLock<HashMap<PlayerId, TimestampMs>>,
     pub chat_history: RwLock<VecDeque<ChatLine>>,
+    pub chat_message_ttl_ms: u32,
     pub(super) hook_events: RwLock<HookEventBuffer>,
     pub(super) queued_moves: RwLock<HashMap<PieceId, VecDeque<QueuedMoveRequest>>>,
 }
@@ -121,6 +122,7 @@ impl GameInstance {
     pub async fn push_chat_line(&self, line: ChatLine) {
         const MAX_CHAT_HISTORY: usize = 120;
         let mut history = self.chat_history.write().await;
+        prune_expired_chat_lines(&mut history, self.chat_message_ttl_ms, now_ms());
         history.push_back(line);
         while history.len() > MAX_CHAT_HISTORY {
             history.pop_front();
@@ -129,7 +131,9 @@ impl GameInstance {
 
     /// Returns a snapshot of room chat history.
     pub async fn chat_history_snapshot(&self) -> Vec<ChatLine> {
-        self.chat_history.read().await.iter().cloned().collect()
+        let mut history = self.chat_history.write().await;
+        prune_expired_chat_lines(&mut history, self.chat_message_ttl_ms, now_ms());
+        history.iter().cloned().collect()
     }
 
     /// Starts a queue countdown if configured for this mode instance.
@@ -224,6 +228,7 @@ impl GameInstance {
         queue_layout: Option<Arc<QueuePresetLayoutConfig>>,
         piece_configs: Arc<HashMap<PieceTypeId, PieceConfig>>,
         shop_configs: Arc<HashMap<ShopId, ShopConfig>>,
+        chat_message_ttl_ms: u32,
     ) -> Self {
         let board_size = common::logic::calculate_board_size(&mode_config, 0);
         let now = now_ms();
@@ -250,6 +255,7 @@ impl GameInstance {
             move_unlock_at: RwLock::new(None),
             death_timestamps: RwLock::new(HashMap::new()),
             chat_history: RwLock::new(VecDeque::new()),
+            chat_message_ttl_ms,
             hook_events: RwLock::new(HookEventBuffer::default()),
             queued_moves: RwLock::new(HashMap::new()),
         }
@@ -316,5 +322,15 @@ impl GameInstance {
         });
         game.shops
             .retain(|s| common::logic::is_within_board(s.position, board_size));
+    }
+}
+
+fn prune_expired_chat_lines(history: &mut VecDeque<ChatLine>, ttl_ms: u32, now: TimestampMs) {
+    let ttl_ms = ttl_ms.max(1) as i64;
+    while history
+        .front()
+        .is_some_and(|line| now.as_i64().saturating_sub(line.sent_at.as_i64()) >= ttl_ms)
+    {
+        history.pop_front();
     }
 }

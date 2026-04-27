@@ -49,6 +49,7 @@ impl ServerState {
                 mode_config.queue_layout.clone().map(Arc::new),
                 piece_configs.clone(),
                 shop_configs.clone(),
+                config_manager.global.chat_message_ttl_ms,
             ));
             games.insert(mode_id.clone(), instance);
         }

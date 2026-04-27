@@ -13,6 +13,11 @@ impl ServerState {
         &self.config_manager.name_pool
     }
 
+    /// Returns the maximum allowed chat message length in characters.
+    pub fn chat_message_max_chars(&self) -> usize {
+        self.config_manager.global.chat_message_max_chars.max(1) as usize
+    }
+
     /// Returns the game instance for a given mode id if present.
     pub(super) async fn get_game(&self, mode_id: &ModeId) -> Option<Arc<GameInstance>> {
         self.games.read().await.get(mode_id).cloned()
