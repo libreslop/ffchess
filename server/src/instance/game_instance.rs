@@ -133,12 +133,14 @@ impl GameInstance {
         let countdown = self.mode_config.queue_countdown_ms;
         if countdown <= common::types::DurationMs::zero() {
             *self.move_unlock_at.write().await = None;
+            self.record_game_start_event().await;
             return;
         }
         *self.move_unlock_at.write().await = Some(now_ms() + countdown);
 
         let countdown_seconds = (countdown.as_u64() / 1000) as u32;
         if countdown_seconds == 0 {
+            self.record_game_start_event().await;
             return;
         }
 
@@ -148,6 +150,7 @@ impl GameInstance {
                 instance.record_queue_countdown_event(seconds).await;
                 tokio::time::sleep(std::time::Duration::from_secs(1)).await;
             }
+            instance.record_game_start_event().await;
         });
     }
 

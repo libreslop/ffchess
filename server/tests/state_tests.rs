@@ -142,18 +142,18 @@ mod tests {
     async fn test_duel_player_leave_win_hook() {
         let state = ServerState::new();
         let instance = state
-            .get_joinable_game(&ModeId::from("duel"))
+            .get_joinable_game(&ModeId::from("bullet"))
             .await
             .expect("Duel game should exist");
         let (tx1, mut rx1) = mpsc::channel(100);
         let (tx2, mut rx2) = mpsc::channel(100);
 
         let (p1_id, _) = instance
-            .add_player("P1".to_string(), KitId::from("Standard"), tx1, None, None)
+            .add_player("P1".to_string(), KitId::from("Classic"), tx1, None, None)
             .await
             .expect("P1 join should succeed");
         let (_p2_id, _) = instance
-            .add_player("P2".to_string(), KitId::from("Standard"), tx2, None, None)
+            .add_player("P2".to_string(), KitId::from("Classic"), tx2, None, None)
             .await
             .expect("P2 join should succeed");
 
@@ -181,18 +181,18 @@ mod tests {
     async fn test_duel_capture_king_win_hook_precedes_leave_hook() {
         let state = ServerState::new();
         let instance = state
-            .get_joinable_game(&ModeId::from("duel"))
+            .get_joinable_game(&ModeId::from("bullet"))
             .await
             .expect("Duel game should exist");
         let (tx1, _rx1) = mpsc::channel(100);
         let (tx2, mut rx2) = mpsc::channel(100);
 
         let (p1_id, _) = instance
-            .add_player("P1".to_string(), KitId::from("Standard"), tx1, None, None)
+            .add_player("P1".to_string(), KitId::from("Classic"), tx1, None, None)
             .await
             .expect("P1 join should succeed");
         let (p2_id, _) = instance
-            .add_player("P2".to_string(), KitId::from("Standard"), tx2, None, None)
+            .add_player("P2".to_string(), KitId::from("Classic"), tx2, None, None)
             .await
             .expect("P2 join should succeed");
 
@@ -238,18 +238,18 @@ mod tests {
     async fn test_duel_capture_king_does_not_emit_delayed_leave_victory() {
         let state = ServerState::new();
         let instance = state
-            .get_joinable_game(&ModeId::from("duel"))
+            .get_joinable_game(&ModeId::from("bullet"))
             .await
             .expect("Duel game should exist");
         let (tx1, _rx1) = mpsc::channel(100);
         let (tx2, mut rx2) = mpsc::channel(100);
 
         let (p1_id, _) = instance
-            .add_player("P1".to_string(), KitId::from("Standard"), tx1, None, None)
+            .add_player("P1".to_string(), KitId::from("Classic"), tx1, None, None)
             .await
             .expect("P1 join should succeed");
         let (p2_id, _) = instance
-            .add_player("P2".to_string(), KitId::from("Standard"), tx2, None, None)
+            .add_player("P2".to_string(), KitId::from("Classic"), tx2, None, None)
             .await
             .expect("P2 join should succeed");
 
@@ -307,13 +307,13 @@ mod tests {
     async fn test_server_side_premove_executes_after_cooldown() {
         let state = ServerState::new();
         let instance = state
-            .get_joinable_game(&ModeId::from("duel"))
+            .get_joinable_game(&ModeId::from("bullet"))
             .await
             .expect("Duel game should exist");
         let (tx, _rx) = mpsc::channel(100);
 
         let (player_id, _) = instance
-            .add_player("P1".to_string(), KitId::from("Standard"), tx, None, None)
+            .add_player("P1".to_string(), KitId::from("Classic"), tx, None, None)
             .await
             .expect("P1 join should succeed");
 
@@ -362,13 +362,13 @@ mod tests {
     async fn test_server_side_chained_premoves_execute_in_order() {
         let state = ServerState::new();
         let instance = state
-            .get_joinable_game(&ModeId::from("duel"))
+            .get_joinable_game(&ModeId::from("bullet"))
             .await
             .expect("Duel game should exist");
         let (tx, _rx) = mpsc::channel(100);
 
         let (player_id, _) = instance
-            .add_player("P1".to_string(), KitId::from("Standard"), tx, None, None)
+            .add_player("P1".to_string(), KitId::from("Classic"), tx, None, None)
             .await
             .expect("P1 join should succeed");
 
@@ -434,13 +434,13 @@ mod tests {
     async fn test_server_side_invalid_chained_premove_rejected_on_queue() {
         let state = ServerState::new();
         let instance = state
-            .get_joinable_game(&ModeId::from("duel"))
+            .get_joinable_game(&ModeId::from("bullet"))
             .await
             .expect("Duel game should exist");
         let (tx, _rx) = mpsc::channel(100);
 
         let (player_id, _) = instance
-            .add_player("P1".to_string(), KitId::from("Standard"), tx, None, None)
+            .add_player("P1".to_string(), KitId::from("Classic"), tx, None, None)
             .await
             .expect("P1 join should succeed");
 
@@ -473,13 +473,13 @@ mod tests {
     async fn test_clear_premoves() {
         let state = ServerState::new();
         let instance = state
-            .get_joinable_game(&ModeId::from("duel"))
+            .get_joinable_game(&ModeId::from("bullet"))
             .await
             .expect("Duel game should exist");
         let (tx, _rx) = mpsc::channel(100);
 
         let (player_id, _) = instance
-            .add_player("P1".to_string(), KitId::from("Standard"), tx, None, None)
+            .add_player("P1".to_string(), KitId::from("Classic"), tx, None, None)
             .await
             .expect("P1 join should succeed");
 

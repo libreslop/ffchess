@@ -178,6 +178,11 @@
             "trigger": "OnQueueCountdown",
             "action": "SystemChatMessage",
             "message": "Match starts in {seconds}"
+        },
+        {
+            "trigger": "OnGameStart",
+            "action": "SystemChatMessage",
+            "message": "GO!"
         }
     ]
 }

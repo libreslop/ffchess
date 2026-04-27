@@ -52,6 +52,7 @@ struct TickHookEvents {
     player_disconnects: Vec<PlayerDisconnectEvent>,
     player_kills: Vec<PlayerKilledEvent>,
     queue_countdowns: Vec<QueueCountdownEvent>,
+    game_started: bool,
 }
 
 impl TickHookEvents {
@@ -63,6 +64,7 @@ impl TickHookEvents {
             && self.player_disconnects.is_empty()
             && self.player_kills.is_empty()
             && self.queue_countdowns.is_empty()
+            && !self.game_started
     }
 
     /// Records a capture event.
@@ -108,6 +110,11 @@ impl TickHookEvents {
     /// Records one queue countdown tick event.
     fn record_queue_countdown(&mut self, seconds: u32) {
         self.queue_countdowns.push(QueueCountdownEvent { seconds });
+    }
+
+    /// Records a game start event.
+    fn record_game_start(&mut self) {
+        self.game_started = true;
     }
 
     /// Returns player ids whose owned pieces were captured by hooks matching `hook`.
@@ -188,6 +195,11 @@ impl HookEventBuffer {
     /// Records a queue countdown tick into the active tick or the next queued tick.
     fn record_queue_countdown(&mut self, seconds: u32) {
         self.target_buffer().record_queue_countdown(seconds);
+    }
+
+    /// Records a game start event into the active tick or the next queued tick.
+    fn record_game_start(&mut self) {
+        self.target_buffer().record_game_start();
     }
 
     /// Returns the buffer currently receiving events.
@@ -334,6 +346,11 @@ impl GameInstance {
             .record_queue_countdown(seconds);
     }
 
+    /// Records a game start event for hook processing.
+    pub(super) async fn record_game_start_event(&self) {
+        self.hook_events.write().await.record_game_start();
+    }
+
     /// Starts collecting hook events for the current tick.
     pub(super) async fn start_tick_hooks(&self) {
         self.hook_events.write().await.begin_tick();
@@ -420,6 +437,12 @@ impl GameInstance {
             Some(SupportedHook::SystemChatOnQueueCountdown) => HookApplyResult {
                 matched: self
                     .emit_system_chat_for_countdown(hook, &hook_events.queue_countdowns)
+                    .await,
+                victory: None,
+            },
+            Some(SupportedHook::SystemChatOnGameStart) => HookApplyResult {
+                matched: self
+                    .emit_system_chat_for_game_start(hook, hook_events.game_started)
                     .await,
                 victory: None,
             },
@@ -570,6 +593,18 @@ impl GameInstance {
             sent = true;
         }
         sent
+    }
+
+    async fn emit_system_chat_for_game_start(&self, hook: &HookConfig, started: bool) -> bool {
+        if !started {
+            return false;
+        }
+        let template = hook
+            .message
+            .clone()
+            .unwrap_or_else(|| "Game started!".to_string());
+        self.emit_system_chat_message(template).await;
+        true
     }
 
     async fn emit_system_chat_message(&self, message: String) {
