@@ -3,7 +3,8 @@
         "ffa",
         "arena",
         "bullet",
-        "blitz"
+        "blitz",
+        "rapid"
     ],
     "modes_refresh_ms": 5000,
     "ping_interval_ms": 2000,

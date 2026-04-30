@@ -1,0 +1,13 @@
+{
+    "display_name": "Rapid Pawn (Southbound, Not Moved)",
+    "svg_path": "pawn.svg",
+    "score_value": 10,
+    "cooldown_ms": 7000,
+    "move_paths": [
+        [[0, 1], [0, 2]]
+    ],
+    "capture_paths": [
+        [[1, 1]],
+        [[-1, 1]]
+    ]
+}

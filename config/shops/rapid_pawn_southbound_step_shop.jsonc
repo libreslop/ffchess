@@ -1,0 +1,20 @@
+{
+    "display_name": "Southbound Pawn Step",
+    "default_uses": 9999,
+    "color": "rgba(59, 130, 246, 0)",
+    "auto_upgrade_single_item": true,
+    "groups": [
+        {
+            "applies_to": ["rapid_pawn_southbound_not_moved"],
+            "items": [
+                {
+                    "display_name": "Advance Discipline",
+                    "price_expr": null,
+                    "replace_with": "rapid_pawn_southbound_moved",
+                    "add_pieces": []
+                }
+            ]
+        }
+    ],
+    "default_group": null
+}
