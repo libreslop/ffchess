@@ -296,8 +296,9 @@ impl Renderer {
         format!("data:image/svg+xml;utf8,{encoded}")
     }
 
-    /// Fills the elapsed share of the border cells of a `cells` by `cells` grid at `origin`,
-    /// clockwise from the top center, in whole cells so the ring charges up pixel by pixel.
+    /// Fills the elapsed share of a `thickness` wide ring around the `side` long square at
+    /// `origin`, clockwise from the top center, in whole parts of a side so the ring charges
+    /// up in steps.
     fn draw_square_progress(&self, origin: Vec2, side: f64, thickness: f64, progress: f64) {
         // Each side owns the stretch from one corner up to, but excluding, the next.
         let length = side - thickness;

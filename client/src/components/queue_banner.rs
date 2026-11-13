@@ -1,5 +1,6 @@
 //! Banner showing the queue a quick-play game is nested in.
 
+use super::pixel_font::TRIM_TO_GLYPHS;
 use crate::reducer::QueueStatus;
 use crate::utils::local_now;
 use common::types::DurationMs;
@@ -14,10 +15,6 @@ const STOP_ICON_PX: u32 = 14;
 
 /// Color of the stop queuing icon.
 const STOP_ICON_COLOR: &str = "#ef4444";
-
-/// Trims a text box to the glyphs, which fill only the bottom of the font's line box, so
-/// centering the box centers the visible text at any font size.
-const TRIM_TO_GLYPHS: &str = "text-box: trim-both cap alphabetic;";
 
 /// Every decimal digit, for clock positions that can show any of them.
 const ANY_DIGIT: &[char] = &['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];

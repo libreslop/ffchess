@@ -67,15 +67,16 @@ pub fn use_nested_queue_effect(
     use_effect_with(
         (focus.is_nested(), base_matched, base_queued, nested_playing),
         move |&(is_nested, base_matched, base_queued, nested_playing)| {
-            if !is_nested {
+            // Nothing changes while the queue is still waiting for a match.
+            if !is_nested || (base_queued && !base_matched) {
                 return;
             }
             if base_matched {
                 nested.abandon();
                 focus.dispatch(FocusAction::Unnest);
-            } else if !base_queued && nested_playing {
+            } else if nested_playing {
                 promote_nested(&focus);
-            } else if !base_queued {
+            } else {
                 focus.dispatch(FocusAction::Unnest);
             }
         },

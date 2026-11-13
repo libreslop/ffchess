@@ -1,5 +1,6 @@
 //! Shared end-of-match overlay for victory and defeat outcomes.
 
+use super::pixel_font::{NATIVE_PX, title_pixel_px};
 use crate::ui_state::CooldownSeconds;
 use crate::utils::is_mobile;
 use common::types::Score;
@@ -26,35 +27,23 @@ pub struct EndScreenProps {
     pub rejoin_cooldown: CooldownSeconds,
 }
 
-/// Font size at which one Upheaval pixel is one screen pixel.
-const FONT_NATIVE_PX: u32 = 20;
-
 /// Returns a `text-shadow` drawing a black outline one font pixel thick around text whose font
 /// pixels are `pixel_px` screen pixels, matching the outline of the main screen title.
 fn pixel_outline(pixel_px: u32) -> String {
     let p = pixel_px as i32;
-    [
-        (-p, -p),
-        (0, -p),
-        (p, -p),
-        (-p, 0),
-        (p, 0),
-        (-p, p),
-        (0, p),
-        (p, p),
-    ]
-    .iter()
-    .map(|(x, y)| format!("{x}px {y}px 0 #000"))
-    .collect::<Vec<_>>()
-    .join(", ")
+    (-1..=1)
+        .flat_map(|y| (-1..=1).map(move |x| (x, y)))
+        .filter(|&offset| offset != (0, 0))
+        .map(|(x, y)| format!("{}px {}px 0 #000", x * p, y * p))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 #[function_component(EndScreen)]
 /// Renders the end-of-match summary and rejoin button.
 pub fn end_screen(props: &EndScreenProps) -> Html {
     let mobile = is_mobile();
-    // Matches the main screen title's pixel scale.
-    let title_pixel_px = if mobile { 3 } else { 4 };
+    let title_pixel_px = title_pixel_px();
     let score_size = if mobile { "2.5em" } else { "3em" };
     let is_victory = props.kind == EndScreenKind::Victory;
     let title = match (props.kind, props.title.as_deref()) {
@@ -73,7 +62,7 @@ pub fn end_screen(props: &EndScreenProps) -> Html {
                     <h1 style={format!(
                         "color: {}; margin-top: 0; margin-bottom: 8px; font-size: {}px; font-weight: normal; line-height: 1; text-shadow: {}; filter: drop-shadow(3px 3px 0 rgba(0,0,0,0.6)); text-transform: uppercase;",
                         title_color,
-                        title_pixel_px * FONT_NATIVE_PX,
+                        title_pixel_px * NATIVE_PX,
                         pixel_outline(title_pixel_px)
                     )}>{title}</h1>
 

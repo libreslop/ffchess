@@ -1,6 +1,8 @@
 //! Join flow UI for selecting mode, name, and kit.
 
+use super::pixel_font::{NATIVE_PX, title_pixel_px};
 use crate::canvas::color::piece_icon_colors;
+use crate::reducer::QueueStatus;
 use crate::ui_state::{CooldownSeconds, JoinStep};
 use crate::utils::{event_targets_text_input, is_mobile};
 use common::models::{GameModeClientConfig, ModeSummary};
@@ -41,7 +43,7 @@ pub struct JoinScreenProps {
     pub join_step: JoinStep,
     pub on_join: Callback<KitId>,
     pub error: Option<common::protocol::GameError>,
-    pub queue_status: Option<crate::reducer::QueueStatus>,
+    pub queue_status: Option<QueueStatus>,
     pub is_loading: bool,
     pub mode: Option<GameModeClientConfig>,
     pub mode_options: Vec<ModeSummary>,
@@ -89,7 +91,7 @@ pub fn join_screen(props: &JoinScreenProps) -> Html {
                 vertical_padding, if mobile { "10px" } else { "30px" }
             )}>
                 if props.join_step.is_enter_name() {
-                    <Title pieces={props.title_pieces.clone()} pixel_px={if mobile { 3 } else { 4 }} />
+                    <Title pieces={props.title_pieces.clone()} pixel_px={title_pixel_px()} />
                     <ModeList
                         modes={props.mode_options.clone()}
                         selected={selected_mode}
@@ -139,27 +141,7 @@ pub fn join_screen(props: &JoinScreenProps) -> Html {
                         }
 
                         if let Some(queue) = &props.queue_status {
-                            // The quick-play list hangs below the message out of flow, so the
-                            // message alone is what gets centred on screen.
-                            <div style="position: relative; width: 100%;">
-                            // 20px is the font's native size, where its pixels land on whole screen pixels.
-                            <div style="color: #e2e8f0; font-size: 20px; text-shadow: 2px 2px 0 rgba(0,0,0,0.5);">
-                                { queue_waiting_message(queue) }
-                            </div>
-                            if !props.quick_play_modes.is_empty() {
-                                <div data-testid="quick-play-list" style="position: absolute; top: 100%; left: 0; right: 0; margin-top: 56px;">
-                                    <div style="color: rgba(255,255,255,0.8); font-size: 0.85em; font-weight: 700; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 8px;">
-                                        {"Quick play"}
-                                    </div>
-                                    <ModeList
-                                        modes={props.quick_play_modes.clone()}
-                                        selected={quick_play_highlight}
-                                        on_select={props.on_quick_play.clone()}
-                                        style="max-height: 220px; overflow-y: auto; border: 2px solid #cbd5e1;"
-                                    />
-                                </div>
-                            }
-                            </div>
+                            { queue_waiting(queue, props, quick_play_highlight) }
                         } else {
                             <div style="display: flex; gap: 12px; width: 100%; justify-content: center; flex-wrap: wrap;">
                                 if let Some(mode) = &props.mode {
@@ -457,8 +439,37 @@ fn mode_population_label(mode: &ModeSummary) -> String {
     }
 }
 
+/// Renders the queue waiting message, with the quick-play modes to pass the wait with below it.
+///
+/// `highlight` is the index of the quick-play row the arrow keys point at.
+fn queue_waiting(queue: &QueueStatus, props: &JoinScreenProps, highlight: Option<usize>) -> Html {
+    // The message is set at the font's native size, where its pixels land on whole screen
+    // pixels. The quick-play list hangs below it out of flow, so the message alone is what
+    // gets centred on screen.
+    html! {
+        <div style="position: relative; width: 100%;">
+            <div style={format!("color: #e2e8f0; font-size: {NATIVE_PX}px; text-shadow: 2px 2px 0 rgba(0,0,0,0.5);")}>
+                { queue_waiting_message(queue) }
+            </div>
+            if !props.quick_play_modes.is_empty() {
+                <div data-testid="quick-play-list" style="position: absolute; top: 100%; left: 0; right: 0; margin-top: 56px;">
+                    <div style="color: rgba(255,255,255,0.8); font-size: 0.85em; font-weight: 700; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 8px;">
+                        {"Quick play"}
+                    </div>
+                    <ModeList
+                        modes={props.quick_play_modes.clone()}
+                        selected={highlight}
+                        on_select={props.on_quick_play.clone()}
+                        style="max-height: 220px; overflow-y: auto; border: 2px solid #cbd5e1;"
+                    />
+                </div>
+            }
+        </div>
+    }
+}
+
 /// Returns the queue waiting sentence with proper singular/plural grammar.
-fn queue_waiting_message(queue: &crate::reducer::QueueStatus) -> String {
+fn queue_waiting_message(queue: &QueueStatus) -> String {
     let missing = queue.players_needed();
     let noun = if missing.is_one() {
         "player"

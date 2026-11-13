@@ -8,6 +8,7 @@ pub mod game_view;
 pub mod join_screen;
 pub mod leaderboard;
 pub mod leave_button;
+mod pixel_font;
 pub mod queue_banner;
 pub mod shop_ui;
 
