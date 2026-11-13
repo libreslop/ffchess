@@ -29,7 +29,7 @@ struct Premove {
     status: PremoveStatus,
 }
 
-/// A predicted movement drawn as a line from `start` to `target`.
+/// A predicted movement drawn as an arrow from `start` to `target`.
 ///
 /// A special move draws one line per piece it relocates, partners included.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

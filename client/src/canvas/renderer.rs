@@ -1,11 +1,11 @@
 //! Canvas rendering of the board, shops, shading, move hints, pieces, and fog of war.
 
-use super::color::hex_to_rgba;
+use super::color::{arrow_color, hex_to_rgba};
 use super::types::{PieceDrawParams, PieceNameDrawParams, PieceSvgCache, RenderParams, Renderer};
 use crate::math::{Vec2, vec2};
 use common::models::{GameModeClientConfig, Piece};
 use common::rules::{Catalog, LegalMove};
-use common::types::{BoardCoord, ExprVars, PlayerId};
+use common::types::{BoardCoord, ExprVars, PieceId, PlayerId};
 use glam::IVec2;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -21,7 +21,6 @@ const BORDER_COLOR: &str = "#1e293b";
 const DEFAULT_SHOP_COLOR: &str = "#fde047";
 const DEFAULT_SHOP_FOCUS_COLOR: &str = "rgba(253, 224, 71, 0.35)";
 const DEFAULT_HINT_COLOR: &str = "rgba(59, 130, 246, 0.4)";
-const DEFAULT_LINE_COLOR: &str = "rgba(59, 130, 246, 0.5)";
 
 /// Size of the art pixel grid that move hints snap to, in art pixels per tile.
 const HINT_PIXELS_PER_TILE: f64 = 16.0;
@@ -29,6 +28,15 @@ const HINT_PIXELS_PER_TILE: f64 = 16.0;
 const QUIET_HINT_PIXELS: f64 = 4.0;
 /// Number of stair steps in each corner of a capture mark.
 const CAPTURE_HINT_STEPS: usize = 4;
+/// Thickness of a premove arrow's shaft, in art pixels.
+const ARROW_SHAFT_PIXELS: f64 = 4.0;
+/// Width of a premove arrow's head at its base, in art pixels.
+///
+/// Twice the head length makes a right-angled tip, whose sides run along pixel rows and
+/// columns on diagonal arrows.
+const ARROW_HEAD_WIDTH_PIXELS: f64 = 12.0;
+/// Length of a premove arrow's head, in art pixels.
+const ARROW_HEAD_LENGTH_PIXELS: f64 = 6.0;
 
 /// Opacity of predicted piece positions.
 const GHOST_ALPHA: f64 = 0.4;
@@ -86,6 +94,19 @@ impl FrameGeometry {
     /// Returns the center pixel of a square.
     fn square_center(&self, square: BoardCoord) -> Vec2 {
         self.square_origin(square) + self.tile / 2.0
+    }
+
+    /// Converts a screen pixel to art pixels, counted from the board origin.
+    ///
+    /// Square centers land on whole art pixels, so shapes built from them never depend on
+    /// the zoom level.
+    fn art_point(&self, screen: Vec2) -> Vec2 {
+        ((screen - self.offset) * HINT_PIXELS_PER_TILE / self.tile).round()
+    }
+
+    /// Converts art pixels back to the nearest screen pixel.
+    fn screen_point(&self, art: Vec2) -> Vec2 {
+        (art * self.tile / HINT_PIXELS_PER_TILE + self.offset).round()
     }
 
     /// Returns the pixel of a grid line intersection.
@@ -166,7 +187,7 @@ impl Renderer {
         self.draw_shade_backgrounds(&shades, &params, &geometry, &visibility);
         let hints = self.move_hints(&params);
         self.draw_quiet_hints(&hints, &geometry);
-        self.draw_premove_lines(&params, &geometry);
+        self.draw_premove_arrows(&params, &geometry);
         self.draw_pieces(&params, &geometry, &visibility);
         self.draw_shade_lines(&shades, &params, &geometry, &visibility);
         self.draw_capture_hints(&hints, &geometry);
@@ -373,29 +394,91 @@ impl Renderer {
         }
     }
 
-    /// Draws a line for every predicted move, in the moving player's color.
-    fn draw_premove_lines(&self, params: &RenderParams<'_>, geometry: &FrameGeometry) {
+    /// Draws one pixelated arrow per piece through all its predicted moves, in the moving
+    /// player's color.
+    fn draw_premove_arrows(&self, params: &RenderParams<'_>, geometry: &FrameGeometry) {
+        // Lines come in queue order, so each piece's moves are already in sequence.
+        let mut paths: Vec<(PieceId, Vec<(Vec2, Vec2)>)> = Vec::new();
         for line in &params.projection.lines {
-            let Some(piece) = params.state.pieces.get(&line.piece_id) else {
-                continue;
-            };
-            let color = piece
-                .owner_id
-                .and_then(|owner| params.state.players.get(&owner))
-                .map_or_else(
-                    || DEFAULT_LINE_COLOR.to_string(),
-                    |player| hex_to_rgba(player.color.as_ref(), 0.5),
-                );
-            let (from, to) = (
-                geometry.square_center(line.start),
-                geometry.square_center(line.target),
+            let segment = (
+                geometry.art_point(geometry.square_center(line.start)),
+                geometry.art_point(geometry.square_center(line.target)),
             );
-            self.ctx.set_stroke_style_str(&color);
-            self.ctx.set_line_width(2.0);
-            self.ctx.begin_path();
-            self.ctx.move_to(from.x, from.y);
-            self.ctx.line_to(to.x, to.y);
-            self.ctx.stroke();
+            match paths.iter_mut().find(|(id, _)| *id == line.piece_id) {
+                Some((_, segments)) => segments.push(segment),
+                None => paths.push((line.piece_id, vec![segment])),
+            }
+        }
+        for (piece_id, segments) in paths {
+            self.ctx
+                .set_fill_style_str(&arrow_color(piece_id.0.as_u128()));
+            self.draw_pixel_arrow(&segments, geometry);
+        }
+    }
+
+    /// Fills the art pixels whose centers fall inside an arrow through `segments`, with its
+    /// head on the last one.
+    ///
+    /// `segments` are in art pixels, so the arrow keeps its shape at every zoom level. Each
+    /// row is filled as one rectangle per run so the translucent color does not stack.
+    fn draw_pixel_arrow(&self, segments: &[(Vec2, Vec2)], geometry: &FrameGeometry) {
+        let Some((&(tail, tip), earlier)) = segments.split_last() else {
+            return;
+        };
+        let (shaft_half, head_half) = (ARROW_SHAFT_PIXELS / 2.0, ARROW_HEAD_WIDTH_PIXELS / 2.0);
+        let length = tail.distance(tip);
+        let along = (tip - tail).normalize_or_zero();
+        let head_length = ARROW_HEAD_LENGTH_PIXELS.min(length);
+        let head_base = tip - along * head_length;
+
+        // Shafts have round ends so consecutive moves join without notches at the turns.
+        let near_shaft = |point: Vec2, from: Vec2, to: Vec2| {
+            let span = to - from;
+            let t = if span == Vec2::ZERO {
+                0.0
+            } else {
+                ((point - from).dot(span) / span.length_squared()).clamp(0.0, 1.0)
+            };
+            point.distance(from + span * t) <= shaft_half
+        };
+        let in_head = |point: Vec2| {
+            let u = (point - head_base).dot(along);
+            let v = (point - head_base).dot(along.perp()).abs();
+            head_length > 0.0
+                && (0.0..=head_length).contains(&u)
+                && v <= head_half * (head_length - u) / head_length
+        };
+        let inside = |point: Vec2| {
+            in_head(point)
+                || near_shaft(point, tail, head_base)
+                || earlier
+                    .iter()
+                    .any(|&(from, to)| near_shaft(point, from, to))
+        };
+
+        let (low, high) = segments.iter().fold(
+            (Vec2::splat(f64::INFINITY), Vec2::splat(f64::NEG_INFINITY)),
+            |(low, high), &(from, to)| (low.min(from).min(to), high.max(from).max(to)),
+        );
+        let (low, high) = ((low - head_half).floor(), (high + head_half).ceil());
+        let (cols, rows) = ((high.x - low.x) as usize, (high.y - low.y) as usize);
+        for row in 0..rows {
+            let mut run_start = None;
+            for col in 0..=cols {
+                let filled = col < cols && inside(low + vec2(col as f64, row as f64) + 0.5);
+                match (filled, run_start) {
+                    (true, None) => run_start = Some(col),
+                    (false, Some(start)) => {
+                        // Rounding both edges keeps neighbouring runs gapless.
+                        let corner = geometry.screen_point(low + vec2(start as f64, row as f64));
+                        let far = geometry.screen_point(low + vec2(col as f64, row as f64 + 1.0));
+                        self.ctx
+                            .fill_rect(corner.x, corner.y, far.x - corner.x, far.y - corner.y);
+                        run_start = None;
+                    }
+                    _ => {}
+                }
+            }
         }
     }
 

@@ -32,6 +32,15 @@ pub fn hex_to_rgba(hex: &str, alpha: f64) -> String {
     }
 }
 
+/// Picks a desaturated, translucent color for a piece's premove arrow.
+///
+/// `seed` identifies the piece, so the same piece keeps its color from frame to frame.
+pub fn arrow_color(seed: u128) -> String {
+    // The golden angle spreads consecutive seeds far apart on the hue wheel.
+    let hue = (seed % 1000) as f64 * 137.508 % 360.0;
+    format!("hsla({hue:.0}, 30%, 55%, 0.6)")
+}
+
 /// Builds lighter and darker shades for piece SVG tinting.
 ///
 /// `base_hex` is the team color in hex. Returns primary/secondary/tertiary shades.
