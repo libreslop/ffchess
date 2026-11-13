@@ -2,7 +2,7 @@
 
 use crate::canvas::color::{NPC_PIECE_COLOR, PieceIconColors, piece_icon_colors};
 use crate::canvas::types::{PieceDrawParams, PieceNameDrawParams, PieceSvgKey, Renderer};
-use crate::math::{Vec2, vec2};
+use crate::math::Vec2;
 use common::types::{PieceTypeId, TimestampMs};
 use gloo_net::http::Request;
 use wasm_bindgen::JsCast;
@@ -13,6 +13,8 @@ use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, HtmlImageElement};
 const PIECE_RASTER_SIZE_PX: u32 = 256;
 const COOLDOWN_GAP_RATIO: f64 = 0.03;
 const COOLDOWN_LINE_WIDTH_PX: f64 = 2.0;
+/// Number of steps each side of the cooldown ring charges up in.
+const COOLDOWN_PARTS_PER_SIDE: usize = 4;
 
 /// Loaded SVG image plus its cache key.
 struct PieceSvgHandle {
@@ -96,20 +98,14 @@ impl Renderer {
         let progress = elapsed.as_i64() as f64 / params.piece.cooldown_ms.as_i64() as f64;
 
         let tile = params.tile_size;
-        let line_width = Self::cooldown_line_width(params.zoom);
+        let thickness = Self::cooldown_line_width(params.zoom);
         let gap = Self::cooldown_gap(tile);
-        let inset = (gap + (line_width / 2.0)).min(tile / 2.0 - 1.0);
-        let square_size = (tile - (2.0 * inset)).max(line_width + 1.0).round();
-        let corner = params.pos * tile + params.offset + inset;
-        let square_x = Self::align_stroke_coord(corner.x, line_width);
-        let square_y = Self::align_stroke_coord(corner.y, line_width);
+        let side = (tile - 2.0 * gap).max(2.0 * thickness).round();
+        let origin = (params.pos * tile + params.offset + (tile - side) / 2.0).round();
 
         self.ctx.set_global_alpha(params.alpha);
-        self.ctx.set_line_width(line_width);
-        self.ctx.set_line_cap("butt");
-        self.ctx.set_line_join("miter");
-        self.ctx.set_stroke_style_str(team_color);
-        self.draw_square_progress(square_x, square_y, square_size, progress);
+        self.ctx.set_fill_style_str(team_color);
+        self.draw_square_progress(origin, side, thickness, progress);
         self.ctx.set_global_alpha(1.0);
     }
 
@@ -300,71 +296,31 @@ impl Renderer {
         format!("data:image/svg+xml;utf8,{encoded}")
     }
 
-    fn draw_square_progress(&self, x: f64, y: f64, size: f64, progress: f64) {
-        let progress = progress.clamp(0.0, 1.0);
-        if progress <= 0.0 {
-            return;
-        }
-
-        let perimeter = 4.0 * size;
-        let mut remaining = perimeter * progress;
-
-        // Trace clockwise from 12 o'clock (top center) as a single path
-        // to avoid visible segment seams at the corners.
-        let half = size / 2.0;
-        let mut cursor = vec2(x + half, y);
-        self.ctx.begin_path();
-        self.ctx.move_to(cursor.x, cursor.y);
-
-        remaining = self.append_segment_path(&mut cursor, vec2(x + size, y), remaining);
-        if remaining <= 0.0 {
-            self.ctx.stroke();
-            return;
-        }
-        remaining = self.append_segment_path(&mut cursor, vec2(x + size, y + size), remaining);
-        if remaining <= 0.0 {
-            self.ctx.stroke();
-            return;
-        }
-        remaining = self.append_segment_path(&mut cursor, vec2(x, y + size), remaining);
-        if remaining <= 0.0 {
-            self.ctx.stroke();
-            return;
-        }
-        remaining = self.append_segment_path(&mut cursor, vec2(x, y), remaining);
-        if remaining <= 0.0 {
-            self.ctx.stroke();
-            return;
-        }
-        let _ = self.append_segment_path(&mut cursor, vec2(x + half, y), remaining);
-        self.ctx.stroke();
-    }
-
-    fn append_segment_path(&self, cursor: &mut Vec2, target: Vec2, remaining: f64) -> f64 {
-        if remaining <= 0.0 {
-            return 0.0;
-        }
-        let dx = target.x - cursor.x;
-        let dy = target.y - cursor.y;
-        let seg_len = (dx * dx + dy * dy).sqrt();
-        if seg_len <= 0.0 {
-            return remaining;
-        }
-        let draw_len = remaining.min(seg_len);
-        let t = draw_len / seg_len;
-        let px = cursor.x + dx * t;
-        let py = cursor.y + dy * t;
-        self.ctx.line_to(px, py);
-        *cursor = vec2(px, py);
-        remaining - draw_len
-    }
-
-    fn align_stroke_coord(value: f64, line_width: f64) -> f64 {
-        let width = line_width.round() as i64;
-        if width % 2 == 0 {
-            value.round()
-        } else {
-            value.round() + 0.5
+    /// Fills the elapsed share of the border cells of a `cells` by `cells` grid at `origin`,
+    /// clockwise from the top center, in whole cells so the ring charges up pixel by pixel.
+    fn draw_square_progress(&self, origin: Vec2, side: f64, thickness: f64, progress: f64) {
+        // Each side owns the stretch from one corner up to, but excluding, the next.
+        let length = side - thickness;
+        let parts = COOLDOWN_PARTS_PER_SIDE;
+        let filled = (progress.clamp(0.0, 1.0) * (4 * parts) as f64).ceil() as usize;
+        let boundary = |part: usize| (part as f64 * length / parts as f64).round();
+        let start = parts / 2;
+        let end = start + filled;
+        let mut index = start;
+        while index < end {
+            // Fills the run of parts left on the current side as one rectangle.
+            let from = index % parts;
+            let to = (from + end - index).min(parts);
+            let (near, far) = (boundary(from), boundary(to));
+            let (x, y, width, height) = match (index / parts) % 4 {
+                0 => (near, 0.0, far - near, thickness),
+                1 => (length, near, thickness, far - near),
+                2 => (side - far, length, far - near, thickness),
+                _ => (0.0, side - far, thickness, far - near),
+            };
+            self.ctx
+                .fill_rect(origin.x + x, origin.y + y, width, height);
+            index += to - from;
         }
     }
 

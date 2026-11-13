@@ -23,6 +23,13 @@ const DEFAULT_SHOP_FOCUS_COLOR: &str = "rgba(253, 224, 71, 0.35)";
 const DEFAULT_HINT_COLOR: &str = "rgba(59, 130, 246, 0.4)";
 const DEFAULT_LINE_COLOR: &str = "rgba(59, 130, 246, 0.5)";
 
+/// Size of the art pixel grid that move hints snap to, in art pixels per tile.
+const HINT_PIXELS_PER_TILE: f64 = 16.0;
+/// Side of the square marking a quiet move, in art pixels.
+const QUIET_HINT_PIXELS: f64 = 4.0;
+/// Number of stair steps in each corner of a capture mark.
+const CAPTURE_HINT_STEPS: usize = 4;
+
 /// Opacity of predicted piece positions.
 const GHOST_ALPHA: f64 = 0.4;
 
@@ -302,55 +309,66 @@ impl Renderer {
         (self.catalog.legal_moves(predicted, piece), color)
     }
 
-    /// Marks the destinations of moves that leave every other piece alone with a dot.
+    /// Returns the on-screen size of one art pixel, rounded so hints stay crisp.
+    fn hint_pixel(geometry: &FrameGeometry) -> f64 {
+        (geometry.tile / HINT_PIXELS_PER_TILE).round().max(1.0)
+    }
+
+    /// Marks the destinations of moves that leave every other piece alone with a small square.
     fn draw_quiet_hints(
         &self,
         (hints, color): &(Vec<LegalMove>, String),
         geometry: &FrameGeometry,
     ) {
         self.ctx.set_fill_style_str(color);
-        let radius = geometry.tile * 0.16;
+        let side = Self::hint_pixel(geometry) * QUIET_HINT_PIXELS;
         let targets = hints
             .iter()
             .filter(|legal| legal.affected.is_empty())
             .flat_map(LegalMove::handles);
         for target in targets {
             let center = geometry.square_center(*target);
-            self.ctx.begin_path();
-            let _ = self
-                .ctx
-                .arc(center.x, center.y, radius, 0.0, std::f64::consts::TAU);
-            self.ctx.fill();
+            self.ctx.fill_rect(
+                (center.x - side / 2.0).round(),
+                (center.y - side / 2.0).round(),
+                side,
+                side,
+            );
         }
     }
 
     /// Frames the pieces that moves capture or carry along (such as the rook when castling)
-    /// with four corner triangles, drawn above the pieces.
+    /// with a pixel staircase in each corner, drawn above the pieces.
     fn draw_capture_hints(
         &self,
         (hints, color): &(Vec<LegalMove>, String),
         geometry: &FrameGeometry,
     ) {
         self.ctx.set_fill_style_str(color);
-        let (tile, corner) = (geometry.tile, geometry.tile * 0.22);
+        let (tile, pixel) = (geometry.tile, Self::hint_pixel(geometry));
         let targets = hints
             .iter()
             .filter(|legal| !legal.affected.is_empty())
             .flat_map(LegalMove::handles);
         for target in targets {
             let origin = geometry.square_origin(*target);
-            for (dx, dy) in [(1.0, 1.0), (-1.0, 1.0), (1.0, -1.0), (-1.0, -1.0)] {
-                let tip = origin
-                    + vec2(
-                        if dx > 0.0 { 0.0 } else { tile },
-                        if dy > 0.0 { 0.0 } else { tile },
-                    );
-                self.ctx.begin_path();
-                self.ctx.move_to(tip.x, tip.y);
-                self.ctx.line_to(tip.x + dx * corner, tip.y);
-                self.ctx.line_to(tip.x, tip.y + dy * corner);
-                self.ctx.close_path();
-                self.ctx.fill();
+            let (left, top) = (origin.x.round(), origin.y.round());
+            let (right, bottom) = ((origin.x + tile).round(), (origin.y + tile).round());
+            for (from_left, from_top) in
+                [(true, true), (false, true), (true, false), (false, false)]
+            {
+                // Rows never overlap, so the translucent color does not stack.
+                for step in 0..CAPTURE_HINT_STEPS {
+                    let width = (CAPTURE_HINT_STEPS - step) as f64 * pixel;
+                    let row = step as f64 * pixel;
+                    let x = if from_left { left } else { right - width };
+                    let y = if from_top {
+                        top + row
+                    } else {
+                        bottom - row - pixel
+                    };
+                    self.ctx.fill_rect(x, y, width, pixel);
+                }
             }
         }
     }

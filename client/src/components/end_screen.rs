@@ -33,11 +33,20 @@ const FONT_NATIVE_PX: u32 = 20;
 /// pixels are `pixel_px` screen pixels, matching the outline of the main screen title.
 fn pixel_outline(pixel_px: u32) -> String {
     let p = pixel_px as i32;
-    [(-p, -p), (0, -p), (p, -p), (-p, 0), (p, 0), (-p, p), (0, p), (p, p)]
-        .iter()
-        .map(|(x, y)| format!("{x}px {y}px 0 #000"))
-        .collect::<Vec<_>>()
-        .join(", ")
+    [
+        (-p, -p),
+        (0, -p),
+        (p, -p),
+        (-p, 0),
+        (p, 0),
+        (-p, p),
+        (0, p),
+        (p, p),
+    ]
+    .iter()
+    .map(|(x, y)| format!("{x}px {y}px 0 #000"))
+    .collect::<Vec<_>>()
+    .join(", ")
 }
 
 #[function_component(EndScreen)]
