@@ -51,8 +51,9 @@ pub fn build_on_stop_queuing(
 
 /// Moves the focus away from a nested quick-play game once its queue resolves.
 ///
-/// When the queued match starts the quick-play game is left for it; when the queue is gone
-/// without a match (its connection dropped) the quick-play game becomes the base mode.
+/// When the queued match starts the quick-play game is left for it. When the queue is gone
+/// without a match (its connection dropped), a quick-play game still in play becomes the base
+/// mode; one that lost its connection too goes back to the base mode's menu.
 #[hook]
 pub fn use_nested_queue_effect(
     focus: UseReducerHandle<ModeFocus>,
@@ -61,17 +62,21 @@ pub fn use_nested_queue_effect(
 ) {
     let base_matched = base.reducer.active_player_id().is_some();
     let base_queued = base.reducer.queue_status.is_some();
+    let nested_playing =
+        nested.reducer.active_player_id().is_some() && !nested.reducer.disconnected;
     use_effect_with(
-        (focus.is_nested(), base_matched, base_queued),
-        move |&(is_nested, base_matched, base_queued)| {
+        (focus.is_nested(), base_matched, base_queued, nested_playing),
+        move |&(is_nested, base_matched, base_queued, nested_playing)| {
             if !is_nested {
                 return;
             }
             if base_matched {
                 nested.abandon();
                 focus.dispatch(FocusAction::Unnest);
-            } else if !base_queued {
+            } else if !base_queued && nested_playing {
                 promote_nested(&focus);
+            } else if !base_queued {
+                focus.dispatch(FocusAction::Unnest);
             }
         },
     );
