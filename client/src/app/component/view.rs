@@ -74,7 +74,7 @@ pub fn render_app(props: AppViewProps) -> Html {
             <style>{"
                 @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
                 @keyframes simpleFadeIn { from { opacity: 0; } to { opacity: 1; } }
-                @keyframes fadeInOut { 0% { opacity: 0; transform: translate(-50%, 20px); } 15% { opacity: 1; transform: translate(-50%, 0); } 85% { opacity: 1; transform: translate(-50%, 0); } 100% { opacity: 0; transform: translate(-50%, -20px); } }
+                @keyframes fadeInOut { 0% { opacity: 0; transform: translateY(20px); } 15% { opacity: 1; transform: translateY(0); } 85% { opacity: 1; transform: translateY(0); } 100% { opacity: 0; transform: translateY(-20px); } }
                 @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
             "}</style>
 
@@ -103,12 +103,6 @@ pub fn render_app(props: AppViewProps) -> Html {
                     msg={reducer.disconnected_msg.clone()}
                 />
             }
-
-            <FatalNotification
-                show={reducer.fatal_error}
-                title={reducer.disconnected_title.clone()}
-                msg={reducer.disconnected_msg.clone()}
-            />
 
             if has_match_result && !force_join_overlay {
                 <EndScreen
@@ -171,19 +165,29 @@ pub fn render_app(props: AppViewProps) -> Html {
                 />
             }
 
-            if let Some(queue) = props.nested_queue {
-                <QueueBanner mode_name={queue.mode_name} status={queue.status} on_stop={queue.on_stop} />
-            }
-
             if tx.is_some() && !on_main_menu {
                 <LeaveButton on_leave={props.on_leave.clone()} backdrop={Backdrop::of(&reducer)} />
             }
 
-            if let Some(notice) = &reducer.error {
-                if is_joined && !has_match_result {
-                    <ErrorToast key={notice.serial} error={notice.error.clone()} />
+            // Stacks the top banners so errors sit below the queue banner. The column has no
+            // z-index or transform, so each banner keeps its own place in the stacking order.
+            <div style="position: absolute; top: 12px; left: 0; right: 0; display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: none;">
+                if let Some(queue) = props.nested_queue {
+                    <QueueBanner mode_name={queue.mode_name} status={queue.status} on_stop={queue.on_stop} />
                 }
-            }
+
+                <FatalNotification
+                    show={reducer.fatal_error}
+                    title={reducer.disconnected_title.clone()}
+                    msg={reducer.disconnected_msg.clone()}
+                />
+
+                if let Some(notice) = &reducer.error {
+                    if is_joined && !has_match_result {
+                        <ErrorToast key={notice.serial} error={notice.error.clone()} />
+                    }
+                }
+            </div>
         </div>
     }
 }

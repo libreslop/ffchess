@@ -15,7 +15,7 @@ pub struct ErrorToastProps {
 /// `props` provides the error to display. Returns rendered HTML.
 pub fn error_toast(props: &ErrorToastProps) -> Html {
     html! {
-        <div key={format!("{:?}", props.error)} style="position: absolute; top: 20px; left: 50%; transform: translateX(-50%); background: rgba(239, 68, 68, 0.9); color: white; padding: 6px 16px; border-radius: 8px; font-weight: bold; z-index: 1000; pointer-events: none; animation: fadeInOut 3s forwards;">
+        <div key={format!("{:?}", props.error)} style="position: relative; background: rgba(239, 68, 68, 0.9); color: white; padding: 6px 16px; border-radius: 8px; font-weight: bold; z-index: 1000; pointer-events: none; animation: fadeInOut 3s forwards;">
             { props.error.to_string() }
         </div>
     }

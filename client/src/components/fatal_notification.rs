@@ -70,22 +70,22 @@ pub fn fatal_notification(props: &FatalNotificationProps) -> Html {
 
     // Pointer events are disabled so the banner never blocks UI interactions (e.g., kit selection buttons).
     html! {
-        <div style={format!("position: absolute; top: 20px; left: 50%; transform: translateX(-50%); width: 90%; max-width: 500px; background: #ef4444; color: white; padding: 14px 20px; border-radius: 0; border: 3px solid #7f1d1d; box-shadow: 6px 6px 0 rgba(0,0,0,0.35); z-index: 1000; animation: {} 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; pointer-events: none;", animation_name)}>
+        <div style={format!("position: relative; width: max-content; max-width: calc(100% - 32px); box-sizing: border-box; background: #ef4444; color: white; padding: 6px 10px; border-radius: 0; border: 3px solid #7f1d1d; box-shadow: 6px 6px 0 rgba(0,0,0,0.35); z-index: 1000; animation: {} 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; pointer-events: none;", animation_name)}>
             <style>{"
                 @keyframes fadeInDown {
-                    from { opacity: 0; transform: translate(-50%, -20px); }
-                    to { opacity: 1; transform: translate(-50%, 0); }
+                    from { opacity: 0; transform: translateY(-20px); }
+                    to { opacity: 1; transform: translateY(0); }
                 }
                 @keyframes fadeOutUp {
-                    from { opacity: 1; transform: translate(-50%, 0); }
-                    to { opacity: 0; transform: translate(-50%, -20px); }
+                    from { opacity: 1; transform: translateY(0); }
+                    to { opacity: 0; transform: translateY(-20px); }
                 }
             "}</style>
-            <div style="display: flex; align-items: center; gap: 15px;">
-                <div style="font-size: 2em;">{"⚠️"}</div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="display: block; flex: none; width: 24px; height: 24px; background-color: currentColor; -webkit-mask: url(/assets/static/img/error.svg) center / contain no-repeat; mask: url(/assets/static/img/error.svg) center / contain no-repeat;"></span>
                 <div>
-                    <h3 style="margin: 0; font-size: 1.1em; letter-spacing: 1px;">{title}</h3>
-                    <p style="margin: 5px 0 0; font-size: 0.95em; opacity: 0.9; line-height: 1.3;">{msg}</p>
+                    <h3 style="margin: 0; font-size: 1em; letter-spacing: 1px;">{title}</h3>
+                    <p style="margin: 2px 0 0; font-size: 0.9em; opacity: 0.9; line-height: 1.2;">{msg}</p>
                 </div>
             </div>
         </div>

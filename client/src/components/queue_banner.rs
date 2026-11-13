@@ -52,7 +52,7 @@ pub fn queue_banner(props: &QueueBannerProps) -> Html {
         <div
             data-testid="queue-banner"
             data-ui-exempt="true"
-            style="position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 120; display: flex; gap: 10px; align-items: center; padding: 6px 12px; background: rgba(15,23,42,0.85); border: 2px solid #cbd5e1; color: #fff; font-size: 0.9em; white-space: nowrap; animation: simpleFadeIn 0.2s ease-out;"
+            style="position: relative; z-index: 120; pointer-events: auto; display: flex; gap: 10px; align-items: center; padding: 6px 12px; background: rgba(15,23,42,0.85); border: 2px solid #cbd5e1; color: #fff; font-size: 0.9em; white-space: nowrap; animation: simpleFadeIn 0.2s ease-out;"
         >
             <span style={TRIM_TO_GLYPHS}>{"Queuing in "}<strong>{ &props.mode_name }</strong></span>
             <span style={format!("{TRIM_TO_GLYPHS} font-variant-numeric: tabular-nums; color: #cbd5e1;")}>
