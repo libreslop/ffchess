@@ -25,6 +25,7 @@ fn make_piece_config(id: &str, score: u64) -> PieceConfig {
         cooldown_ms: DurationMs::from_millis(500),
         move_paths: vec![vec![IVec2::new(1, 0)]],
         capture_paths: vec![vec![IVec2::new(1, 0)]],
+        special_moves: vec![],
     }
 }
 

@@ -4,10 +4,10 @@
 //! latest snapshot to predict queued actions, so both sides agree on what an action does.
 
 use super::catalog::Catalog;
-use super::movement::MoveKind;
+use super::movement::{MovePlan, MoveStep};
 use crate::models::{GameState, Piece, PieceAction, ShopItemConfig, ShopItemIndex};
 use crate::protocol::GameError;
-use crate::types::{BoardCoord, PieceId, PlayerId, ShopId, TimestampMs};
+use crate::types::{BoardCoord, PieceId, PieceTypeId, PlayerId, ShopId, TimestampMs};
 use glam::IVec2;
 
 /// Neighbour offsets searched, in order, when placing pieces bought from a shop.
@@ -22,11 +22,23 @@ const ADJACENT_OFFSETS: [IVec2; 8] = [
     IVec2::new(-1, -1),
 ];
 
+/// A piece relocated by an action.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PieceMove {
+    pub piece_id: PieceId,
+    pub from: BoardCoord,
+    pub to: BoardCoord,
+}
+
 /// Side effects produced by one applied action.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ActionEffects {
-    /// Piece removed by a capture.
-    pub captured: Option<Piece>,
+    /// Pieces removed by captures.
+    pub captured: Vec<Piece>,
+    /// Pieces relocated, the acting piece included.
+    pub moved: Vec<PieceMove>,
+    /// Pieces other than the acting one that the action relocated, changed, or removed.
+    pub partners: Vec<PieceId>,
     /// Shops whose last use was consumed and that were removed from the board.
     pub depleted_shops: Vec<ShopId>,
 }
@@ -34,7 +46,9 @@ pub struct ActionEffects {
 impl ActionEffects {
     /// Folds the effects of a follow-up action into these effects.
     fn merge(mut self, other: ActionEffects) -> Self {
-        self.captured = self.captured.or(other.captured);
+        self.captured.extend(other.captured);
+        self.moved.extend(other.moved);
+        self.partners.extend(other.partners);
         self.depleted_shops.extend(other.depleted_shops);
         self
     }
@@ -79,35 +93,76 @@ impl<'a> Simulation<'a> {
         }
     }
 
-    /// Moves a piece, resolving captures, rewards, and automatic shop upgrades.
+    /// Moves a piece, resolving captures, rewards, special moves, and automatic shop upgrades.
     pub fn apply_move(
         &mut self,
         piece_id: PieceId,
         target: BoardCoord,
     ) -> Result<ActionEffects, GameError> {
-        let piece = self.piece(piece_id)?.clone();
-        let config = self.catalog.piece(&piece.piece_type)?;
-        let kind = config.check_move(self.state, piece.position, target, piece.owner_id)?;
-
-        let captured = match kind {
-            MoveKind::Capture => self.capture_at(target, piece.owner_id),
-            MoveKind::Quiet => None,
-        };
-
-        let cooldown = config.cooldown_ms;
-        if let Some(moved) = self.state.pieces.get_mut(&piece_id) {
-            moved.position = target;
-            moved.last_move_time = self.now;
-            moved.cooldown_ms = cooldown;
-        }
-
-        let effects = ActionEffects {
-            captured,
-            ..ActionEffects::default()
-        };
+        let piece = self.piece(piece_id)?;
+        let plan = self.catalog.plan_move(self.state, piece, target)?;
+        let effects = self.apply_plan(&plan);
         // An automatic upgrade that cannot be afforded or placed simply does not happen.
         let upgrade = self.apply_auto_upgrade(piece_id).unwrap_or_default();
         Ok(effects.merge(upgrade))
+    }
+
+    /// Carries out a validated move plan; the mover's owner is credited for captures.
+    fn apply_plan(&mut self, plan: &MovePlan) -> ActionEffects {
+        let capturer = self
+            .state
+            .pieces
+            .get(&plan.mover)
+            .and_then(|mover| mover.owner_id);
+        let mut effects = ActionEffects::default();
+        for step in &plan.steps {
+            match step {
+                MoveStep::Capture(piece_id) => {
+                    effects.captured.extend(self.capture(*piece_id, capturer));
+                }
+                MoveStep::Relocate { piece_id, to } => {
+                    let restarts_cooldown = *piece_id == plan.mover;
+                    effects
+                        .moved
+                        .extend(self.relocate(*piece_id, *to, restarts_cooldown));
+                }
+                MoveStep::Retype { piece_id, to } => self.retype(*piece_id, to),
+            }
+            let piece_id = step.piece_id();
+            if piece_id != plan.mover && !effects.partners.contains(&piece_id) {
+                effects.partners.push(piece_id);
+            }
+        }
+        effects
+    }
+
+    /// Moves a piece to `to` and counts the move.
+    ///
+    /// Only the mover's cooldown restarts: a partner carried along by a special move (the rook
+    /// when castling) stays as ready as it was.
+    fn relocate(
+        &mut self,
+        piece_id: PieceId,
+        to: BoardCoord,
+        restarts_cooldown: bool,
+    ) -> Option<PieceMove> {
+        let piece = self.state.pieces.get_mut(&piece_id)?;
+        let from = std::mem::replace(&mut piece.position, to);
+        if restarts_cooldown {
+            piece.last_move_time = self.now;
+            piece.cooldown_ms = self.catalog.cooldown_of(&piece.piece_type);
+        }
+        piece.moves_made = piece.moves_made.next();
+        Some(PieceMove { piece_id, from, to })
+    }
+
+    /// Turns a piece into `piece_type`, adopting that type's cooldown.
+    fn retype(&mut self, piece_id: PieceId, piece_type: &PieceTypeId) {
+        let cooldown = self.catalog.cooldown_of(piece_type);
+        if let Some(piece) = self.state.pieces.get_mut(&piece_id) {
+            piece.piece_type = piece_type.clone();
+            piece.cooldown_ms = cooldown;
+        }
     }
 
     /// Buys the `item`-th offer of the shop under `piece_id` for the piece's owner.
@@ -176,11 +231,7 @@ impl<'a> Simulation<'a> {
             player.score -= price;
         }
         if let Some(new_type) = &item.replace_with {
-            let cooldown = self.catalog.cooldown_of(new_type);
-            if let Some(piece) = self.state.pieces.get_mut(&piece_id) {
-                piece.piece_type = new_type.clone();
-                piece.cooldown_ms = cooldown;
-            }
+            self.retype(piece_id, new_type);
         }
         for (piece_type, position) in item.add_pieces.iter().zip(placements) {
             let piece = Piece::new(Some(buyer), piece_type.clone(), position);
@@ -225,12 +276,14 @@ impl<'a> Simulation<'a> {
         (shop.uses_remaining == 0).then(|| self.state.shops.remove(index).shop_id)
     }
 
-    /// Removes the piece at `pos` and rewards `capturer` for it.
-    fn capture_at(&mut self, pos: BoardCoord, capturer: Option<PlayerId>) -> Option<Piece> {
-        let captured_id = self.state.piece_at(pos)?.id;
-        let captured = self.state.pieces.remove(&captured_id)?;
+    /// Removes a piece and rewards `capturer` for it, unless it took its own piece.
+    fn capture(&mut self, piece_id: PieceId, capturer: Option<PlayerId>) -> Option<Piece> {
+        let captured = self.state.pieces.remove(&piece_id)?;
         let reward = self.catalog.score_of(&captured.piece_type);
-        if let Some(player) = capturer.and_then(|id| self.state.players.get_mut(&id)) {
+        let rewarded = capturer
+            .filter(|capturer| captured.owner_id != Some(*capturer))
+            .and_then(|id| self.state.players.get_mut(&id));
+        if let Some(player) = rewarded {
             player.score += reward;
             player.pieces_captured += 1;
             if captured.piece_type.is_king() {

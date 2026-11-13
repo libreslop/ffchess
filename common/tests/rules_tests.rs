@@ -5,10 +5,10 @@ use common::models::{
     ShopItemConfig, ShopItemIndex,
 };
 use common::protocol::GameError;
-use common::rules::{Catalog, MoveKind, Simulation};
+use common::rules::{Catalog, LegalMove, MoveKind, Simulation};
 use common::types::{
-    BoardCoord, BoardSize, ColorHex, DurationMs, ExprString, PieceId, PieceTypeId, PlayerId, Score,
-    ShopId, TimestampMs,
+    BoardCoord, BoardSize, ColorHex, DurationMs, ExprString, ExprValue, PieceId, PieceTypeId,
+    PlayerId, Score, ShopId, TimestampMs,
 };
 use glam::IVec2;
 
@@ -28,6 +28,7 @@ fn piece_config(id: &str, moves: &[[i32; 2]], captures: &[[i32; 2]]) -> PieceCon
         cooldown_ms: DurationMs::from_millis(1000),
         move_paths: paths(moves),
         capture_paths: paths(captures),
+        special_moves: vec![],
     }
 }
 
@@ -48,6 +49,20 @@ fn rook_config() -> PieceConfig {
         capture_paths: vec![path],
         ..piece_config("rook", &[], &[])
     }
+}
+
+/// Checks a move of a `config` piece owned by `owner` from `start` to `end`.
+///
+/// The moving piece is not placed on the board.
+fn check(
+    config: &PieceConfig,
+    state: &GameState,
+    start: BoardCoord,
+    end: BoardCoord,
+    owner: Option<PlayerId>,
+) -> Result<MoveKind, GameError> {
+    let mover = Piece::new(owner, config.id.clone(), start);
+    catalog(vec![config.clone()], vec![]).check_move(state, &mover, end)
 }
 
 /// Builds an empty 100x100 board.
@@ -144,16 +159,16 @@ fn pawn_quiet_moves() {
     for target in [[0, 1], [0, -1], [1, 0], [-1, 0]] {
         let end = BoardCoord::new(target[0], target[1]);
         assert_eq!(
-            config.check_move(&state, start, end, None),
+            check(&config, &state, start, end, None),
             Ok(MoveKind::Quiet)
         );
     }
     assert_eq!(
-        config.check_move(&state, start, BoardCoord::new(1, 1), None),
+        check(&config, &state, start, BoardCoord::new(1, 1), None),
         Err(GameError::InvalidMove)
     );
     assert_eq!(
-        config.check_move(&state, start, start, None),
+        check(&config, &state, start, start, None),
         Err(GameError::InvalidMove)
     );
 }
@@ -171,16 +186,16 @@ fn pawn_captures() {
     let start = BoardCoord::new(0, 0);
 
     assert_eq!(
-        config.check_move(&state, start, BoardCoord::new(1, 1), Some(me)),
+        check(&config, &state, start, BoardCoord::new(1, 1), Some(me)),
         Ok(MoveKind::Capture)
     );
     assert_eq!(
-        config.check_move(&state, start, BoardCoord::new(-1, 1), Some(me)),
+        check(&config, &state, start, BoardCoord::new(-1, 1), Some(me)),
         Err(GameError::TargetFriendly)
     );
     // Orthogonal squares are only quiet moves, never captures.
     assert_eq!(
-        config.check_move(&state, start, BoardCoord::new(0, 1), Some(me)),
+        check(&config, &state, start, BoardCoord::new(0, 1), Some(me)),
         Err(GameError::InvalidMove)
     );
 }
@@ -193,7 +208,13 @@ fn moves_off_board_are_invalid() {
         ..GameState::default()
     };
     assert_eq!(
-        pawn_config().check_move(&state, BoardCoord::new(1, 0), BoardCoord::new(2, 0), None),
+        check(
+            &pawn_config(),
+            &state,
+            BoardCoord::new(1, 0),
+            BoardCoord::new(2, 0),
+            None
+        ),
         Err(GameError::InvalidMove)
     );
 }
@@ -207,11 +228,11 @@ fn sliding_path_blocking() {
     let start = BoardCoord::new(0, 0);
 
     assert_eq!(
-        config.check_move(&state, start, BoardCoord::new(0, 2), None),
+        check(&config, &state, start, BoardCoord::new(0, 2), None),
         Err(GameError::PathBlocked)
     );
     assert_eq!(
-        config.check_move(&state, start, BoardCoord::new(0, 1), None),
+        check(&config, &state, start, BoardCoord::new(0, 1), None),
         Ok(MoveKind::Capture)
     );
 }
@@ -222,7 +243,13 @@ fn npcs_do_not_capture_each_other() {
     let mut state = empty_state();
     add_piece(&mut state, None, "pawn", [1, 1]);
     assert_eq!(
-        pawn_config().check_move(&state, BoardCoord::new(0, 0), BoardCoord::new(1, 1), None),
+        check(
+            &pawn_config(),
+            &state,
+            BoardCoord::new(0, 0),
+            BoardCoord::new(1, 1),
+            None
+        ),
         Err(GameError::TargetFriendly)
     );
 }
@@ -234,12 +261,32 @@ fn legal_moves_lists_quiet_and_capture_targets() {
     let me = PlayerId::new();
     add_piece(&mut state, Some(PlayerId::new()), "pawn", [1, 1]);
     add_piece(&mut state, Some(me), "pawn", [0, 1]);
-    let moves = pawn_config().legal_moves(&state, BoardCoord::new(0, 0), Some(me));
+    let moves = catalog(vec![pawn_config()], vec![]).legal_moves(
+        &state,
+        &Piece::new(Some(me), PieceTypeId::from("pawn"), BoardCoord::new(0, 0)),
+    );
 
+    let capture = BoardCoord::new(1, 1);
+    let quiet = BoardCoord::new(0, -1);
     assert_eq!(moves.len(), 4);
-    assert!(moves.contains(&(BoardCoord::new(1, 1), MoveKind::Capture)));
-    assert!(moves.contains(&(BoardCoord::new(0, -1), MoveKind::Quiet)));
-    assert!(!moves.iter().any(|(pos, _)| *pos == BoardCoord::new(0, 1)));
+    assert!(moves.contains(&LegalMove {
+        target: capture,
+        kind: MoveKind::Capture,
+        affected: vec![capture],
+    }));
+    assert!(moves.contains(&LegalMove {
+        target: quiet,
+        kind: MoveKind::Quiet,
+        affected: vec![],
+    }));
+    assert!(
+        !moves
+            .iter()
+            .any(|legal| legal.target == BoardCoord::new(0, 1))
+    );
+    // Captures are chosen on the captured piece, quiet moves on their target.
+    let handles: Vec<_> = moves.iter().flat_map(LegalMove::handles).collect();
+    assert!(handles.contains(&&capture) && handles.contains(&&quiet));
 }
 
 #[test]
@@ -270,9 +317,9 @@ fn price_vars_count_player_pieces() {
     add_piece(&mut state, Some(PlayerId::new()), "rook", [3, 0]);
     let vars = catalog(vec![pawn_config(), rook_config()], vec![]).price_vars(&state, me);
 
-    assert_eq!(vars.get("player_piece_count"), Some(3.0));
-    assert_eq!(vars.get("pawn_count"), Some(2.0));
-    assert_eq!(vars.get("rook_count"), Some(1.0));
+    assert_eq!(vars.get("player_piece_count"), Some(ExprValue::Int(3)));
+    assert_eq!(vars.get("pawn_count"), Some(ExprValue::Int(2)));
+    assert_eq!(vars.get("rook_count"), Some(ExprValue::Int(1)));
 }
 
 #[test]
@@ -288,7 +335,7 @@ fn capture_rewards_owner() {
         .apply_move(pawn, BoardCoord::new(1, 1))
         .expect("capture is legal");
 
-    assert!(effects.captured.is_some());
+    assert_eq!(effects.captured.len(), 1);
     assert_eq!(state.pieces.len(), 1);
     let player = &state.players[&me];
     assert_eq!(player.score, Score::from(10));

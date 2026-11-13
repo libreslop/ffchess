@@ -89,11 +89,15 @@ impl World {
             .count()
     }
 
-    /// Handles the consequences of an applied action: captures and depleted shops.
+    /// Handles the consequences of an applied action: captures, disturbed partner pieces, and
+    /// depleted shops.
+    ///
+    /// Queued actions of partner pieces were planned from where they stood before, so they are
+    /// cancelled.
     pub(super) fn apply_effects(&mut self, capturer: Option<PlayerId>, effects: ActionEffects) {
-        if let Some(captured) = effects.captured {
-            self.cancel_actions_of([captured.id]);
-            self.record_capture(capturer, &captured);
+        self.cancel_actions_of(effects.partners);
+        for captured in &effects.captured {
+            self.record_capture(capturer, captured);
         }
         for shop_id in effects.depleted_shops {
             self.respawn_shop(&shop_id);

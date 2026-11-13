@@ -88,7 +88,7 @@ This file is injected into the landing page and deserialized by the Yew client a
 
 ```jsonc
 {
-  "game_order": ["ffa", "arena", "bullet", "duel"],
+  "game_order": ["ffa", "arena", "blitz", "rapid"],
   "modes_refresh_ms": 5000,
   "ping_interval_ms": 2000,
   "render_interval_ms": 16,

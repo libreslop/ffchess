@@ -1,15 +1,132 @@
-//! Path-based move validation shared by players, NPCs, and client prediction.
+//! Move validation shared by players, NPCs, and client prediction.
+//!
+//! Validating a move builds a [`MovePlan`]: every change the move makes to the board. Nothing
+//! changes while planning, so a rejected move leaves the board untouched and applying a plan
+//! needs no further checks.
 
-use crate::models::{GameState, PieceConfig};
+use super::catalog::Catalog;
+use crate::models::{GameState, Piece, PieceConfig};
 use crate::protocol::GameError;
-use crate::types::{BoardCoord, PlayerId};
+use crate::types::{BoardCoord, PieceId, PieceTypeId, PlayerId};
 use glam::IVec2;
+use std::collections::HashSet;
 
-/// Whether a move lands on an empty square or takes an enemy piece.
+/// Whether a move only relocates pieces or also takes one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MoveKind {
     Quiet,
     Capture,
+}
+
+/// A legal move of one piece, as offered to players and NPCs.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LegalMove {
+    /// Where the mover lands; the target of the move action.
+    pub target: BoardCoord,
+    pub kind: MoveKind,
+    /// Squares of the other pieces the move captures, relocates, or changes, before the move.
+    pub affected: Vec<BoardCoord>,
+}
+
+impl LegalMove {
+    /// Returns the squares that select this move and carry its hint.
+    ///
+    /// A move that affects other pieces (a capture, castling) is shown on and chosen by those
+    /// pieces; any other move by its target.
+    pub fn handles(&self) -> &[BoardCoord] {
+        if self.affected.is_empty() {
+            std::slice::from_ref(&self.target)
+        } else {
+            &self.affected
+        }
+    }
+}
+
+/// One change a move makes to the board.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum MoveStep {
+    /// Removes the piece, crediting the mover's owner.
+    Capture(PieceId),
+    /// Moves the piece to a square, restarting its cooldown.
+    Relocate { piece_id: PieceId, to: BoardCoord },
+    /// Turns the piece into another type.
+    Retype { piece_id: PieceId, to: PieceTypeId },
+}
+
+impl MoveStep {
+    /// Returns the piece this step changes.
+    pub(crate) fn piece_id(&self) -> PieceId {
+        match self {
+            Self::Capture(piece_id)
+            | Self::Relocate { piece_id, .. }
+            | Self::Retype { piece_id, .. } => *piece_id,
+        }
+    }
+}
+
+/// Every change one move makes, built before anything changes.
+///
+/// All relocations happen at the same instant: a piece may land on a square that another
+/// piece of the same plan leaves.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct MovePlan {
+    /// The piece the player or NPC moved.
+    pub(crate) mover: PieceId,
+    /// Captures first, then relocations, then type changes.
+    pub(crate) steps: Vec<MoveStep>,
+}
+
+impl MovePlan {
+    /// Returns whether the plan takes any piece.
+    pub(crate) fn kind(&self) -> MoveKind {
+        if self
+            .steps
+            .iter()
+            .any(|step| matches!(step, MoveStep::Capture(_)))
+        {
+            MoveKind::Capture
+        } else {
+            MoveKind::Quiet
+        }
+    }
+
+    /// Returns the squares of the pieces other than the mover that the plan changes, as they
+    /// stand before the move.
+    fn affected_squares(&self, state: &GameState) -> Vec<BoardCoord> {
+        let mut squares: Vec<BoardCoord> = self
+            .steps
+            .iter()
+            .map(MoveStep::piece_id)
+            .filter(|piece_id| *piece_id != self.mover)
+            .filter_map(|piece_id| state.pieces.get(&piece_id).map(|piece| piece.position))
+            .collect();
+        squares.dedup();
+        squares
+    }
+
+    /// Returns true when the board can hold the pieces where the plan puts them.
+    ///
+    /// Every destination must be on the board, no two pieces may land on the same square,
+    /// and a destination may only be occupied by a piece this plan moves away or captures.
+    pub(crate) fn fits(&self, state: &GameState) -> bool {
+        let leaving: HashSet<PieceId> = self
+            .steps
+            .iter()
+            .filter(|step| !matches!(step, MoveStep::Retype { .. }))
+            .map(MoveStep::piece_id)
+            .collect();
+        let mut destinations = HashSet::new();
+        self.steps.iter().all(|step| match step {
+            MoveStep::Relocate { to, .. } => {
+                state.board_size.contains(*to)
+                    && destinations.insert(*to)
+                    && state
+                        .piece_at(*to)
+                        .is_none_or(|occupant| leaving.contains(&occupant.id))
+            }
+            MoveStep::Capture(_) | MoveStep::Retype { .. } => true,
+        })
+    }
 }
 
 impl PieceConfig {
@@ -21,28 +138,32 @@ impl PieceConfig {
         }
     }
 
-    /// Checks whether a piece of this type owned by `owner` may move from `start` to `end`.
-    ///
-    /// Quiet moves need an empty target, captures need a target held by a different owner
-    /// (NPCs never capture each other), and every square before the target on the matching
-    /// path must be empty. Returns the kind of the legal move.
-    pub fn check_move(
+    /// Lists the squares a piece of this type on `start` might move to, before any checks.
+    fn candidate_targets(&self, start: BoardCoord) -> Vec<BoardCoord> {
+        let path_targets = self
+            .move_paths
+            .iter()
+            .chain(&self.capture_paths)
+            .flatten()
+            .map(|step| start + *step);
+        let special_targets = self
+            .special_moves
+            .iter()
+            .map(|special| special.target_from(start));
+        let mut targets: Vec<BoardCoord> = path_targets.chain(special_targets).collect();
+        targets.sort_by_key(|pos| (pos.0.x, pos.0.y));
+        targets.dedup();
+        targets
+    }
+
+    /// Checks that one of the `kind` paths from `start` reaches `end` over empty squares.
+    fn reaches(
         &self,
         state: &GameState,
         start: BoardCoord,
         end: BoardCoord,
-        owner: Option<PlayerId>,
-    ) -> Result<MoveKind, GameError> {
-        if start == end || !state.board_size.contains(end) {
-            return Err(GameError::InvalidMove);
-        }
-
-        let kind = match state.piece_at(end) {
-            Some(target) if target.owner_id == owner => return Err(GameError::TargetFriendly),
-            Some(_) => MoveKind::Capture,
-            None => MoveKind::Quiet,
-        };
-
+        kind: MoveKind,
+    ) -> Result<(), GameError> {
         let displacement = end - start;
         let mut reachable_paths = self
             .paths(kind)
@@ -63,35 +184,126 @@ impl PieceConfig {
                 .all(|step| state.piece_at(start + *step).is_none())
         };
         if reachable_paths.any(is_clear) {
-            Ok(kind)
+            Ok(())
         } else {
             Err(GameError::PathBlocked)
         }
     }
 
-    /// Lists every legal destination for a piece of this type at `start`.
-    pub fn legal_moves(
+    /// Plans a move along `move_paths` or `capture_paths`.
+    ///
+    /// Quiet moves need an empty target, captures need a target held by a different owner
+    /// (NPCs never capture each other), and every square before the target on the matching
+    /// path must be empty.
+    fn plan_path_move(
         &self,
         state: &GameState,
-        start: BoardCoord,
-        owner: Option<PlayerId>,
-    ) -> Vec<(BoardCoord, MoveKind)> {
-        let mut targets: Vec<BoardCoord> = self
-            .move_paths
-            .iter()
-            .chain(&self.capture_paths)
-            .flatten()
-            .map(|step| start + *step)
+        mover: &Piece,
+        end: BoardCoord,
+    ) -> Result<MovePlan, GameError> {
+        let start = mover.position;
+        if start == end || !state.board_size.contains(end) {
+            return Err(GameError::InvalidMove);
+        }
+
+        let (kind, captured) = match state.piece_at(end) {
+            Some(target) if target.owner_id == mover.owner_id => {
+                return Err(GameError::TargetFriendly);
+            }
+            Some(target) => (MoveKind::Capture, Some(target.id)),
+            None => (MoveKind::Quiet, None),
+        };
+
+        self.reaches(state, start, end, kind)?;
+
+        let steps = captured
+            .map(MoveStep::Capture)
+            .into_iter()
+            .chain([MoveStep::Relocate {
+                piece_id: mover.id,
+                to: end,
+            }])
             .collect();
-        targets.sort_by_key(|pos| (pos.0.x, pos.0.y));
-        targets.dedup();
-        targets
+        Ok(MovePlan {
+            mover: mover.id,
+            steps,
+        })
+    }
+}
+
+impl Catalog {
+    /// Checks whether `mover` may move to `end`.
+    ///
+    /// Returns the kind of the legal move.
+    pub fn check_move(
+        &self,
+        state: &GameState,
+        mover: &Piece,
+        end: BoardCoord,
+    ) -> Result<MoveKind, GameError> {
+        self.plan_move(state, mover, end).map(|plan| plan.kind())
+    }
+
+    /// Lists every legal move of `mover`.
+    pub fn legal_moves(&self, state: &GameState, mover: &Piece) -> Vec<LegalMove> {
+        let Ok(config) = self.piece(&mover.piece_type) else {
+            return Vec::new();
+        };
+        config
+            .candidate_targets(mover.position)
             .into_iter()
             .filter_map(|end| {
-                self.check_move(state, start, end, owner)
+                self.plan_move(state, mover, end)
                     .ok()
-                    .map(|kind| (end, kind))
+                    .map(|plan| LegalMove {
+                        target: end,
+                        kind: plan.kind(),
+                        affected: plan.affected_squares(state),
+                    })
             })
             .collect()
+    }
+
+    /// Plans the move of `mover` to `end`.
+    ///
+    /// Path moves take precedence; special moves are tried only when no path reaches `end`.
+    /// When neither applies, the path error explains why.
+    pub(crate) fn plan_move(
+        &self,
+        state: &GameState,
+        mover: &Piece,
+        end: BoardCoord,
+    ) -> Result<MovePlan, GameError> {
+        let config = self.piece(&mover.piece_type)?;
+        config.plan_path_move(state, mover, end).or_else(|error| {
+            config
+                .special_moves
+                .iter()
+                .find_map(|special| special.plan(self, state, mover, end))
+                .ok_or(error)
+        })
+    }
+
+    /// Returns true when a piece of another owner than `owner` could capture onto `square`.
+    ///
+    /// Only `capture_paths` count, and only over the current board: cooldowns are ignored and
+    /// the square does not need to be occupied. NPCs never target other NPCs' squares.
+    pub fn is_targeted(
+        &self,
+        state: &GameState,
+        square: BoardCoord,
+        owner: Option<PlayerId>,
+    ) -> bool {
+        state
+            .pieces
+            .values()
+            .filter(|attacker| attacker.owner_id != owner && attacker.position != square)
+            .any(|attacker| {
+                self.piece(&attacker.piece_type).is_ok_and(|config| {
+                    config
+                        .reaches(state, attacker.position, square, MoveKind::Capture)
+                        .is_ok()
+                })
+            })
     }
 }

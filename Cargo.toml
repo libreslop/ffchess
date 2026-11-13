@@ -6,6 +6,9 @@ members = [
 ]
 resolver = "2"
 
+[workspace.package]
+license = "AGPL-3.0-only"
+
 [profile.release]
 opt-level = "z"
 lto = true

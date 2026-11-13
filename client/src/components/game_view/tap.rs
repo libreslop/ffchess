@@ -38,8 +38,10 @@ impl TapContext<'_> {
     /// Resolves a tap on `target`.
     ///
     /// Tapping one of your pieces that has queued actions (where it stands now) clears them.
-    /// Otherwise taps select your pieces at their predicted squares, and with a piece selected,
-    /// tapping a reachable square queues a move from the piece's predicted square.
+    /// Otherwise, with a piece selected, tapping a square that selects one of its legal moves
+    /// queues that move from the piece's predicted square, even when another of your pieces
+    /// stands there (the rook when castling). Taps on your pieces that select no move select
+    /// them.
     pub(super) fn resolve(&self, target: BoardCoord) -> TapOutcome {
         if let Some(piece) = self.state.piece_at(target).filter(|piece| {
             piece.owner_id == Some(self.player_id) && self.premoves.has_actions_for(piece.id)
@@ -66,13 +68,13 @@ impl TapContext<'_> {
 
         if target == selected_piece.position {
             TapOutcome::Select(None)
-        } else if let Some(piece) = own_piece_at_target {
-            TapOutcome::Select(Some(piece.id))
-        } else if self.can_move_to(selected, target) {
+        } else if let Some(move_target) = self.move_target(selected, target) {
             TapOutcome::Move {
                 piece_id: selected,
-                target,
+                target: move_target,
             }
+        } else if let Some(piece) = own_piece_at_target {
+            TapOutcome::Select(Some(piece.id))
         } else if predicted.piece_at(target).is_none() {
             TapOutcome::Select(None)
         } else {
@@ -86,18 +88,22 @@ impl TapContext<'_> {
             && (self.projection.state.piece_at(target).is_some()
                 || self
                     .selected
-                    .is_some_and(|selected| self.can_move_to(selected, target)))
+                    .is_some_and(|selected| self.move_target(selected, target).is_some()))
     }
 
-    /// Returns true when `piece_id` may move to `target` from its predicted square.
-    fn can_move_to(&self, piece_id: PieceId, target: BoardCoord) -> bool {
+    /// Returns where `piece_id` lands when tapping `tapped` selects one of its legal moves
+    /// from its predicted square.
+    ///
+    /// A move is selected by its hint squares (see [`common::rules::LegalMove::handles`]); a
+    /// move landing on the tapped square wins over one that only affects the piece there.
+    fn move_target(&self, piece_id: PieceId, tapped: BoardCoord) -> Option<BoardCoord> {
         let predicted = &self.projection.state;
-        predicted.pieces.get(&piece_id).is_some_and(|piece| {
-            self.catalog.piece(&piece.piece_type).is_ok_and(|config| {
-                config
-                    .check_move(predicted, piece.position, target, piece.owner_id)
-                    .is_ok()
-            })
-        })
+        let piece = predicted.pieces.get(&piece_id)?;
+        self.catalog
+            .legal_moves(predicted, piece)
+            .into_iter()
+            .filter(|legal| legal.handles().contains(&tapped))
+            .min_by_key(|legal| legal.target != tapped)
+            .map(|legal| legal.target)
     }
 }

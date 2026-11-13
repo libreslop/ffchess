@@ -1,4 +1,5 @@
 use crate::models::hook::HookConfig;
+use crate::models::special_move::SpecialMove;
 use crate::models::state::Piece;
 use crate::models::summary::{GameModeClientConfig, KitSummary};
 use crate::types::{
@@ -19,6 +20,9 @@ pub struct PieceConfig {
     pub cooldown_ms: DurationMs,
     pub move_paths: Vec<Vec<IVec2>>,
     pub capture_paths: Vec<Vec<IVec2>>,
+    /// Moves beyond the paths, such as castling.
+    #[serde(default)]
+    pub special_moves: Vec<SpecialMove>,
 }
 
 /// Shop item definition, including pricing and piece changes.
@@ -138,7 +142,7 @@ pub struct NpcLimitConfig {
 impl NpcLimitConfig {
     /// Returns how many NPCs of this type may exist with `player_count` players present.
     pub fn max_count(&self, player_count: usize) -> usize {
-        let vars = ExprVars::new().with("player_count", player_count as f64);
+        let vars = ExprVars::new().with("player_count", player_count);
         self.max_expr.evaluate(&vars).max(0.0) as usize
     }
 }
@@ -249,7 +253,7 @@ impl GameModeConfig {
 
     /// Returns the board size this mode wants for `player_count` players.
     pub fn board_size_for(&self, player_count: usize) -> BoardSize {
-        let vars = ExprVars::new().with("player_count", player_count as f64);
+        let vars = ExprVars::new().with("player_count", player_count);
         BoardSize::from(self.board_size.evaluate(&vars).trunc() as i32)
     }
 

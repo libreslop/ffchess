@@ -8,7 +8,7 @@ scores, and renders.
 The filename stem becomes the runtime `PieceConfig.id`. For example:
 
 - `config/pieces/queen.jsonc` -> `id = "queen"`
-- `config/pieces/bullet_pawn_northbound_not_moved.jsonc` -> `id = "bullet_pawn_northbound_not_moved"`
+- `config/pieces/blitz_pawn_northbound_not_moved.jsonc` -> `id = "blitz_pawn_northbound_not_moved"`
 
 ## Schema
 
@@ -20,6 +20,7 @@ The filename stem becomes the runtime `PieceConfig.id`. For example:
 | `cooldown_ms` | integer (`i64`) | Yes | Move cooldown applied after a successful move. Also used for NPC move cadence for that piece type. |
 | `move_paths` | path[] | Yes | Legal non-capture movement paths. |
 | `capture_paths` | path[] | Yes | Legal capture movement paths. There is no fallback to `move_paths` when this array is empty. |
+| `special_moves` | special move[] | No | Moves beyond the paths, such as castling. See [Special Moves](#special-moves). |
 
 ### Path Encoding
 
@@ -29,7 +30,7 @@ Examples:
 
 - `[[1, 2]]`: a single knight jump.
 - `[[0, 1], [0, 2], [0, 3]]`: one ray that may stop at 1, 2, or 3 tiles along the same file.
-- `[[0, -1], [0, -2]]`: a two-step forward pawn path used by the "not moved yet" bullet pawns.
+- `[[0, -1], [0, -2]]`: a two-step forward pawn path used by the "not moved yet" blitz and rapid pawns.
 
 ### How Paths Are Interpreted
 
@@ -44,6 +45,138 @@ The validator `PieceConfig::check_move` in `common/src/rules/movement.rs` works 
 
 That means long sliding pieces are represented as one path per direction, not one path per final square.
 
+## Special Moves
+
+A special move is chosen by its `type` field. The only type today is `partneredmove`: the mover
+lands on `target` while any number of **partner** pieces act alongside it. Castling, en passant,
+and swapping places with an ally are all partnered moves.
+
+All offsets (`target`, `at`, `move_to`) are relative to the mover's square before the
+move, in the same coordinates as paths.
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `type` | `"partneredmove"` | Yes | Selects the kind of special move. |
+| `target` | `[x, y]` | Yes | Where the mover lands. Selecting this square triggers the move. |
+| `condition` | condition | No | Must hold for the mover. Sees the `self_*` variables. |
+| `requirements` | requirement[] | No | Conditions on board squares, each `{ "at": [x, y], "condition": "..." }`. Sees the `self_*` and `square_*` variables. |
+| `becomes` | piece id | No | Piece type the mover turns into. |
+| `partners` | partner[] | No | Pieces that must be present, and what happens to them. |
+
+Each partner:
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `at` | `[x, y]` | Yes | Square the partner stands on. |
+| `owner` | `"self"`, `"enemy"`, `"npc"`, `"any"` | Yes | Whose piece it must be, relative to the mover. `enemy` means any piece the mover could capture. |
+| `types` | piece id[] | No | Accepted piece types; any type when empty. |
+| `condition` | condition | No | Must hold for this partner. Sees the `self_*` and `partner_*` variables. |
+| `action` | action | No | `{ "move_to": [x, y] }`, `"capture"`, or `{ "becomes": "<piece id>" }`. The partner stays untouched when omitted, which makes it a pure requirement. |
+
+The move is legal only when the mover's condition holds, every requirement holds, and every
+partner is present, distinct, and satisfies its owner, types, and condition. Every condition is
+evaluated on the board as it is before the move. All pieces then move
+at the same instant: a piece may land on a square another piece of the same move leaves, but two
+pieces may never land on the same square, and every destination must be on the board.
+
+Other rules:
+
+- path moves win: a special move is only tried when no `move_paths` / `capture_paths` entry
+  reaches the target,
+- a partner moved by `move_to` counts a move (`partner_moves`), but only the mover's cooldown
+  restarts: castling is the king's move, so the rook stays ready,
+- a captured partner credits the mover's owner, like a normal capture,
+- the server cancels queued premoves of every partner the move changed, since they were planned
+  from where the partner stood before,
+- a special move that affects other pieces is hinted with a capture frame around those pieces
+  rather than a dot on the mover's target, and the player taps one of them to make it (tap the
+  rook to castle); a special move that affects no other piece is hinted and chosen on its target,
+- with a piece selected, tapping one of your own pieces that selects one of the selected piece's
+  moves makes that move instead of selecting the tapped piece.
+
+### Conditions
+
+Conditions are [evalexpr](https://docs.rs/evalexpr) expressions that must produce `true` or
+`false`, for example `self_moves == 0 && !self_targeted`. Variables:
+
+| Variable | Available in | Meaning |
+| --- | --- | --- |
+| `self_moves` | all | Moves the mover has made since it was placed. |
+| `self_targeted` | all | Whether an enemy of the mover could capture it. |
+| `partner_moves` | partner conditions | Moves the partner has made since it was placed. |
+| `partner_targeted` | partner conditions | Whether an enemy of the partner could capture it. |
+| `square_empty` | requirements | Whether no piece stands on the square. |
+| `square_targeted` | requirements | Whether an enemy of the mover could capture onto the square. |
+
+A piece or square is **targeted** when a piece of another owner could reach it along one of its
+`capture_paths` over empty squares. Cooldowns are ignored, the square does not have to be
+occupied, special moves do not count, and NPCs never target each other. It is the closest this
+game has to "check".
+
+The server checks every condition when it loads the config and refuses to start on a malformed
+condition, a misspelled variable, or one that does not produce a boolean. It also refuses unknown
+piece ids in `types`, `becomes`, and `action`.
+
+### Example: Castling King
+
+This is the castling of the blitz and rapid kings. Unlike standard chess, the king may cross an
+attacked square; adding `&& !square_targeted` to the `[1, 0]` and `[-1, 0]` requirements
+forbids that too.
+
+```jsonc
+{
+  "display_name": "King",
+  "svg_path": "king.svg",
+  "score_value": 500,
+  "cooldown_ms": 1000,
+  "move_paths": [[[1, 0]], [[-1, 0]], [[0, 1]], [[0, -1]], [[1, 1]], [[1, -1]], [[-1, 1]], [[-1, -1]]],
+  "capture_paths": [[[1, 0]], [[-1, 0]], [[0, 1]], [[0, -1]], [[1, 1]], [[1, -1]], [[-1, 1]], [[-1, -1]]],
+  "special_moves": [
+    {
+      // Short castle: the king steps two squares right, the rook jumps over it.
+      "type": "partneredmove",
+      "target": [2, 0],
+      "condition": "self_moves == 0 && !self_targeted",
+      // The king may not land on an attacked square. The square it crosses is where the rook
+      // lands, so it only has to be empty.
+      "requirements": [
+        { "at": [1, 0], "condition": "square_empty" },
+        { "at": [2, 0], "condition": "square_empty && !square_targeted" }
+      ],
+      "partners": [{
+        "at": [3, 0],
+        "owner": "self",
+        "types": ["rook"],
+        "condition": "partner_moves == 0",
+        "action": { "move_to": [1, 0] }
+      }]
+    },
+    {
+      // Long castle.
+      "type": "partneredmove",
+      "target": [-2, 0],
+      "condition": "self_moves == 0 && !self_targeted",
+      "requirements": [
+        { "at": [-1, 0], "condition": "square_empty" },
+        { "at": [-2, 0], "condition": "square_empty && !square_targeted" },
+        // Only the rook crosses this square, so it may be attacked.
+        { "at": [-3, 0], "condition": "square_empty" }
+      ],
+      "partners": [{
+        "at": [-4, 0],
+        "owner": "self",
+        "types": ["rook"],
+        "condition": "partner_moves == 0",
+        "action": { "move_to": [-1, 0] }
+      }]
+    }
+  ]
+}
+```
+
+Because conditions see the board before the move, a square behind the king on an attacking ray
+is not treated as targeted while the king itself still blocks that ray.
+
 ## Naming Conventions That Matter
 
 `PieceTypeId::is_king()` is name-based. A piece is treated as a king if its id:
@@ -55,16 +188,17 @@ That affects:
 
 - player spawn validation (`kits` and `queue_layout` must include a king),
 - kill tracking,
-- hook targeting in common configs such as `target_piece_id = "king"` or `"bullet_king"`.
+- hook targeting in common configs such as `target_piece_id = "king"` or `"blitz_king"`.
 
 ## Practical Patterns In This Repository
 
 - `king`, `knight`, and `pawn` are direct-move pieces with short paths.
 - `bishop`, `rook`, and `queen` use one long path per direction for sliding.
-- Bullet-mode pawns encode state transitions as different piece ids:
-  - `bullet_pawn_*_not_moved`
-  - `bullet_pawn_*_moved`
-- Bullet-mode promotion is not built into piece configs; it is implemented through shops.
+- Blitz and rapid pawns encode state transitions as different piece ids:
+  - `blitz_pawn_*_not_moved` / `rapid_pawn_*_not_moved`
+  - `blitz_pawn_*_moved` / `rapid_pawn_*_moved`
+- Blitz and rapid promotion is not built into piece configs; it is implemented through shops.
+- Blitz and rapid kings castle through `special_moves` (see `config/pieces/blitz_king.jsonc`).
 
 ## Example: Standard Pawn
 
@@ -93,14 +227,14 @@ That affects:
 }
 ```
 
-## Example: Bullet Pawn Before Its First Move
+## Example: Blitz Pawn Before Its First Move
 
 ```jsonc
 {
-  "display_name": "Bullet Pawn (Northbound, Not Moved)",
+  "display_name": "Blitz Pawn (Northbound, Not Moved)",
   "svg_path": "pawn.svg",
   "score_value": 10,
-  "cooldown_ms": 1000,
+  "cooldown_ms": 3000,
 
   // One path, two possible landing squares. The intermediate square must be free.
   "move_paths": [

@@ -183,8 +183,7 @@ pub fn update_camera(manager: &mut CameraManager, params: CameraUpdateParams<'_>
 
             // 4. Global Clamping (Respect camera_pan_limit)
             if let Some(m) = params.mode {
-                let mut vars =
-                    ExprVars::new().with("player_piece_count", params.piece_count as f64);
+                let mut vars = ExprVars::new().with("player_piece_count", params.piece_count);
                 let fog_of_war_radius = m
                     .fog_of_war_radius
                     .as_ref()

@@ -10,5 +10,50 @@
     "capture_paths": [
         [[0, 1]], [[0, -1]], [[1, 0]], [[-1, 0]],
         [[1, 1]], [[1, -1]], [[-1, 1]], [[-1, -1]]
+    ],
+    // The king may not castle out of or into an attacked square, and neither the king nor the
+    // rook may have moved before. The square the king crosses is where the rook lands, so it
+    // only has to be empty.
+    "special_moves": [
+        {
+            // Short castle: the king steps two squares, the rook jumps over it.
+            "type": "partneredmove",
+            "target": [2, 0],
+            "condition": "self_moves == 0 && !self_targeted",
+            "requirements": [
+                { "at": [1, 0], "condition": "square_empty" },
+                { "at": [2, 0], "condition": "square_empty && !square_targeted" }
+            ],
+            "partners": [
+                {
+                    "at": [3, 0],
+                    "owner": "self",
+                    "types": ["blitz_rook"],
+                    "condition": "partner_moves == 0",
+                    "action": { "move_to": [1, 0] }
+                }
+            ]
+        },
+        {
+            // Long castle: the king steps two squares, the rook jumps over it.
+            "type": "partneredmove",
+            "target": [-2, 0],
+            "condition": "self_moves == 0 && !self_targeted",
+            "requirements": [
+                { "at": [-1, 0], "condition": "square_empty" },
+                { "at": [-2, 0], "condition": "square_empty && !square_targeted" },
+                // Only the rook crosses this square, so it may be attacked.
+                { "at": [-3, 0], "condition": "square_empty" }
+            ],
+            "partners": [
+                {
+                    "at": [-4, 0],
+                    "owner": "self",
+                    "types": ["blitz_rook"],
+                    "condition": "partner_moves == 0",
+                    "action": { "move_to": [-1, 0] }
+                }
+            ]
+        }
     ]
 }

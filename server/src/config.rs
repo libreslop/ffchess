@@ -58,12 +58,16 @@ pub struct ConfigManager {
 impl ConfigManager {
     /// Loads configuration from the given config root directory.
     ///
-    /// Panics with file context when a piece, shop, or mode config is malformed.
+    /// Panics with file context when a piece, shop, or mode config is malformed, and when a
+    /// special move names an unknown piece type or has an unparsable condition.
     pub fn load(root: &Path) -> Self {
         let catalog = Catalog {
             pieces: load_id_mapped_configs(&root.join("pieces"), |_| {}),
             shops: load_id_mapped_configs(&root.join("shops"), normalize_shop_default_group),
         };
+        catalog
+            .validate()
+            .unwrap_or_else(|e| panic!("Invalid piece config: {e}"));
         let modes = load_id_mapped_configs(&root.join("modes"), |_| {});
         let server_globals = read_jsonc_value(&root.join("global/server.jsonc"));
 

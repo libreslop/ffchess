@@ -7,7 +7,7 @@
 
 use common::models::{GameState, PieceAction};
 use common::protocol::{ActionRequest, GameError};
-use common::rules::{Catalog, Simulation};
+use common::rules::{Catalog, PieceMove, Simulation};
 use common::types::{ActionId, BoardCoord, PieceId, TimestampMs};
 use std::collections::HashSet;
 
@@ -30,11 +30,23 @@ struct Premove {
 }
 
 /// A predicted movement drawn as a line from `start` to `target`.
+///
+/// A special move draws one line per piece it relocates, partners included.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PremoveLine {
     pub piece_id: PieceId,
     pub start: BoardCoord,
     pub target: BoardCoord,
+}
+
+impl From<PieceMove> for PremoveLine {
+    fn from(moved: PieceMove) -> Self {
+        Self {
+            piece_id: moved.piece_id,
+            start: moved.from,
+            target: moved.to,
+        }
+    }
 }
 
 /// The board as it will look once every queued action has run.
@@ -139,21 +151,12 @@ impl PremoveQueue {
             if broken_pieces.contains(&premove.piece_id) {
                 continue;
             }
-            let start = projected
-                .pieces
-                .get(&premove.piece_id)
-                .map(|piece| piece.position);
             // Move timestamps of predicted pieces are never shown, so any clock value works.
             let applied = Simulation::new(catalog, &mut projected, TimestampMs::default())
                 .apply(premove.piece_id, premove.action);
-            match (applied, start, premove.action) {
-                (Ok(_), Some(start), PieceAction::Move { target }) => lines.push(PremoveLine {
-                    piece_id: premove.piece_id,
-                    start,
-                    target,
-                }),
-                (Ok(_), _, _) => {}
-                (Err(_), _, _) => {
+            match applied {
+                Ok(effects) => lines.extend(effects.moved.into_iter().map(PremoveLine::from)),
+                Err(_) => {
                     broken_pieces.insert(premove.piece_id);
                 }
             }

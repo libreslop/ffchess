@@ -130,6 +130,11 @@ Different expressions run in different places:
 | `fog_of_war_radius` | `player_piece_count` |
 | `camera_pan_limit` | `player_piece_count`, `fog_of_war_radius` |
 
+Expressions use [evalexpr](https://docs.rs/evalexpr) syntax. Counts such as `player_count` are
+integers, so dividing two integers rounds down (`player_count / 3`); write `player_count / 3.0`
+to keep the fraction. Most math functions are namespaced, for example `math::sqrt`, while
+`min`, `max`, `floor`, `ceil`, and `round` are not. A malformed expression evaluates to `0`.
+
 ## Queue Mode Rules
 
 If `queue_players >= 2`, the mode behaves differently:
@@ -187,7 +192,7 @@ joining the extra slot fails at runtime.
 
 ```jsonc
 {
-  "display_name": "Bullet",
+  "display_name": "Blitz",
   "max_players": 2,
   "queue_players": 2,
   "preview_switch_delay_ms": 5000,
@@ -202,13 +207,13 @@ joining the extra slot fails at runtime.
   "npc_limits": [],
   "shop_counts": [],
   "fixed_shops": [
-    { "shop_id": "bullet_pawn_northbound_step_shop", "position": [-4, 1] }
+    { "shop_id": "blitz_pawn_northbound_step_shop", "position": [-4, 1] }
   ],
   "kits": [
     {
       "name": "Classic",
       "description": "Standard chess pieces",
-      "pieces": ["bullet_king", "bullet_queen"]
+      "pieces": ["blitz_king", "blitz_queen"]
     }
   ],
   "queue_layout": {
@@ -216,13 +221,13 @@ joining the extra slot fails at runtime.
       {
         "board_rotation_deg": 0,
         "pieces": [
-          { "piece_id": "bullet_king", "position": [0, 3] }
+          { "piece_id": "blitz_king", "position": [0, 3] }
         ]
       },
       {
         "board_rotation_deg": 180,
         "pieces": [
-          { "piece_id": "bullet_king", "position": [0, -4] }
+          { "piece_id": "blitz_king", "position": [0, -4] }
         ]
       }
     ]
@@ -230,7 +235,7 @@ joining the extra slot fails at runtime.
   "hooks": [
     {
       "trigger": "OnCapturePieceActive",
-      "target_piece_id": "bullet_king",
+      "target_piece_id": "blitz_king",
       "action": "WinCapturer",
       "victory_focus": "CaptureSquare"
     }

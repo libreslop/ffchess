@@ -4,7 +4,7 @@ use super::color::hex_to_rgba;
 use super::types::{PieceDrawParams, PieceNameDrawParams, PieceSvgCache, RenderParams, Renderer};
 use crate::math::{Vec2, vec2};
 use common::models::{GameModeClientConfig, Piece};
-use common::rules::{Catalog, MoveKind};
+use common::rules::{Catalog, LegalMove};
 use common::types::{BoardCoord, ExprVars, PlayerId};
 use glam::IVec2;
 use std::cell::RefCell;
@@ -99,7 +99,7 @@ impl Visibility {
 fn fog_radius(mode: Option<&GameModeClientConfig>, piece_count: usize) -> Option<f64> {
     match mode {
         Some(mode) => {
-            let vars = ExprVars::new().with("player_piece_count", piece_count as f64);
+            let vars = ExprVars::new().with("player_piece_count", piece_count);
             mode.fog_of_war_radius
                 .as_ref()
                 .map(|expr| expr.evaluate(&vars))
@@ -269,16 +269,13 @@ impl Renderer {
             .fill_rect(origin.x + 2.0, origin.y + 2.0, tile - 4.0, tile - 4.0);
     }
 
-    /// Lists the legal destinations of the selected piece and the color to mark them in.
-    fn move_hints(&self, params: &RenderParams<'_>) -> (Vec<(BoardCoord, MoveKind)>, String) {
+    /// Lists the legal moves of the selected piece and the color to mark them in.
+    fn move_hints(&self, params: &RenderParams<'_>) -> (Vec<LegalMove>, String) {
         let predicted = &params.projection.state;
         let Some(piece) = params
             .selected_piece_id
             .and_then(|id| predicted.pieces.get(&id))
         else {
-            return (Vec::new(), DEFAULT_HINT_COLOR.to_string());
-        };
-        let Some(config) = self.catalog.pieces.get(&piece.piece_type) else {
             return (Vec::new(), DEFAULT_HINT_COLOR.to_string());
         };
         let color = piece
@@ -288,21 +285,22 @@ impl Renderer {
                 || DEFAULT_HINT_COLOR.to_string(),
                 |player| hex_to_rgba(player.color.as_ref(), 0.4),
             );
-        (
-            config.legal_moves(predicted, piece.position, piece.owner_id),
-            color,
-        )
+        (self.catalog.legal_moves(predicted, piece), color)
     }
 
-    /// Marks quiet move destinations with a dot.
+    /// Marks the destinations of moves that leave every other piece alone with a dot.
     fn draw_quiet_hints(
         &self,
-        (hints, color): &(Vec<(BoardCoord, MoveKind)>, String),
+        (hints, color): &(Vec<LegalMove>, String),
         geometry: &FrameGeometry,
     ) {
         self.ctx.set_fill_style_str(color);
         let radius = geometry.tile * 0.16;
-        for (target, _) in hints.iter().filter(|(_, kind)| *kind == MoveKind::Quiet) {
+        let targets = hints
+            .iter()
+            .filter(|legal| legal.affected.is_empty())
+            .flat_map(LegalMove::handles);
+        for target in targets {
             let center = geometry.square_center(*target);
             self.ctx.begin_path();
             let _ = self
@@ -312,15 +310,20 @@ impl Renderer {
         }
     }
 
-    /// Marks capture destinations with four corner triangles, drawn above the pieces.
+    /// Frames the pieces that moves capture or carry along (such as the rook when castling)
+    /// with four corner triangles, drawn above the pieces.
     fn draw_capture_hints(
         &self,
-        (hints, color): &(Vec<(BoardCoord, MoveKind)>, String),
+        (hints, color): &(Vec<LegalMove>, String),
         geometry: &FrameGeometry,
     ) {
         self.ctx.set_fill_style_str(color);
         let (tile, corner) = (geometry.tile, geometry.tile * 0.22);
-        for (target, _) in hints.iter().filter(|(_, kind)| *kind == MoveKind::Capture) {
+        let targets = hints
+            .iter()
+            .filter(|legal| !legal.affected.is_empty())
+            .flat_map(LegalMove::handles);
+        for target in targets {
             let origin = geometry.square_origin(*target);
             for (dx, dy) in [(1.0, 1.0), (-1.0, 1.0), (1.0, -1.0), (-1.0, -1.0)] {
                 let tip = origin

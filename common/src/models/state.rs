@@ -1,6 +1,6 @@
 use crate::types::{
-    BoardCoord, BoardSize, ColorHex, DurationMs, ModeId, PieceId, PieceTypeId, PlayerId, Score,
-    ShopId, TimestampMs,
+    BoardCoord, BoardSize, ColorHex, DurationMs, ModeId, MoveCount, PieceId, PieceTypeId, PlayerId,
+    Score, ShopId, TimestampMs,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -15,6 +15,9 @@ pub struct Piece {
     pub position: BoardCoord,
     pub last_move_time: TimestampMs,
     pub cooldown_ms: DurationMs,
+    /// Moves made since the piece was placed, including moves made as a special move partner.
+    #[serde(default)]
+    pub moves_made: MoveCount,
 }
 
 impl Piece {
@@ -27,6 +30,7 @@ impl Piece {
             position,
             last_move_time: TimestampMs::from_millis(0),
             cooldown_ms: DurationMs::zero(),
+            moves_made: MoveCount::default(),
         }
     }
 

@@ -2,7 +2,6 @@
     "game_order": [
         "ffa",
         "arena",
-        "bullet",
         "blitz",
         "rapid"
     ],

@@ -197,3 +197,22 @@ impl fmt::Display for QueuePosition {
         write!(f, "{}", self.0)
     }
 }
+
+/// Number of moves a piece has made since it was placed.
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize, PartialOrd, Ord,
+)]
+#[serde(transparent)]
+pub struct MoveCount(pub u32);
+
+impl MoveCount {
+    /// Returns the count after one more move.
+    pub const fn next(self) -> Self {
+        Self(self.0.saturating_add(1))
+    }
+
+    /// Returns the underlying move count.
+    pub const fn as_u32(self) -> u32 {
+        self.0
+    }
+}

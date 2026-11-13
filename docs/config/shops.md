@@ -15,7 +15,7 @@ The filename stem becomes the runtime `ShopConfig.id`.
 | --- | --- | --- | --- | --- |
 | `display_name` | string | Yes | Label shown in the client UI. |
 | `default_uses` | integer (`u32`) | Yes | Number of successful purchases before the shop depletes. When it reaches zero, the server removes the shop and respawns a fresh copy elsewhere. |
-| `color` | string or `null` | No | `null` | CSS color string used when drawing the shop tile. Transparent RGBA values are valid and used in bullet mode. |
+| `color` | string or `null` | No | `null` | CSS color string used when drawing the shop tile. Transparent RGBA values are valid and used in blitz and rapid. |
 | `focus_color` | string or `null` | No | `null` | CSS color string used when highlighting the active/focused shop square. If omitted, the client falls back to `color`. |
 | `auto_upgrade_single_item` | boolean | No | `false` | If `true` and the selected group contains exactly one item, landing on the shop auto-purchases that item after a move succeeds. |
 | `groups` | `ShopGroup[]` | Yes | none | Piece-specific groups checked before `default_group`. |
@@ -53,7 +53,10 @@ The normal client UI only opens a shop when the local player has a piece on the 
 `price_expr` is evaluated with these variables:
 
 - `player_piece_count`: total pieces owned by the buyer
-- `<piece_id>_count`: per-piece ownership counts, for example `pawn_count` or `bullet_queen_count`
+- `<piece_id>_count`: per-piece ownership counts, for example `pawn_count` or `blitz_queen_count`
+
+Both are integers. Expression syntax is described under
+[Expression Contexts](modes.md#expression-contexts).
 
 Values are computed server-side during purchase. The client uses the same formula inputs for its
 shop UI preview.
@@ -100,7 +103,7 @@ Important runtime details:
 }
 ```
 
-## Example: Bullet Promotion Shop
+## Example: Blitz Promotion Shop
 
 ```jsonc
 {
@@ -111,12 +114,12 @@ Important runtime details:
   "auto_upgrade_single_item": false,
   "groups": [
     {
-      "applies_to": ["bullet_pawn_northbound_moved", "bullet_pawn_southbound_moved"],
+      "applies_to": ["blitz_pawn_northbound_moved", "blitz_pawn_southbound_moved"],
       "items": [
-        { "display_name": "Queen",  "price_expr": null, "replace_with": "bullet_queen",  "add_pieces": [] },
-        { "display_name": "Rook",   "price_expr": null, "replace_with": "bullet_rook",   "add_pieces": [] },
-        { "display_name": "Bishop", "price_expr": null, "replace_with": "bullet_bishop", "add_pieces": [] },
-        { "display_name": "Knight", "price_expr": null, "replace_with": "bullet_knight", "add_pieces": [] }
+        { "display_name": "Queen",  "price_expr": null, "replace_with": "blitz_queen",  "add_pieces": [] },
+        { "display_name": "Rook",   "price_expr": null, "replace_with": "blitz_rook",   "add_pieces": [] },
+        { "display_name": "Bishop", "price_expr": null, "replace_with": "blitz_bishop", "add_pieces": [] },
+        { "display_name": "Knight", "price_expr": null, "replace_with": "blitz_knight", "add_pieces": [] }
       ]
     }
   ],

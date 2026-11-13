@@ -33,6 +33,19 @@ impl Catalog {
             .ok_or_else(|| GameError::Internal(format!("Shop config {id} not found")))
     }
 
+    /// Checks that every special move uses valid conditions and known piece types.
+    ///
+    /// Returns a message naming the offending piece type otherwise.
+    pub fn validate(&self) -> Result<(), String> {
+        self.pieces.values().try_for_each(|config| {
+            config
+                .special_moves
+                .iter()
+                .try_for_each(|special| special.validate(self))
+                .map_err(|error| format!("piece `{}` special move: {error}", config.id))
+        })
+    }
+
     /// Returns the movement cooldown of a piece type.
     pub fn cooldown_of(&self, id: &PieceTypeId) -> DurationMs {
         self.pieces
@@ -53,7 +66,7 @@ impl Catalog {
     pub fn price_vars(&self, state: &GameState, player_id: PlayerId) -> ExprVars {
         let mut counts: HashMap<&PieceTypeId, usize> =
             self.pieces.keys().map(|id| (id, 0)).collect();
-        let mut total = 0;
+        let mut total: usize = 0;
         for piece in state.pieces_of(player_id) {
             total += 1;
             if let Some(count) = counts.get_mut(&piece.piece_type) {
@@ -62,8 +75,8 @@ impl Catalog {
         }
 
         counts.into_iter().fold(
-            ExprVars::new().with("player_piece_count", total as f64),
-            |vars, (id, count)| vars.with(format!("{id}_count"), count as f64),
+            ExprVars::new().with("player_piece_count", total),
+            |vars, (id, count)| vars.with(format!("{id}_count"), count),
         )
     }
 }

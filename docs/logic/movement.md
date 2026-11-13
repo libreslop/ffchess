@@ -2,8 +2,8 @@
 
 Movement is split across three layers:
 
-1. shared rules in `common/src/rules/` (`movement.rs` validates paths, `simulation.rs` applies
-   moves, captures, and purchases to a `GameState`),
+1. shared rules in `common/src/rules/` (`movement.rs` validates paths and builds move plans,
+   `special.rs` plans special moves, `simulation.rs` applies plans and purchases to a `GameState`),
 2. authoritative execution in `server/src/instance/actions.rs`, which runs the shared simulation
    against the live board,
 3. prediction in the client (`client/src/premoves.rs`), which runs the very same simulation
@@ -14,10 +14,17 @@ what the server will do if the board does not change in the meantime.
 
 ## Shared Validation Rules
 
-`PieceConfig::check_move()` answers one question: "Given the current board state, may this piece
+`Catalog::check_move()` answers one question: "Given the current board state, may this piece
 move to that square, and is it a quiet move or a capture?"
 
-It enforces:
+Internally it builds a **move plan**: every change the move makes (captures, relocations, type
+changes), worked out without touching the board. A rejected move therefore changes nothing, and
+applying a plan needs no further checks. Path moves are tried first; when no path reaches the
+target, each of the piece's `special_moves` is tried (see
+[Special Moves](../config/pieces.md#special-moves)). When neither applies, the path error is
+returned.
+
+Path moves enforce:
 
 - start and end squares must differ,
 - the target must be inside the current board bounds (`InvalidMove`),
@@ -26,8 +33,19 @@ It enforces:
 - the target displacement must match a step of one of those paths (`InvalidMove`),
 - every earlier step of a matching path must be empty (`PathBlocked` when all are blocked).
 
-`PieceConfig::legal_moves()` lists every legal destination; the renderer uses it for move hints
-and NPCs use it to pick moves.
+`Catalog::legal_moves()` lists every legal move, special moves included; the renderer uses it
+for move hints, taps use it to pick the move, and NPCs use it to pick moves. Each `LegalMove`
+holds the mover's target, its kind (a special move that captures counts as a capture), and the
+**affected** squares: where the other pieces it captures, relocates, or changes stand. A move
+with affected squares is hinted with a capture frame on them and chosen by tapping them; any
+other move is hinted with a dot on its target and chosen by tapping that. A normal capture's
+affected square is its target, so captures look as they always did, while castling frames the
+rook. Either way the client sends the mover's target with the move.
+
+`Catalog::is_targeted()` tells whether a piece of another owner could capture onto a square
+along its `capture_paths` with a clear path. Special move conditions use it for the
+`*_targeted` variables. These checks live on `Catalog` rather than `PieceConfig` because
+targeting needs the configs of every piece on the board.
 
 The validator does not understand turns, cooldowns, matchmaking, or victory. Cooldowns are
 checked by the server's action queue.
@@ -77,15 +95,20 @@ Every instance keeps its state behind one lock and sends messages while holding 
 
 `Simulation::apply_move()`:
 
-1. checks the move with `check_move()`,
-2. on a capture, removes the captured piece and credits the mover's owner
-   (`score += score_value`, `pieces_captured += 1`, `kills += 1` for kings),
-3. moves the piece, stamps `last_move_time`, and sets `cooldown_ms` from its config,
-4. if the piece belongs to a player and landed on an auto-upgrade shop, buys that shop's single
+1. plans the move (see above),
+2. removes every captured piece and credits the mover's owner
+   (`score += score_value`, `pieces_captured += 1`, `kills += 1` for kings); taking your own
+   piece through a special move earns nothing,
+3. relocates every moved piece and counts the move in `moves_made`; only the mover stamps
+   `last_move_time` and takes `cooldown_ms` from its type, so partners stay as ready as they were,
+4. applies type changes (`becomes`), adopting the new type's cooldown,
+5. if the mover belongs to a player and landed on an auto-upgrade shop, buys that shop's single
    offer (see below). An upgrade that cannot be afforded or placed simply does not happen.
 
-The server then records hook events for the capture and respawns any shop whose last use was
-consumed.
+The returned `ActionEffects` list the captured pieces, every relocation, and the **partners**:
+pieces other than the mover that the action changed. The server records hook events for the
+captures, cancels the queued actions of every partner (they were planned from where the partner
+stood before), and respawns any shop whose last use was consumed.
 
 ## Applying A Purchase
 
@@ -126,11 +149,16 @@ pawn into its single-step variant for the following premoves.
 4. Every snapshot also drops actions of pieces that no longer exist.
 
 For drawing, `PremoveQueue::project()` applies all unresolved actions, in order, to a copy of the
-snapshot. Successful moves become premove lines; the projected board provides the faded "ghost"
+snapshot. Every relocation of a successful move becomes a premove line, so a castle draws one line
+for the king and one for the rook; the projected board provides the faded "ghost"
 pieces, the selection, move hints, and which shop menu to show. An action that fails in the
 projection hides itself and the rest of its piece's chain, because the server will cancel them too.
 
 Tapping one of your own pieces on its real square while it has queued actions clears them.
+Otherwise, with a piece selected, a tap on a square that selects one of the selected piece's
+legal moves (its target, or a piece it affects) queues that move, even on one of your own pieces
+(the rook when castling). Tapping one of your pieces selects it when nothing is selected or it
+selects none of the selected piece's moves.
 
 ## Movement Diagram
 

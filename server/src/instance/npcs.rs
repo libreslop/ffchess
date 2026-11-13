@@ -2,8 +2,8 @@
 
 use super::world::World;
 use crate::spawning::find_spawn_pos;
-use common::models::{Piece, PieceConfig};
-use common::rules::{MoveKind, Simulation};
+use common::models::Piece;
+use common::rules::{Catalog, MoveKind, Simulation};
 use common::types::{BoardCoord, PieceId, TimestampMs};
 use rand::Rng;
 use rand::seq::SliceRandom;
@@ -60,10 +60,7 @@ impl World {
         let Some(piece) = self.state.pieces.get(&piece_id) else {
             return;
         };
-        let Ok(config) = catalog.piece(&piece.piece_type) else {
-            return;
-        };
-        let Some(target) = self.choose_npc_move(config, piece.position) else {
+        let Some(target) = self.choose_npc_move(&catalog, piece) else {
             return;
         };
         if let Ok(effects) =
@@ -73,11 +70,12 @@ impl World {
         }
     }
 
-    /// Chooses the next square for an NPC at `position`.
+    /// Chooses the next square for the NPC `npc`.
     ///
     /// NPCs close in on the nearest player piece within the hunt radius, otherwise wander.
-    fn choose_npc_move(&self, config: &PieceConfig, position: BoardCoord) -> Option<BoardCoord> {
-        let moves = config.legal_moves(&self.state, position, None);
+    fn choose_npc_move(&self, catalog: &Catalog, npc: &Piece) -> Option<BoardCoord> {
+        let position = npc.position;
+        let moves = catalog.legal_moves(&self.state, npc);
         let prey = self
             .state
             .pieces
@@ -89,13 +87,13 @@ impl World {
         match prey {
             Some(prey) => moves
                 .into_iter()
-                .min_by_key(|(target, _)| target.distance_squared(prey.position))
-                .map(|(target, _)| target),
+                .map(|legal| legal.target)
+                .min_by_key(|target| target.distance_squared(prey.position)),
             None => {
                 let quiet: Vec<BoardCoord> = moves
                     .into_iter()
-                    .filter(|(_, kind)| *kind == MoveKind::Quiet)
-                    .map(|(target, _)| target)
+                    .filter(|legal| legal.kind == MoveKind::Quiet)
+                    .map(|legal| legal.target)
                     .collect();
                 quiet.choose(&mut rand::thread_rng()).copied()
             }

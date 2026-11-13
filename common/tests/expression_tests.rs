@@ -1,7 +1,7 @@
 //! Tests for expression evaluation and board sizing helpers.
 
 use common::models::{GameModeConfig, NpcLimitConfig};
-use common::types::{BoardSize, ExprString, ExprVars};
+use common::types::{BoardSize, ExprString, ExprVars, MoveCount};
 
 #[test]
 /// Verifies expressions use provided variables when evaluating.
@@ -47,4 +47,57 @@ fn npc_limit_clamps_negative_results() {
     };
     assert_eq!(limit.max_count(2), 0);
     assert_eq!(limit.max_count(8), 3);
+}
+
+#[test]
+/// Verifies conditions compare integer counts exactly and combine with boolean operators.
+fn conditions_compare_counts() {
+    let vars = ExprVars::new()
+        .with("self_moves", MoveCount(0))
+        .with("partner_moves", MoveCount(2));
+    assert!(ExprString::from("self_moves == 0").holds(&vars));
+    assert!(ExprString::from("self_moves == 0 && (partner_moves < 3 || false)").holds(&vars));
+    assert!(!ExprString::from("!(partner_moves >= 2)").holds(&vars));
+}
+
+#[test]
+/// Verifies malformed or non-boolean conditions never hold.
+fn broken_conditions_do_not_hold() {
+    let vars = ExprVars::new().with("self_moves", MoveCount(0));
+    assert!(!ExprString::from("self_moves ==").holds(&vars));
+    assert!(!ExprString::from("missing == 0").holds(&vars));
+    assert!(!ExprString::from("self_moves + 1").holds(&vars));
+}
+
+#[test]
+/// Verifies condition checks catch malformed, misspelled, and non-boolean conditions.
+fn condition_check_reports_mistakes() {
+    let sample = ExprVars::new().with("self_moves", MoveCount(0));
+    assert!(
+        ExprString::from("self_moves == 0")
+            .check_condition(&sample)
+            .is_ok()
+    );
+    for broken in [
+        "self_moves ==",
+        "self_move == 0",
+        "self_moves + 1",
+        "foo(self_moves)",
+    ] {
+        assert!(
+            ExprString::from(broken).check_condition(&sample).is_err(),
+            "{broken}"
+        );
+    }
+}
+
+#[test]
+/// Verifies the FFA board size formula grows with the player count.
+fn ffa_board_size_formula() {
+    let mode = GameModeConfig {
+        board_size: ExprString::from("max(34, 25 + math::sqrt(floor(player_count / 3)) * 15)"),
+        ..GameModeConfig::default()
+    };
+    assert_eq!(mode.board_size_for(0), BoardSize::from(34));
+    assert_eq!(mode.board_size_for(12), BoardSize::from(55));
 }

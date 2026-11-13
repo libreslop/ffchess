@@ -1,5 +1,5 @@
 {
-    "display_name": "Bullet Pawn (Northbound, Not Moved)",
+    "display_name": "Blitz Pawn (Northbound, Not Moved)",
     "svg_path": "pawn.svg",
     "score_value": 10,
     "cooldown_ms": 3000,

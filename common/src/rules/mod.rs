@@ -3,7 +3,8 @@
 mod catalog;
 mod movement;
 mod simulation;
+mod special;
 
 pub use catalog::Catalog;
-pub use movement::MoveKind;
-pub use simulation::{ActionEffects, Simulation};
+pub use movement::{LegalMove, MoveKind};
+pub use simulation::{ActionEffects, PieceMove, Simulation};
