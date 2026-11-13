@@ -1,10 +1,11 @@
 //! Effects related to mode selection, navigation, and websocket connectivity.
 
-use super::super::callbacks::LeaveInputs;
+use super::super::callbacks::{LeaveInputs, SlotSession};
 use crate::app::GlobalClientConfig;
 use crate::app::config::order_modes;
+use crate::app::focus::{FocusAction, ModeFocus};
 use crate::app::ws::{ReducerRef, SocketSenderRef, connect_ws, report_connection_lost};
-use crate::reducer::{GameAction, MsgSender};
+use crate::reducer::{GameAction, GameStateReducer, MsgSender};
 use common::models::ModeSummary;
 use common::protocol::ClientMessage;
 use common::types::ModeId;
@@ -59,19 +60,22 @@ pub fn use_mode_refresh_effect(
 }
 
 /// Syncs browser URL navigation (back/forward/hash edits) with the selected mode and landing UI.
+///
+/// `open_sessions` always holds the sessions of every connected slot, all of which navigation
+/// leaves.
 #[hook]
 pub fn use_mode_url_navigation_effect(
-    current_mode_id: UseStateHandle<ModeId>,
+    focus: UseReducerHandle<ModeFocus>,
     fallback_mode_id: ModeId,
-    reducer_ref: ReducerRef,
+    open_sessions: Rc<RefCell<Vec<SlotSession>>>,
     leave_inputs: LeaveInputs,
-    tx_ref: Rc<RefCell<Option<MsgSender>>>,
 ) {
     use_effect_with((), move |_| {
         let apply_navigation = Rc::new(move || {
-            let reducer = reducer_ref.borrow().clone();
-            leave_inputs.leave(&reducer, tx_ref.borrow().as_ref());
-            current_mode_id.set(current_mode_id_from_location(&fallback_mode_id));
+            leave_inputs.leave(&open_sessions.borrow());
+            focus.dispatch(FocusAction::Navigate(current_mode_id_from_location(
+                &fallback_mode_id,
+            )));
         });
 
         let window = web_sys::window().expect("window available");
@@ -83,46 +87,85 @@ pub fn use_mode_url_navigation_effect(
     });
 }
 
-/// Connects to the websocket when the current mode changes.
+/// Connects a slot to the websocket of its mode, reconnecting when the mode changes.
+///
+/// A slot without a mode stays disconnected.
 #[hook]
 pub fn use_ws_connection_effect(
-    current_mode_id: UseStateHandle<ModeId>,
-    reducer_ref: ReducerRef,
+    mode_id: Option<ModeId>,
+    reducer: UseReducerHandle<GameStateReducer>,
     tx_handle: UseStateHandle<Option<MsgSender>>,
     global_cfg: UseStateHandle<GlobalClientConfig>,
 ) {
-    use_effect_with((*current_mode_id).clone(), move |mode_id| {
+    // The socket outlives renders, so it dispatches through the latest reducer handle.
+    let reducer_ref = use_mut_ref(|| reducer.clone());
+    *reducer_ref.borrow_mut() = reducer;
+    use_effect_with(mode_id, move |mode_id| {
         reducer_ref.borrow().dispatch(GameAction::Reset);
-        let (client_tx, client_rx) = mpsc::channel::<ClientMessage>(CLIENT_BUFFER);
-        let sender = MsgSender(client_tx);
-        tx_handle.set(Some(sender.clone()));
-
-        let ping = move || {
-            let _ = sender
-                .0
-                .try_send(ClientMessage::Ping(js_sys::Date::now() as u64));
-        };
-        ping();
-        let ping_interval = Interval::new(global_cfg.ping_interval_ms.max(MIN_INTERVAL_MS), ping);
-
-        let socket_tx: SocketSenderRef = Rc::new(RefCell::new(None));
-        spawn_ws_sender_loop(client_rx, socket_tx.clone(), reducer_ref.clone());
-
-        let (abort_handle, abort_registration) = AbortHandle::new_pair();
-        let url = websocket_url(mode_id);
-        let connection = Abortable::new(
-            connect_ws(url, mode_id.clone(), reducer_ref.clone(), socket_tx),
-            abort_registration,
-        );
-        spawn_local(async move {
-            let _ = connection.await;
-        });
-
-        move || {
-            drop(ping_interval);
-            abort_handle.abort();
+        let connection = mode_id
+            .as_ref()
+            .map(|mode_id| open_connection(mode_id, reducer_ref, &tx_handle, &global_cfg));
+        if connection.is_none() {
+            tx_handle.set(None);
         }
+        move || drop(connection)
     });
+}
+
+/// A live websocket connection of one slot, closed when dropped.
+struct SlotConnection {
+    /// Pings the server until dropped.
+    _ping_interval: Interval,
+    abort_handle: AbortHandle,
+    socket_tx: SocketSenderRef,
+}
+
+impl Drop for SlotConnection {
+    /// Stops reconnecting and closes the open socket.
+    fn drop(&mut self) {
+        self.abort_handle.abort();
+        // Dropping the socket's sender ends its writer, which closes the socket.
+        self.socket_tx.borrow_mut().take();
+    }
+}
+
+/// Opens the websocket of `mode_id`, publishing its message sender to `tx_handle`.
+fn open_connection(
+    mode_id: &ModeId,
+    reducer_ref: ReducerRef,
+    tx_handle: &UseStateHandle<Option<MsgSender>>,
+    global_cfg: &GlobalClientConfig,
+) -> SlotConnection {
+    let (client_tx, client_rx) = mpsc::channel::<ClientMessage>(CLIENT_BUFFER);
+    let sender = MsgSender(client_tx);
+    tx_handle.set(Some(sender.clone()));
+
+    let ping = move || {
+        let _ = sender
+            .0
+            .try_send(ClientMessage::Ping(js_sys::Date::now() as u64));
+    };
+    ping();
+    let ping_interval = Interval::new(global_cfg.ping_interval_ms.max(MIN_INTERVAL_MS), ping);
+
+    let socket_tx: SocketSenderRef = Rc::new(RefCell::new(None));
+    spawn_ws_sender_loop(client_rx, socket_tx.clone(), reducer_ref.clone());
+
+    let (abort_handle, abort_registration) = AbortHandle::new_pair();
+    let url = websocket_url(mode_id);
+    let connection = Abortable::new(
+        connect_ws(url, mode_id.clone(), reducer_ref, socket_tx.clone()),
+        abort_registration,
+    );
+    spawn_local(async move {
+        let _ = connection.await;
+    });
+
+    SlotConnection {
+        _ping_interval: ping_interval,
+        abort_handle,
+        socket_tx,
+    }
 }
 
 /// Reads the selected mode from the URL hash.

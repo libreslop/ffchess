@@ -134,7 +134,7 @@ impl World {
         self.hooks.joins.push(player_name);
     }
 
-    /// Records that a player's connection dropped.
+    /// Records that a player left the board by leaving or by losing the connection.
     pub(super) fn record_disconnect(&mut self, player_name: String) {
         self.hooks.disconnects.push(player_name);
     }

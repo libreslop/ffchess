@@ -187,16 +187,10 @@ impl GameInstance {
         world.state.players.contains_key(&player_id) && !world.victors.contains(&player_id)
     }
 
-    /// Removes a player who chose to leave and sends them their final stats.
+    /// Removes a player who left or whose connection dropped, sending them their final stats.
     pub fn leave(&self, player_id: PlayerId) {
         self.world()
             .remove_player(player_id, Departure::Left, now_ms());
-    }
-
-    /// Removes a player whose connection dropped.
-    pub fn disconnect(&self, player_id: PlayerId) {
-        self.world()
-            .remove_player(player_id, Departure::Disconnected, now_ms());
     }
 
     /// Removes a player who is about to join somewhere else.

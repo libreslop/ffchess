@@ -1,5 +1,6 @@
 //! Callback builders for the root application component.
 
+use crate::app::focus::{FocusAction, ModeFocus};
 use crate::app::ws::ReducerRef;
 use crate::reducer::{DisconnectNotice, GameAction, GameStateReducer, MsgSender};
 use crate::ui_state::{CooldownSeconds, JoinStep, RejoinFlow};
@@ -24,21 +25,22 @@ pub fn advance_to_kit_selection(
     }
 }
 
-/// Handles needed to leave the current session and return to the landing screen.
+/// The state of one connection slot and the sender of its socket.
 #[derive(Clone)]
-pub struct LeaveInputs {
-    pub join_step: UseStateHandle<JoinStep>,
-    pub rejoin_flow: UseStateHandle<RejoinFlow>,
+pub struct SlotSession {
+    pub reducer: UseReducerHandle<GameStateReducer>,
+    pub tx: Option<MsgSender>,
 }
 
-impl LeaveInputs {
-    /// Leaves the current match or queue and shows the landing screen.
+impl SlotSession {
+    /// Leaves the match or queue of this slot and forgets the local session.
     ///
     /// The server makes players who leave the board wait out the respawn cooldown, so the
     /// leave is recorded as a death for the landing screen to count down.
-    pub fn leave(&self, reducer: &UseReducerHandle<GameStateReducer>, tx: Option<&MsgSender>) {
+    pub fn abandon(&self) {
+        let reducer = &self.reducer;
         if reducer.has_session()
-            && let Some(sender) = tx
+            && let Some(sender) = &self.tx
         {
             sender.send(ClientMessage::Leave);
         }
@@ -50,19 +52,54 @@ impl LeaveInputs {
                 cooldown: reducer.respawn_cooldown(),
             });
         }
-        self.rejoin_flow.set(RejoinFlow::Inactive);
         reducer.dispatch(GameAction::Reset);
-        self.join_step.set(JoinStep::EnterName);
+    }
+}
+
+/// Handles needed to leave the current session and return to the landing screen.
+#[derive(Clone)]
+pub struct LeaveInputs {
+    pub join_step: UseStateHandle<JoinStep>,
+    pub rejoin_flow: UseStateHandle<RejoinFlow>,
+}
+
+impl LeaveInputs {
+    /// Leaves the matches and queues of `sessions` and shows the landing screen.
+    pub fn leave(&self, sessions: &[SlotSession]) {
+        sessions.iter().for_each(SlotSession::abandon);
+        self.show(JoinStep::EnterName);
+    }
+
+    /// Leaves a quick-play game and goes back to the queue it was nested in.
+    pub fn unnest(&self, nested: &SlotSession, focus: &UseReducerHandle<ModeFocus>) {
+        nested.abandon();
+        focus.dispatch(FocusAction::Unnest);
+        // The queue screen is the step after choosing a kit.
+        self.show(JoinStep::SelectKit);
+    }
+
+    /// Ends any rejoin cycle and shows the join overlay at `step`.
+    fn show(&self, step: JoinStep) {
+        self.rejoin_flow.set(RejoinFlow::Inactive);
+        self.join_step.set(step);
     }
 }
 
 /// Builds the callback of the in-game leave button.
+///
+/// Leaving a quick-play game goes back to its queue, leaving anything else to the main menu.
 pub fn build_on_leave(
     inputs: LeaveInputs,
-    reducer: UseReducerHandle<GameStateReducer>,
-    tx: Option<MsgSender>,
+    focused: SlotSession,
+    focus: UseReducerHandle<ModeFocus>,
 ) -> Callback<MouseEvent> {
-    Callback::from(move |_| inputs.leave(&reducer, tx.as_ref()))
+    Callback::from(move |_| {
+        if focus.is_nested() {
+            inputs.unnest(&focused, &focus);
+        } else {
+            inputs.leave(std::slice::from_ref(&focused));
+        }
+    })
 }
 
 /// Inputs of the rejoin callback.
@@ -106,7 +143,7 @@ pub struct JoinInputs {
     pub reducer: ReducerRef,
     pub is_joining: UseStateHandle<bool>,
     pub has_interacted: UseStateHandle<bool>,
-    pub current_mode_id: UseStateHandle<ModeId>,
+    pub mode_id: ModeId,
 }
 
 /// Builds the callback used to send join requests.
@@ -131,7 +168,7 @@ pub fn build_on_join(inputs: JoinInputs) -> Callback<KitId> {
             inputs.is_joining.set(false);
             return;
         };
-        let (player_id, session_secret) = SessionStore::new(&inputs.current_mode_id).load();
+        let (player_id, session_secret) = SessionStore::new(&inputs.mode_id).load();
         let sent = sender.send(ClientMessage::Join {
             name: (*inputs.player_name).clone(),
             kit_name,

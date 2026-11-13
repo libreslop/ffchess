@@ -1,25 +1,8 @@
 //! Color assignment and reuse logic for player identities.
 
-use common::types::{ColorHex, PlayerId, TimestampMs};
+use common::types::{ColorHex, PLAYER_COLORS, PlayerId, TimestampMs};
 use rand::Rng;
 use std::collections::HashMap;
-
-/// Ordered list of preferred color hex values for player assignment.
-const PREFERRED_COLORS: &[&str] = &[
-    "#dc2626", // Red
-    "#2563eb", // Blue
-    "#16a34a", // Green
-    "#db2777", // Pink
-    "#0891b2", // Cyan
-    "#d97706", // Orange
-    "#9333ea", // Purple
-    "#ca8a04", // Yellow
-    "#4d7c0f", // Lime
-    "#b91c1c", // Dark Red
-    "#1d4ed8", // Dark Blue
-    "#15803d", // Dark Green
-    "#ea580c", // Dark Orange
-];
 
 /// How long a released color stays reserved for its previous owner, in seconds.
 const CLAIM_SECS: i64 = 60;
@@ -69,7 +52,7 @@ impl ColorManager {
 
         let mut rng = rand::thread_rng();
         let mut random_color = || ColorHex::from(format!("#{:06x}", rng.gen_range(0..0x1000000)));
-        let preferred = || PREFERRED_COLORS.iter().map(|c| ColorHex::from(*c));
+        let preferred = || PLAYER_COLORS.iter().map(|c| ColorHex::from(*c));
 
         let color = self
             .player_colors

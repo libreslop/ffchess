@@ -27,9 +27,24 @@ pub struct QueueStatus {
     pub position_in_queue: QueuePosition,
     pub queued_players: PlayerCount,
     pub required_players: PlayerCount,
+    /// Local time the client started waiting in this queue.
+    pub since: TimestampMs,
 }
 
 impl QueueStatus {
+    /// Returns this update of a queue, keeping the start time of the `previous` status.
+    pub fn continuing(self, previous: Option<&Self>) -> Self {
+        Self {
+            since: previous.map_or(self.since, |previous| previous.since),
+            ..self
+        }
+    }
+
+    /// Returns how long the client has been waiting at `now`.
+    pub fn waited(&self, now: TimestampMs) -> DurationMs {
+        now - self.since
+    }
+
     /// Returns how many additional players are needed to start the match.
     pub fn players_needed(&self) -> PlayerCount {
         self.required_players.saturating_sub(self.queued_players)

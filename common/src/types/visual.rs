@@ -1,6 +1,23 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+/// Player color palette, in the order the server prefers to assign it.
+pub const PLAYER_COLORS: &[&str] = &[
+    "#dc2626", // Red
+    "#2563eb", // Blue
+    "#16a34a", // Green
+    "#db2777", // Pink
+    "#0891b2", // Cyan
+    "#d97706", // Orange
+    "#9333ea", // Purple
+    "#ca8a04", // Yellow
+    "#4d7c0f", // Lime
+    "#b91c1c", // Dark Red
+    "#1d4ed8", // Dark Blue
+    "#15803d", // Dark Green
+    "#ea580c", // Dark Orange
+];
+
 /// Hex-encoded RGB color string (e.g., "#ff0000").
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]

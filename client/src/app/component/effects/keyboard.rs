@@ -2,7 +2,7 @@
 
 use crate::app::component::callbacks::advance_to_kit_selection;
 use crate::ui_state::{CooldownSeconds, JoinStep};
-use crate::utils::store_name;
+use crate::utils::{event_targets_text_input, store_name};
 use common::models::KitSummary;
 use common::types::KitId;
 use gloo_events::EventListener;
@@ -145,21 +145,6 @@ pub fn use_keyboard_shortcuts_effect(inputs: KeyboardShortcutEffectInputs) {
             move || drop(listener)
         },
     );
-}
-
-/// Returns true when the key event targets a text field, where shortcuts must not fire.
-fn event_targets_text_input(event: &web_sys::KeyboardEvent) -> bool {
-    let Some(target) = event.target() else {
-        return false;
-    };
-    let Ok(element) = target.dyn_into::<web_sys::Element>() else {
-        return false;
-    };
-    element
-        .closest("input, textarea, [contenteditable='true'], [data-chat-input]")
-        .ok()
-        .flatten()
-        .is_some()
 }
 
 /// Submits the entered name with Enter, like the Play button.

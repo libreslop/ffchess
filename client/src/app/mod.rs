@@ -3,6 +3,7 @@
 mod browser;
 mod component;
 mod config;
+mod focus;
 mod ws;
 
 pub use component::App;

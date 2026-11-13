@@ -1,19 +1,30 @@
 //! UI rendering for the root application component.
 
 use crate::app::GlobalClientConfig;
+use crate::app::focus::Slot;
 use crate::components::{
     DisconnectedScreen, EndScreen, EndScreenKind, ErrorToast, FatalNotification, GameView,
-    JoinScreen, Leaderboard, LeaveButton,
+    JoinScreen, Leaderboard, LeaveButton, QueueBanner,
 };
-use crate::reducer::{GameStateReducer, MsgSender};
+use crate::reducer::{GameStateReducer, MsgSender, QueueStatus};
 use crate::ui_state::{Backdrop, CooldownSeconds, JoinStep};
 use common::models::ModeSummary;
 use common::types::{KitId, ModeId};
 use yew::prelude::*;
 
+/// The queue a quick-play game is nested in, shown in a banner over the game.
+pub struct NestedQueue {
+    /// Display name of the queued mode.
+    pub mode_name: String,
+    pub status: QueueStatus,
+    pub on_stop: Callback<MouseEvent>,
+}
+
 /// Render inputs for the root application view.
 pub struct AppViewProps {
     pub global_cfg: GlobalClientConfig,
+    /// Connection slot of the shown game; switching it mounts a fresh game view.
+    pub slot: Slot,
     pub reducer: UseReducerHandle<GameStateReducer>,
     pub tx: Option<MsgSender>,
     pub show_disconnected: bool,
@@ -34,6 +45,9 @@ pub struct AppViewProps {
     pub on_rejoin: Callback<MouseEvent>,
     pub rejoin_cooldown: CooldownSeconds,
     pub on_leave: Callback<MouseEvent>,
+    pub quick_play_modes: Vec<ModeSummary>,
+    pub on_quick_play: Callback<ModeId>,
+    pub nested_queue: Option<NestedQueue>,
 }
 
 /// Renders the root application UI.
@@ -66,7 +80,7 @@ pub fn render_app(props: AppViewProps) -> Html {
 
             if let Some(sender) = tx.clone() {
                 <GameView
-                    key="stable-game-view"
+                    key={props.slot.as_str()}
                     reducer={reducer.clone()}
                     tx={sender}
                     globals={global_cfg.clone()}
@@ -151,7 +165,14 @@ pub fn render_app(props: AppViewProps) -> Html {
                     selected_mode_id={props.selected_mode_id.clone()}
                     on_select_mode={props.on_select_mode.clone()}
                     on_cycle_mode={props.on_cycle_mode.clone()}
+                    quick_play_modes={props.quick_play_modes.clone()}
+                    title_pieces={global_cfg.title_pieces.clone()}
+                    on_quick_play={props.on_quick_play.clone()}
                 />
+            }
+
+            if let Some(queue) = props.nested_queue {
+                <QueueBanner mode_name={queue.mode_name} status={queue.status} on_stop={queue.on_stop} />
             }
 
             if tx.is_some() && !on_main_menu {

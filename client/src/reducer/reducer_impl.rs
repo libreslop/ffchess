@@ -25,7 +25,7 @@ impl Reducible for GameStateReducer {
         match action {
             GameAction::SetInit(payload) => next.apply_init(*payload),
             GameAction::SetQueueStatus(status) => {
-                next.queue_status = Some(status);
+                next.queue_status = Some(status.continuing(next.queue_status.as_ref()));
                 next.error = None;
                 next.clear_disconnect_ui();
                 next.is_dead = false;

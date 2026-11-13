@@ -173,6 +173,22 @@ async fn duel_leave_grants_victory() {
 }
 
 #[tokio::test]
+/// Verifies leaving voluntarily is announced in chat like a dropped connection.
+async fn leave_is_announced_in_chat() {
+    let instance = instance_of("ffa");
+    let (p1, _rx1) = join(&instance, "P1", "Standard");
+    let (_p2, mut rx2) = join(&instance, "P2", "Standard");
+    drain(&mut rx2);
+
+    instance.leave(p1);
+    instance.tick();
+    let announced = drain(&mut rx2).into_iter().any(|message| {
+        matches!(message, ServerMessage::Chat { line } if line.is_system && line.message == "P1 left")
+    });
+    assert!(announced);
+}
+
+#[tokio::test]
 /// Verifies a king-capture victory is delivered once and no leave victory follows.
 async fn duel_capture_victory_has_no_delayed_leave_victory() {
     let instance = instance_of("blitz");

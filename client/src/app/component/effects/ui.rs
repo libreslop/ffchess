@@ -1,5 +1,6 @@
 //! Effects related to local UI state, cooldowns, and overlays.
 
+use crate::app::focus::Slot;
 use crate::reducer::{ClientPhase, DisconnectNotice, GameAction, GameStateReducer, MsgSender};
 use crate::ui_state::{CooldownSeconds, JoinStep, RejoinFlow};
 use crate::utils::{DeathRecord, SessionStore, local_now, store_name};
@@ -43,9 +44,11 @@ pub fn use_single_kit_step_reset_effect(
     reducer: UseReducerHandle<GameStateReducer>,
     is_joining: bool,
     single_kit: bool,
+    is_nested: bool,
 ) {
     let idle_on_menu = reducer.phase == ClientPhase::Menu && !is_joining;
-    let stale = single_kit && idle_on_menu && join_step.is_select_kit();
+    // A quick-play game has no name entry of its own to return to.
+    let stale = single_kit && idle_on_menu && join_step.is_select_kit() && !is_nested;
     use_effect_with(stale, move |&stale| {
         if stale {
             join_step.set(JoinStep::EnterName);
@@ -206,25 +209,32 @@ pub fn use_rejoin_flow_reset_effect(
     );
 }
 
+/// Last preview pinning sent, and the connection slot it was sent on.
+pub type PreviewDefaultRef = Rc<RefCell<Option<(Slot, bool)>>>;
+
 /// Forces queue previews to the default board during kit select or queue screens.
+///
+/// `slot` is the connection of the focused session, which `tx` and `reducer` belong to.
 #[hook]
 pub fn use_preview_default_effect(
+    slot: Slot,
     tx: UseStateHandle<Option<MsgSender>>,
     join_step: UseStateHandle<JoinStep>,
     reducer: UseReducerHandle<GameStateReducer>,
-    preview_default_ref: Rc<RefCell<Option<bool>>>,
+    preview_default_ref: PreviewDefaultRef,
     is_joined: bool,
 ) {
     let has_tx = tx.is_some();
     use_effect_with(
         (
+            slot,
             *join_step,
             reducer.queue_status.clone(),
             reducer.mode.clone(),
             has_tx,
             is_joined,
         ),
-        move |(step, queue_status, mode, _, joined)| {
+        move |(slot, step, queue_status, mode, _, joined)| {
             if *joined {
                 preview_default_ref.borrow_mut().take();
                 return;
@@ -236,12 +246,13 @@ pub fn use_preview_default_effect(
                 return;
             };
             let mut last_sent = preview_default_ref.borrow_mut();
-            if *last_sent != Some(should_force)
+            let next = Some((*slot, should_force));
+            if *last_sent != next
                 && sender.send(ClientMessage::SetPreviewDefault {
                     enabled: should_force,
                 })
             {
-                *last_sent = Some(should_force);
+                *last_sent = next;
             }
         },
     );
@@ -252,7 +263,7 @@ pub fn use_preview_default_effect(
 pub fn use_rejoin_cooldown_effect(
     rejoin_cooldown: UseStateHandle<CooldownSeconds>,
     rc_ref: Rc<RefCell<CooldownSeconds>>,
-    current_mode_id: UseStateHandle<ModeId>,
+    current_mode_id: ModeId,
     reducer: UseReducerHandle<GameStateReducer>,
 ) {
     use_effect_with(reducer.has_match_result(), move |&has_match_result| {

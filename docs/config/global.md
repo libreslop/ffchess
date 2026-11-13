@@ -57,6 +57,8 @@ This file is injected into the landing page and deserialized by the Yew client a
 | Field | Type | Required | Default | Notes |
 | --- | --- | --- | --- | --- |
 | `game_order` | mode id[] | No | `[]` | Preferred ordering for the mode list. Unknown ids are ignored by normal sorting behavior. |
+| `quick_play_modes` | mode id[] | No | `[]` | Modes listed on the queue screen of matchmaking modes. Picking one plays it while the queue keeps waiting; the queued match takes over once it starts. Unknown ids are skipped. |
+| `title_pieces` | string[] | No | `[]` | Piece icons that may appear beside the title on the main screen, named by file stem under `assets/pieces` (e.g. `"knight"` for `knight.svg`). One is picked at random each time the screen opens and tinted with a random player color. Empty shows no icon. |
 | `modes_refresh_ms` | integer (`u32`) | No | `5000` | Poll interval for `/api/modes`. The client clamps this to at least `500`. |
 | `ping_interval_ms` | integer (`u32`) | No | `2000` | WebSocket ping cadence. The client clamps this to at least `500`. |
 | `tick_interval_ms` | integer (`u32`) | No | `50` | Loaded into config, but currently unused by the runtime. |
@@ -89,6 +91,8 @@ This file is injected into the landing page and deserialized by the Yew client a
 ```jsonc
 {
   "game_order": ["ffa", "arena", "blitz", "rapid"],
+  "quick_play_modes": ["ffa", "arena"],
+  "title_pieces": ["king", "queen", "rook", "bishop", "knight", "pawn"],
   "modes_refresh_ms": 5000,
   "ping_interval_ms": 2000,
   "render_interval_ms": 16,

@@ -88,7 +88,7 @@ impl Lobby {
     /// Releases everything a closed connection held.
     pub(super) fn close_connection(&mut self, conn: &Connection) {
         if let Some(binding) = self.bindings.remove(&conn.id) {
-            binding.instance.disconnect(binding.player_id);
+            binding.instance.leave(binding.player_id);
         }
         if conn.is_queue_mode {
             self.remove_preview_watcher(&conn.mode_id, conn.id);

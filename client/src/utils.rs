@@ -131,6 +131,21 @@ pub fn is_mobile() -> bool {
         .any(|marker| user_agent.contains(marker))
 }
 
+/// Returns true when the key event targets a text field, where shortcuts must not fire.
+pub fn event_targets_text_input(event: &web_sys::KeyboardEvent) -> bool {
+    let Some(target) = event.target() else {
+        return false;
+    };
+    let Ok(element) = target.dyn_into::<web_sys::Element>() else {
+        return false;
+    };
+    element
+        .closest("input, textarea, [contenteditable='true'], [data-chat-input]")
+        .ok()
+        .flatten()
+        .is_some()
+}
+
 /// Requests the document to enter fullscreen mode if supported.
 pub fn request_fullscreen() {
     let Some(window) = web_sys::window() else {

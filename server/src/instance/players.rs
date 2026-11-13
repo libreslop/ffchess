@@ -33,10 +33,8 @@ pub struct JoinRequest {
 /// Why a player leaves the board.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum Departure {
-    /// Left voluntarily; receives final stats.
+    /// Left voluntarily or lost the connection; receives final stats and is announced in chat.
     Left,
-    /// Connection dropped; announced in chat and treated as leaving.
-    Disconnected,
     /// Left to join again elsewhere; no final stats are sent.
     Detached,
     /// King was captured; the connection stays to show the end screen.
@@ -155,16 +153,14 @@ impl World {
         };
 
         match departure {
-            Departure::Left | Departure::Disconnected => {
+            Departure::Left => {
                 let stats = GameOverStats {
                     final_score: player.score,
                     kills: player.kills,
                     pieces_captured: player.pieces_captured,
                     time_survived_secs: (now - player.join_time).as_u64() / 1000,
                 };
-                if departure == Departure::Disconnected {
-                    self.record_disconnect(player.name.clone());
-                }
+                self.record_disconnect(player.name.clone());
                 self.outbox
                     .send_to_player(player_id, ServerMessage::GameOver(stats));
             }

@@ -2,44 +2,59 @@
 
 mod callbacks;
 mod effects;
+mod quick_play;
 mod view;
 
 use crate::app::browser::PageMetadata;
-use crate::app::config::{GlobalClientConfig, load_global_config, order_modes};
+use crate::app::config::{GlobalClientConfig, load_global_config, order_modes, quick_play_modes};
+use crate::app::focus::{ModeFocus, PerSlot, Slot};
 use crate::reducer::{ClientPhase, GameStateReducer, MsgSender};
 use crate::ui_state::{CooldownSeconds, JoinStep, RejoinFlow};
 use crate::utils::{SessionStore, local_now, stored_name};
 use callbacks::{
-    JoinInputs, LeaveInputs, NameSubmitInputs, RejoinInputs, build_on_join, build_on_leave,
-    build_on_name_input, build_on_name_submit, build_on_rejoin,
+    JoinInputs, LeaveInputs, NameSubmitInputs, RejoinInputs, SlotSession, build_on_join,
+    build_on_leave, build_on_name_input, build_on_name_submit, build_on_rejoin,
 };
 use common::models::{GameModeClientConfig, ModeSummary};
 use common::types::ModeId;
 use effects::{
-    KeyboardShortcutEffectInputs, use_disconnected_overlay_effect, use_error_auto_clear_effect,
-    use_fatal_error_reset_effect, use_joining_reset_effect, use_keyboard_shortcuts_effect,
-    use_landing_cooldown_effect, use_mode_refresh_effect, use_mode_url_navigation_effect,
-    use_page_metadata_effect, use_player_name_sync_effect, use_preview_default_effect,
-    use_rejoin_cooldown_effect, use_rejoin_flow_reset_effect, use_single_kit_step_reset_effect,
-    use_ws_connection_effect,
+    KeyboardShortcutEffectInputs, PreviewDefaultRef, use_disconnected_overlay_effect,
+    use_error_auto_clear_effect, use_fatal_error_reset_effect, use_joining_reset_effect,
+    use_keyboard_shortcuts_effect, use_landing_cooldown_effect, use_mode_refresh_effect,
+    use_mode_url_navigation_effect, use_page_metadata_effect, use_player_name_sync_effect,
+    use_preview_default_effect, use_rejoin_cooldown_effect, use_rejoin_flow_reset_effect,
+    use_single_kit_step_reset_effect, use_ws_connection_effect,
 };
 use gloo_utils::document;
-use view::{AppViewProps, render_app};
+use quick_play::{
+    QuickPlayInputs, build_on_quick_play, build_on_stop_queuing, use_nested_queue_effect,
+};
+use view::{AppViewProps, NestedQueue, render_app};
 use yew::prelude::*;
 
 /// Renders the application shell and routes UI state to child components.
+///
+/// The client holds up to two connections: the mode picked from the menu, and a quick-play
+/// game nested in it while its queue waits. Everything below the connections works on the
+/// focused one, the game the player sees.
 #[function_component(App)]
 pub fn app() -> Html {
     let global_cfg = use_state(load_global_config);
-    let reducer = use_reducer(GameStateReducer::default);
+    let reducers = PerSlot::new(
+        use_reducer(GameStateReducer::default),
+        use_reducer(GameStateReducer::default),
+    );
+    let txs = PerSlot::new(
+        use_state(|| None::<MsgSender>),
+        use_state(|| None::<MsgSender>),
+    );
     let is_joining = use_state(|| false);
     let rejoin_flow = use_state(RejoinFlow::default);
-    let tx = use_state(|| None::<MsgSender>);
     let player_name = use_state(stored_name);
     let join_step = use_state(JoinStep::default);
     let has_interacted = use_state(|| false);
     let show_disconnected = use_state(|| false);
-    let preview_default_ref = use_mut_ref(|| None::<bool>);
+    let preview_default_ref: PreviewDefaultRef = use_mut_ref(|| None);
 
     let injected_modes = use_memo((), |_| injected_modes());
     let injected_mode_info = injected_modes.first().cloned();
@@ -50,7 +65,31 @@ pub fn app() -> Html {
     };
 
     let initial_mode_id = initial_mode_id(&global_cfg, injected_mode_info.as_ref());
-    let current_mode_id = use_state(|| initial_mode_id.clone());
+    let focus = {
+        let initial_mode_id = initial_mode_id.clone();
+        use_reducer(move || ModeFocus::new(initial_mode_id))
+    };
+    use_ws_connection_effect(
+        focus.mode_of(Slot::First),
+        reducers.get(Slot::First).clone(),
+        txs.get(Slot::First).clone(),
+        global_cfg.clone(),
+    );
+    use_ws_connection_effect(
+        focus.mode_of(Slot::Second),
+        reducers.get(Slot::Second).clone(),
+        txs.get(Slot::Second).clone(),
+        global_cfg.clone(),
+    );
+    let sessions = PerSlot::new(
+        slot_session(&reducers, &txs, Slot::First),
+        slot_session(&reducers, &txs, Slot::Second),
+    );
+    let focused_slot = focus.focused_slot();
+    let reducer = reducers.get(focused_slot).clone();
+    let tx = txs.get(focused_slot).clone();
+    let focused_session = sessions.get(focused_slot).clone();
+    let current_mode_id = focus.focused_mode().clone();
     use_page_metadata_effect(resolve_page_metadata(
         &reducer,
         &current_mode_id,
@@ -64,19 +103,23 @@ pub fn app() -> Html {
 
     let reducer_ref = use_mut_ref(|| reducer.clone());
     *reducer_ref.borrow_mut() = reducer.clone();
-    let tx_ref = use_mut_ref(|| (*tx).clone());
-    *tx_ref.borrow_mut() = (*tx).clone();
+    let open_sessions = [Slot::First, Slot::Second]
+        .into_iter()
+        .filter(|&slot| focus.mode_of(slot).is_some())
+        .map(|slot| sessions.get(slot).clone())
+        .collect::<Vec<_>>();
+    let open_sessions_ref = use_mut_ref(Vec::new);
+    *open_sessions_ref.borrow_mut() = open_sessions;
 
     let leave_inputs = LeaveInputs {
         join_step: join_step.clone(),
         rejoin_flow: rejoin_flow.clone(),
     };
     use_mode_url_navigation_effect(
-        current_mode_id.clone(),
+        focus.clone(),
         initial_mode_id.clone(),
-        reducer_ref.clone(),
+        open_sessions_ref,
         leave_inputs.clone(),
-        tx_ref,
     );
 
     let landing_cooldown = {
@@ -89,20 +132,13 @@ pub fn app() -> Html {
         })
     };
 
-    use_ws_connection_effect(
-        current_mode_id.clone(),
-        reducer_ref.clone(),
-        tx.clone(),
-        global_cfg.clone(),
-    );
-
     let on_join = build_on_join(JoinInputs {
         tx: tx.clone(),
         player_name: player_name.clone(),
         reducer: reducer_ref,
         is_joining: is_joining.clone(),
         has_interacted: has_interacted.clone(),
-        current_mode_id: current_mode_id.clone(),
+        mode_id: current_mode_id.clone(),
     });
     let kits = reducer
         .mode
@@ -115,6 +151,7 @@ pub fn app() -> Html {
         reducer.clone(),
         *is_joining,
         single_kit.is_some(),
+        focus.is_nested(),
     );
     let on_name_submit = build_on_name_submit(NameSubmitInputs {
         join_step: join_step.clone(),
@@ -134,7 +171,7 @@ pub fn app() -> Html {
     use_landing_cooldown_effect(
         landing_cooldown.clone(),
         lc_ref,
-        (*current_mode_id).clone(),
+        current_mode_id.clone(),
         is_joined,
     );
 
@@ -148,6 +185,7 @@ pub fn app() -> Html {
     );
     use_rejoin_flow_reset_effect(rejoin_flow.clone(), reducer.clone());
     use_preview_default_effect(
+        focused_slot,
         tx.clone(),
         join_step.clone(),
         reducer.clone(),
@@ -174,18 +212,33 @@ pub fn app() -> Html {
         on_join: on_join.clone(),
     });
 
+    let base_session = sessions.get(focus.base_slot()).clone();
+    use_nested_queue_effect(
+        focus.clone(),
+        base_session.clone(),
+        sessions.get(focus.base_slot().other()).clone(),
+    );
+    let on_quick_play = build_on_quick_play(QuickPlayInputs {
+        focus: focus.clone(),
+        join_step: join_step.clone(),
+        rejoin_flow: rejoin_flow.clone(),
+        has_interacted: has_interacted.clone(),
+        base_queued: base_session.reducer.queue_status.is_some(),
+    });
+    let nested_queue = nested_queue(&focus, &base_session, &mode_options);
+
     let on_cycle_mode = {
         let mode_options = mode_options.clone();
-        let current_mode_id = current_mode_id.clone();
+        let base_mode_id = focus.base_mode().clone();
         Callback::from(move |delta: i32| {
             let current_index = mode_options
                 .iter()
-                .position(|mode| mode.id == *current_mode_id)
+                .position(|mode| mode.id == base_mode_id)
                 .unwrap_or(0);
             let next_mode = current_index
                 .checked_add_signed(delta as isize)
                 .and_then(|index| mode_options.get(index));
-            if let Some(next_mode) = next_mode.filter(|mode| mode.id != *current_mode_id) {
+            if let Some(next_mode) = next_mode.filter(|mode| mode.id != base_mode_id) {
                 navigate_to_mode(&next_mode.id);
             }
         })
@@ -211,6 +264,7 @@ pub fn app() -> Html {
 
     render_app(AppViewProps {
         global_cfg: (*global_cfg).clone(),
+        slot: focused_slot,
         reducer: reducer.clone(),
         tx: (*tx).clone(),
         show_disconnected: *show_disconnected,
@@ -224,13 +278,48 @@ pub fn app() -> Html {
         on_join,
         landing_cooldown: *landing_cooldown,
         is_joining: *is_joining,
+        quick_play_modes: quick_play_modes(&mode_options, &global_cfg.quick_play_modes),
         mode_options: (*mode_options).clone(),
-        selected_mode_id: (*current_mode_id).clone(),
+        selected_mode_id: focus.base_mode().clone(),
         on_select_mode: Callback::from(|id: ModeId| navigate_to_mode(&id)),
         on_cycle_mode,
         on_rejoin,
         rejoin_cooldown: *rejoin_cooldown,
-        on_leave: build_on_leave(leave_inputs, reducer.clone(), (*tx).clone()),
+        on_leave: build_on_leave(leave_inputs, focused_session, focus.clone()),
+        on_quick_play,
+        nested_queue,
+    })
+}
+
+/// Returns the session of `slot`.
+fn slot_session(
+    reducers: &PerSlot<UseReducerHandle<GameStateReducer>>,
+    txs: &PerSlot<UseStateHandle<Option<MsgSender>>>,
+    slot: Slot,
+) -> SlotSession {
+    SlotSession {
+        reducer: reducers.get(slot).clone(),
+        tx: (**txs.get(slot)).clone(),
+    }
+}
+
+/// Describes the queue a quick-play game is nested in, for the banner over the game.
+fn nested_queue(
+    focus: &UseReducerHandle<ModeFocus>,
+    base: &SlotSession,
+    mode_options: &[ModeSummary],
+) -> Option<NestedQueue> {
+    let status = base
+        .reducer
+        .queue_status
+        .clone()
+        .filter(|_| focus.is_nested())?;
+    let mode_name = selected_mode_name(focus.base_mode(), mode_options, base.reducer.mode.as_ref())
+        .unwrap_or_else(|| focus.base_mode().to_string());
+    Some(NestedQueue {
+        mode_name,
+        status,
+        on_stop: build_on_stop_queuing(base.clone(), focus.clone()),
     })
 }
 

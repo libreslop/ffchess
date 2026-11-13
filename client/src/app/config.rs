@@ -13,6 +13,13 @@ use serde::Deserialize;
 pub struct GlobalClientConfig {
     #[educe(Default = vec![])]
     pub game_order: Vec<ModeId>,
+    /// Modes offered to play while waiting in a matchmaking queue, in display order.
+    #[educe(Default = vec![])]
+    pub quick_play_modes: Vec<ModeId>,
+    /// Piece icons, by file stem under `assets/pieces`, one of which is picked at random to
+    /// sit beside the title.
+    #[educe(Default = vec![])]
+    pub title_pieces: Vec<String>,
     #[educe(Default = 5000)]
     pub modes_refresh_ms: u32,
     #[educe(Default = 2000)]
@@ -65,6 +72,17 @@ pub fn load_global_config() -> GlobalClientConfig {
         return cfg;
     }
     GlobalClientConfig::default()
+}
+
+/// Picks the configured quick-play modes out of the mode list, in configured order.
+///
+/// `modes` is the live mode list, `quick_play` the configured ids. Unknown ids are skipped.
+pub fn quick_play_modes(modes: &[ModeSummary], quick_play: &[ModeId]) -> Vec<ModeSummary> {
+    quick_play
+        .iter()
+        .filter_map(|id| modes.iter().find(|mode| &mode.id == id))
+        .cloned()
+        .collect()
 }
 
 /// Sorts mode summaries using a preferred order list.

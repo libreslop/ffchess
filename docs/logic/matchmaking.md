@@ -132,6 +132,24 @@ For a queue mode:
   a new connection delivers its first message, since that connection is not queued,
 - private matches nobody plays in or watches are removed every tick.
 
+## Quick Play While Queued
+
+The queue screen lists the modes in the client config's `quick_play_modes`. Picking one nests a
+quick-play game inside the queue; this is purely client-side and needs no server support:
+
+- the client holds two connection slots (`client/src/app/focus.rs`); the queued mode keeps its
+  websocket, so its queue entry survives, and the quick-play mode connects on the other slot,
+- the player sees the quick-play game, with a banner showing the queue's progress, time waited,
+  and a stop button,
+- the leave button in the quick-play game leaves it and goes back to the queue screen; leaving
+  again leaves the queue for the main menu,
+- **stop queuing** leaves the queue and makes the quick-play game the only one, rewriting the URL
+  hash to its mode without a navigation,
+- when the queued match starts, its `Init` arrives on the queue's connection; the client leaves
+  the quick-play game and shows the match,
+- if the queue's connection drops, the server has dropped its entry, so the quick-play game
+  becomes the only one as if the player had stopped queuing.
+
 ## Matchmaking Diagram
 
 ```mermaid

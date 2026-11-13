@@ -3,7 +3,7 @@
 use crate::reducer::{
     DisconnectNotice, GameAction, GameStateReducer, InitPayload, QueueStatus, UpdateStatePayload,
 };
-use crate::utils::SessionStore;
+use crate::utils::{SessionStore, local_now};
 use common::protocol::{GameError, ServerMessage};
 use common::types::ModeId;
 use futures_util::{SinkExt, StreamExt};
@@ -144,6 +144,7 @@ fn to_action(message: ServerMessage, mode_id: &ModeId) -> GameAction {
             position_in_queue,
             queued_players,
             required_players,
+            since: local_now(),
         }),
         ServerMessage::Error(GameError::InvalidSession) => {
             // The stored session can never be used again; the next join starts fresh.

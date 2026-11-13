@@ -5,6 +5,18 @@
         "blitz",
         "rapid"
     ],
+    "quick_play_modes": [
+        "ffa",
+        "arena"
+    ],
+    "title_pieces": [
+        "king",
+        "queen",
+        "rook",
+        "bishop",
+        "knight",
+        "pawn"
+    ],
     "modes_refresh_ms": 5000,
     "ping_interval_ms": 2000,
     "tick_interval_ms": 50,

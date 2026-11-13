@@ -31,7 +31,8 @@ web-sys = { version = "0.3", features = [
     "Navigator",
     "TouchList",
     "Touch",
-    "TouchEvent"
+    "TouchEvent",
+    "History"
 ] }
 serde = { version = "1.0", features = ["derive"] }
 educe = "0.6"

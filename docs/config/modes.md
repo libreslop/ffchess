@@ -113,7 +113,7 @@ executes these combinations:
 | `OnCapturePieceActive` | `WinCapturer` | Send a victory payload to the capturing player. |
 | `OnPlayerLeave` | `WinRemaining` | If the remaining player count matches, send a victory payload to the survivor. |
 | `OnPlayerJoin` | `SystemChatMessage` | Broadcast one system chat line (yellow) for each joined player event. |
-| `OnPlayerDisconnect` | `SystemChatMessage` | Broadcast one system chat line (yellow) for each disconnected player event. |
+| `OnPlayerDisconnect` | `SystemChatMessage` | Broadcast one system chat line (yellow) for each player who left the board, by leaving or by losing the connection. |
 | `OnPlayerKilled` | `SystemChatMessage` | Broadcast one system chat line (yellow) for each king-kill event; supports `{player}` and `{killer}` variables. |
 | `OnQueueCountdown` | `SystemChatMessage` | Broadcast one system chat line (yellow) for each countdown second; supports `{seconds}` variable. |
 
