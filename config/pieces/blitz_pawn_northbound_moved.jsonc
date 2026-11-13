@@ -9,5 +9,13 @@
     "capture_paths": [
         [[1, -1]],
         [[-1, -1]]
+    ],
+    "shading": [
+        {
+            // Pieces threatening a king are filled in their team color, seen only by the
+            // player whose king they threaten.
+            "visible_to": "viewer_king_targeted",
+            "effects": [{ "type": "background", "color": "owner" }]
+        }
     ]
 }

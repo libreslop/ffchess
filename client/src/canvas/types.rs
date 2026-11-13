@@ -1,5 +1,6 @@
 //! Data structures used by the canvas renderer.
 
+use super::shading::ShadeCache;
 use crate::math::Vec2;
 use crate::premoves::Projection;
 use common::models::{GameModeClientConfig, GameState, Piece};
@@ -16,6 +17,7 @@ pub struct Renderer {
     pub(crate) ctx: CanvasRenderingContext2d,
     pub(crate) catalog: Rc<Catalog>,
     pub(crate) svg_cache: Rc<RefCell<PieceSvgCache>>,
+    pub(crate) shade_cache: Rc<RefCell<Option<ShadeCache>>>,
 }
 
 /// Cached SVG templates and colored image instances for piece icons.
@@ -81,4 +83,14 @@ pub struct RenderParams<'a> {
     pub active_shop_highlight_pos: Option<BoardCoord>,
     pub disable_fog_of_war: bool,
     pub clock_offset_ms: i64,
+}
+
+impl RenderParams<'_> {
+    /// Returns the square `piece` is drawn on, fractional while it slides.
+    pub(crate) fn displayed_square(&self, piece: &Piece) -> Vec2 {
+        self.animated_positions
+            .get(&piece.id)
+            .copied()
+            .unwrap_or_else(|| piece.position.0.as_dvec2())
+    }
 }

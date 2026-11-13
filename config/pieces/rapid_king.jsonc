@@ -55,5 +55,26 @@
                 }
             ]
         }
+    ],
+    // A king may never move onto a square an enemy piece could capture onto.
+    "destination_requirements": ["!square_targeted"],
+    "shading": [
+        {
+            // Pieces threatening a king are filled in their team color, seen only by the
+            // player whose king they threaten.
+            "visible_to": "viewer_king_targeted",
+            "effects": [{ "type": "background", "color": "owner" }]
+        },
+        {
+            // While the king is in check, its player sees its square filled and a line on its
+            // rim pointing at each attacker, in the attacker's team color.
+            "condition": "self_targeted",
+            "visible_to": "viewer_is_owner",
+            "effects": [
+                // Filled in the team color most common among the attackers.
+                { "type": "background", "color": { "most_common": "attackers" } },
+                { "type": "line_towards", "towards": "attackers", "color": "other" }
+            ]
+        }
     ]
 }

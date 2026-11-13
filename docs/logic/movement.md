@@ -22,7 +22,10 @@ changes), worked out without touching the board. A rejected move therefore chang
 applying a plan needs no further checks. Path moves are tried first; when no path reaches the
 target, each of the piece's `special_moves` is tried (see
 [Special Moves](../config/pieces.md#special-moves)). When neither applies, the path error is
-returned.
+returned. The chosen plan must finally meet the piece's
+[destination requirements](../config/pieces.md#destination-requirements), checked on a copy of
+the board with the plan applied (`DestinationRestricted` otherwise); this is how kings are kept
+out of check.
 
 Path moves enforce:
 
@@ -41,6 +44,11 @@ with affected squares is hinted with a capture frame on them and chosen by tappi
 other move is hinted with a dot on its target and chosen by tapping that. A normal capture's
 affected square is its target, so captures look as they always did, while castling frames the
 rook. Either way the client sends the mover's target with the move.
+
+`Catalog::threats()` builds a `ThreatMap` of which pieces could capture which, walking each
+capture path once up to its first piece. The client resolves
+[shading rules](../config/pieces.md#shading) against it with `Catalog::shading()` whenever the
+board changes, and draws the resulting backgrounds below the pieces and threat marks above them.
 
 `Catalog::is_targeted()` tells whether a piece of another owner could capture onto a square
 along its `capture_paths` with a clear path. Special move conditions use it for the

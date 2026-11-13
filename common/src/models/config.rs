@@ -1,4 +1,5 @@
 use crate::models::hook::HookConfig;
+use crate::models::shading::ShadingRule;
 use crate::models::special_move::SpecialMove;
 use crate::models::state::Piece;
 use crate::models::summary::{GameModeClientConfig, KitSummary};
@@ -23,6 +24,13 @@ pub struct PieceConfig {
     /// Moves beyond the paths, such as castling.
     #[serde(default)]
     pub special_moves: Vec<SpecialMove>,
+    /// Conditions every destination of this piece must meet, checked on the board as it
+    /// would be after the move; a king requiring `!square_targeted` may not move into check.
+    #[serde(default)]
+    pub destination_requirements: Vec<ExprString>,
+    /// Visual cues drawn on pieces of this type.
+    #[serde(default)]
+    pub shading: Vec<ShadingRule>,
 }
 
 /// Shop item definition, including pricing and piece changes.

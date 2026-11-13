@@ -33,4 +33,12 @@ mod tests {
 
         assert!(checked > 0, "no jsonc files found under {:?}", config_root);
     }
+
+    #[test]
+    /// Verifies the shipped configs load and every piece condition validates.
+    fn shipped_configs_validate() {
+        let config_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../config");
+        let config = server::config::ConfigManager::load(&config_root);
+        assert!(config.catalog.validate().is_ok());
+    }
 }

@@ -7,7 +7,7 @@
 use super::catalog::Catalog;
 use crate::models::{GameState, Piece, PieceConfig};
 use crate::protocol::GameError;
-use crate::types::{BoardCoord, PieceId, PieceTypeId, PlayerId};
+use crate::types::{BoardCoord, ExprVars, MoveCount, PieceId, PieceTypeId, PlayerId};
 use glam::IVec2;
 use std::collections::HashSet;
 
@@ -104,6 +104,29 @@ impl MovePlan {
         squares
     }
 
+    /// Returns the board as it would be after the plan, without scoring or cooldowns.
+    fn outcome(&self, state: &GameState) -> GameState {
+        let mut after = state.clone();
+        for step in &self.steps {
+            match step {
+                MoveStep::Capture(piece_id) => {
+                    after.pieces.remove(piece_id);
+                }
+                MoveStep::Relocate { piece_id, to } => {
+                    if let Some(piece) = after.pieces.get_mut(piece_id) {
+                        piece.position = *to;
+                    }
+                }
+                MoveStep::Retype { piece_id, to } => {
+                    if let Some(piece) = after.pieces.get_mut(piece_id) {
+                        piece.piece_type = to.clone();
+                    }
+                }
+            }
+        }
+        after
+    }
+
     /// Returns true when the board can hold the pieces where the plan puts them.
     ///
     /// Every destination must be on the board, no two pieces may land on the same square,
@@ -136,6 +159,46 @@ impl PieceConfig {
             MoveKind::Quiet => &self.move_paths,
             MoveKind::Capture => &self.capture_paths,
         }
+    }
+
+    /// Returns the variables of a destination requirement.
+    pub(crate) fn destination_vars(
+        mover_moves: MoveCount,
+        capture: bool,
+        square_targeted: bool,
+    ) -> ExprVars {
+        ExprVars::new()
+            .with("self_moves", mover_moves)
+            .with("move_capture", capture)
+            .with("square_targeted", square_targeted)
+    }
+
+    /// Returns true when `plan` meets every destination requirement of this piece type.
+    ///
+    /// Requirements see the board as it would be after the move, so a king stepping back
+    /// along the ray of an attacking rook still counts as targeted.
+    fn allows_destination(
+        &self,
+        catalog: &Catalog,
+        state: &GameState,
+        mover: &Piece,
+        plan: &MovePlan,
+    ) -> bool {
+        if self.destination_requirements.is_empty() {
+            return true;
+        }
+        let after = plan.outcome(state);
+        let Some(landed) = after.pieces.get(&mover.id) else {
+            return false;
+        };
+        let vars = Self::destination_vars(
+            mover.moves_made,
+            plan.kind() == MoveKind::Capture,
+            catalog.is_targeted(&after, landed.position, landed.owner_id),
+        );
+        self.destination_requirements
+            .iter()
+            .all(|requirement| requirement.holds(&vars))
     }
 
     /// Lists the squares a piece of this type on `start` might move to, before any checks.
@@ -267,7 +330,8 @@ impl Catalog {
     /// Plans the move of `mover` to `end`.
     ///
     /// Path moves take precedence; special moves are tried only when no path reaches `end`.
-    /// When neither applies, the path error explains why.
+    /// When neither applies, the path error explains why. The chosen move must then meet the
+    /// mover's destination requirements.
     pub(crate) fn plan_move(
         &self,
         state: &GameState,
@@ -275,13 +339,18 @@ impl Catalog {
         end: BoardCoord,
     ) -> Result<MovePlan, GameError> {
         let config = self.piece(&mover.piece_type)?;
-        config.plan_path_move(state, mover, end).or_else(|error| {
+        let plan = config.plan_path_move(state, mover, end).or_else(|error| {
             config
                 .special_moves
                 .iter()
                 .find_map(|special| special.plan(self, state, mover, end))
                 .ok_or(error)
-        })
+        })?;
+        if config.allows_destination(self, state, mover, &plan) {
+            Ok(plan)
+        } else {
+            Err(GameError::DestinationRestricted)
+        }
     }
 
     /// Returns true when a piece of another owner than `owner` could capture onto `square`.

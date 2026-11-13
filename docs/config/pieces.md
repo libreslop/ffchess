@@ -21,6 +21,8 @@ The filename stem becomes the runtime `PieceConfig.id`. For example:
 | `move_paths` | path[] | Yes | Legal non-capture movement paths. |
 | `capture_paths` | path[] | Yes | Legal capture movement paths. There is no fallback to `move_paths` when this array is empty. |
 | `special_moves` | special move[] | No | Moves beyond the paths, such as castling. See [Special Moves](#special-moves). |
+| `destination_requirements` | condition[] | No | Conditions every move of this piece must meet on the board as it would be after the move. See [Destination Requirements](#destination-requirements). |
+| `shading` | shading rule[] | No | Visual cues drawn on pieces of this type. See [Shading](#shading). |
 
 ### Path Encoding
 
@@ -113,8 +115,8 @@ A piece or square is **targeted** when a piece of another owner could reach it a
 occupied, special moves do not count, and NPCs never target each other. It is the closest this
 game has to "check".
 
-The server checks every condition when it loads the config and refuses to start on a malformed
-condition, a misspelled variable, or one that does not produce a boolean. It also refuses unknown
+The server checks every condition (including destination requirements and shading rules) when
+it loads the config and refuses to start on a malformed condition, a misspelled variable, or one that does not produce a boolean. It also refuses unknown
 piece ids in `types`, `becomes`, and `action`.
 
 ### Example: Castling King
@@ -176,6 +178,105 @@ forbids that too.
 
 Because conditions see the board before the move, a square behind the king on an attacking ray
 is not treated as targeted while the king itself still blocks that ray.
+
+## Destination Requirements
+
+`destination_requirements` lists [conditions](#conditions) that every move of the piece must
+meet, path moves and special moves alike. They are evaluated on the board **as it would be after
+the move**: captured pieces are gone and every moved piece stands on its new square. A move
+breaking one is rejected with `DestinationRestricted` and is never offered as a legal move.
+
+| Variable | Meaning |
+| --- | --- |
+| `self_moves` | Moves the mover had made before this move. |
+| `move_capture` | Whether the move captures a piece. |
+| `square_targeted` | Whether a piece of another owner could capture onto the square the mover lands on, after the move. |
+
+Every king in this repository uses it to forbid moving into check:
+
+```jsonc
+"destination_requirements": ["!square_targeted"]
+```
+
+Because the board after the move is used, a king cannot step back along the ray of an attacking
+rook (the king no longer blocks the ray) or capture a defended piece.
+
+## Shading
+
+`shading` lists rules that draw visual cues on pieces of this type. The client resolves them
+against the authoritative board for the local player on every board change.
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `condition` | condition | No | Must hold for the piece. Sees the `self_*` variables. Always holds when omitted. |
+| `visible_to` | condition | No | Must hold for the viewer. Sees the `self_*` and `viewer_*` variables. Everyone sees the rule when omitted. |
+| `effects` | effect[] | Yes | What is drawn. |
+
+Effects, chosen by their `type` field:
+
+| `type` | Fields | Draws |
+| --- | --- | --- |
+| `background` | `color`, `opacity` (percent, default `35`) | Fills the piece's square behind the piece. |
+| `line_towards` | `towards` (`"attackers"` or `"targets"`), `filter` (condition, optional), `color`, `opacity` (percent, default `100`) | A short line segment on the rim of the piece's square pointing straight at each related piece. `attackers` are the pieces that could capture this piece (its threat sources); `targets` are the pieces it could capture. `filter` sees the `self_*`, `viewer_*`, and `other_*` variables and keeps only matching related pieces. |
+
+A `color` is `"owner"` (team color of the shaded piece's owner), `"viewer"` (the local player's
+color), `"other"` (the related piece's owner, for `line_towards`), `{ "most_common": "attackers" }`
+or `{ "most_common": "targets" }` (the team color appearing most among those pieces' owners, ties
+broken consistently; the owner's color when there are none), or a literal `"#rrggbb"`. NPCs use
+the neutral NPC color.
+
+Threats follow the same rule as `targeted`: a piece of another owner on one of the piece's
+`capture_paths` with every earlier square empty. Cooldowns are ignored and NPCs never threaten
+each other.
+
+| Variable | Available in | Meaning |
+| --- | --- | --- |
+| `self_is_king` | all | Whether the piece is a king. |
+| `self_is_npc` | all | Whether no player owns the piece. |
+| `self_moves` | all | Moves the piece has made since it was placed. |
+| `self_targeted` | all | Whether any piece could capture the piece. |
+| `self_attackers` | all | How many pieces could capture the piece. |
+| `self_targets` | all | How many pieces the piece could capture. |
+| `self_targets_king` | all | Whether the piece could capture any king. |
+| `viewer_is_player` | `visible_to`, `filter` | Whether the viewer is a player in the game (not a spectator). |
+| `viewer_is_owner` | `visible_to`, `filter` | Whether the viewer owns the piece. |
+| `viewer_is_opponent` | `visible_to`, `filter` | Whether the viewer is a player who does not own the piece. |
+| `viewer_attackers` | `visible_to`, `filter` | How many of the viewer's pieces could capture the piece. |
+| `viewer_targeted` | `visible_to`, `filter` | How many of the viewer's pieces the piece could capture. |
+| `viewer_king_targeted` | `visible_to`, `filter` | Whether the piece could capture the viewer's king. |
+| `other_is_king` | `filter` | Whether the related piece is a king. |
+| `other_is_npc` | `filter` | Whether no player owns the related piece. |
+| `other_is_viewers` | `filter` | Whether the viewer owns the related piece. |
+| `other_moves` | `filter` | Moves the related piece has made. |
+
+Every piece in this repository is filled in its team color for the players whose king it
+threatens. While in check, every king shows its owner its square filled in the most common
+attacker team color, and a line towards each attacker:
+
+```jsonc
+"shading": [
+    {
+        // Seen only by the player whose king this piece threatens.
+        "visible_to": "viewer_king_targeted",
+        "effects": [{ "type": "background", "color": "owner" }]
+    },
+    {
+        // Kings only: while in check, the owner sees marks towards the attackers.
+        "condition": "self_targeted",
+        "visible_to": "viewer_is_owner",
+        "effects": [
+            { "type": "background", "color": { "most_common": "attackers" } },
+            { "type": "line_towards", "towards": "attackers", "color": "other" }
+        ]
+    }
+]
+```
+
+Other cues are a config change, for example `"condition": "self_targeted", "visible_to":
+"viewer_is_owner"` with a `background` effect to show players which of their pieces hang.
+
+The server validates every shading condition and destination requirement when it loads the
+config, like special move conditions.
 
 ## Naming Conventions That Matter
 

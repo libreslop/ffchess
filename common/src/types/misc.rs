@@ -32,6 +32,11 @@ impl ExprString {
         eval_boolean_with_context(&self.0, &vars.context()).unwrap_or(false)
     }
 
+    /// Returns true when `condition` is unset or holds for `vars`.
+    pub fn holds_if_set(condition: Option<&Self>, vars: &ExprVars) -> bool {
+        condition.is_none_or(|condition| condition.holds(vars))
+    }
+
     /// Checks that the expression is a valid condition when its variables hold `sample`.
     ///
     /// `sample` binds every variable the condition may use, so missing operands, misspelled

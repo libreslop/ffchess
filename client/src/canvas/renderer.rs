@@ -1,4 +1,4 @@
-//! Canvas rendering of the board, shops, move hints, pieces, and fog of war.
+//! Canvas rendering of the board, shops, shading, move hints, pieces, and fog of war.
 
 use super::color::hex_to_rgba;
 use super::types::{PieceDrawParams, PieceNameDrawParams, PieceSvgCache, RenderParams, Renderer};
@@ -34,9 +34,9 @@ const FALLBACK_FOG_RADIUS: f64 = 15.0;
 
 /// Maps board coordinates to screen pixels for one frame.
 #[derive(Clone, Copy)]
-struct FrameGeometry {
-    tile: f64,
-    zoom: f64,
+pub(super) struct FrameGeometry {
+    pub(super) tile: f64,
+    pub(super) zoom: f64,
     offset: Vec2,
     rotated: bool,
 }
@@ -61,6 +61,16 @@ impl FrameGeometry {
         if self.rotated { -line } else { line }
     }
 
+    /// Returns the top-left pixel of a fractional square position.
+    pub(super) fn pos_origin(&self, pos: Vec2) -> Vec2 {
+        self.map_pos(pos) * self.tile + self.offset
+    }
+
+    /// Returns the center pixel of a fractional square position.
+    pub(super) fn pos_center(&self, pos: Vec2) -> Vec2 {
+        self.pos_origin(pos) + self.tile / 2.0
+    }
+
     /// Returns the top-left pixel of a square.
     fn square_origin(&self, square: BoardCoord) -> Vec2 {
         self.map_square(square.0).as_dvec2() * self.tile + self.offset
@@ -79,7 +89,7 @@ impl FrameGeometry {
 
 /// The part of the board the local player can see.
 #[derive(Clone, Copy)]
-struct Visibility {
+pub(super) struct Visibility {
     center: BoardCoord,
     radius_squares: i32,
     radius_px: f64,
@@ -88,7 +98,7 @@ struct Visibility {
 
 impl Visibility {
     /// Returns true when `pos` is close enough to the view center to be drawn.
-    fn shows(&self, pos: BoardCoord) -> bool {
+    pub(super) fn shows(&self, pos: BoardCoord) -> bool {
         pos.chebyshev_distance(self.center) <= self.radius_squares + VIEW_MARGIN_SQUARES
     }
 }
@@ -120,6 +130,7 @@ impl Renderer {
             ctx,
             catalog,
             svg_cache: Rc::new(RefCell::new(PieceSvgCache::default())),
+            shade_cache: Rc::new(RefCell::new(None)),
         })
     }
 
@@ -144,10 +155,13 @@ impl Renderer {
             .fill_rect(0.0, 0.0, params.canvas_size.x, params.canvas_size.y);
         self.draw_board(&params, &geometry);
         self.draw_shops(&params, &geometry, &visibility);
+        let shades = self.shades(&params);
+        self.draw_shade_backgrounds(&shades, &params, &geometry, &visibility);
         let hints = self.move_hints(&params);
         self.draw_quiet_hints(&hints, &geometry);
         self.draw_premove_lines(&params, &geometry);
         self.draw_pieces(&params, &geometry, &visibility);
+        self.draw_shade_lines(&shades, &params, &geometry, &visibility);
         self.draw_capture_hints(&hints, &geometry);
         self.draw_king_names(&params, &geometry, &visibility);
         self.draw_fog(&params, &geometry, &visibility);
@@ -440,15 +454,11 @@ impl Renderer {
         geometry: &FrameGeometry,
         visibility: &Visibility,
     ) {
-        for (id, king) in &params.state.pieces {
+        for king in params.state.pieces.values() {
             if !king.piece_type.is_king() || !visibility.shows(king.position) {
                 continue;
             }
-            let square = params
-                .animated_positions
-                .get(id)
-                .copied()
-                .unwrap_or_else(|| king.position.0.as_dvec2());
+            let square = params.displayed_square(king);
             self.draw_piece_name(PieceNameDrawParams {
                 piece: king,
                 offset: geometry.offset,

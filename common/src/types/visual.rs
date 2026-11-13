@@ -33,3 +33,25 @@ impl fmt::Display for ColorHex {
         write!(f, "{}", self.0)
     }
 }
+
+/// Opacity written as a percentage, from 0 (invisible) to 100 (opaque).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct OpacityPercent(pub u8);
+
+impl OpacityPercent {
+    /// Returns a see-through opacity that leaves what is behind readable.
+    pub fn translucent() -> Self {
+        Self(35)
+    }
+
+    /// Returns full opacity.
+    pub fn opaque() -> Self {
+        Self(100)
+    }
+
+    /// Returns the opacity as an alpha value between 0 and 1.
+    pub fn alpha(self) -> f64 {
+        f64::from(self.0.min(100)) / 100.0
+    }
+}

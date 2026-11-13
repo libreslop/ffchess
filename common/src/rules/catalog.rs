@@ -2,7 +2,7 @@
 
 use crate::models::{GameState, PieceConfig, ShopConfig};
 use crate::protocol::GameError;
-use crate::types::{DurationMs, ExprVars, PieceTypeId, PlayerId, Score, ShopId};
+use crate::types::{DurationMs, ExprVars, MoveCount, PieceTypeId, PlayerId, Score, ShopId};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -33,16 +33,15 @@ impl Catalog {
             .ok_or_else(|| GameError::Internal(format!("Shop config {id} not found")))
     }
 
-    /// Checks that every special move uses valid conditions and known piece types.
+    /// Checks that every condition of every piece type is valid and that special moves only
+    /// name known piece types.
     ///
     /// Returns a message naming the offending piece type otherwise.
     pub fn validate(&self) -> Result<(), String> {
         self.pieces.values().try_for_each(|config| {
             config
-                .special_moves
-                .iter()
-                .try_for_each(|special| special.validate(self))
-                .map_err(|error| format!("piece `{}` special move: {error}", config.id))
+                .validate(self)
+                .map_err(|error| format!("piece `{}` {error}", config.id))
         })
     }
 
@@ -78,5 +77,26 @@ impl Catalog {
             ExprVars::new().with("player_piece_count", total),
             |vars, (id, count)| vars.with(format!("{id}_count"), count),
         )
+    }
+}
+
+impl PieceConfig {
+    /// Checks the special moves, destination requirements, and shading rules of this type.
+    ///
+    /// Returns a message naming the kind of the offending entry otherwise.
+    fn validate(&self, catalog: &Catalog) -> Result<(), String> {
+        self.special_moves
+            .iter()
+            .try_for_each(|special| special.validate(catalog))
+            .map_err(|error| format!("special move: {error}"))?;
+        let destination_sample = Self::destination_vars(MoveCount::default(), false, false);
+        self.destination_requirements
+            .iter()
+            .try_for_each(|requirement| requirement.check_condition(&destination_sample))
+            .map_err(|error| format!("destination requirement: {error}"))?;
+        self.shading
+            .iter()
+            .try_for_each(|rule| rule.validate())
+            .map_err(|error| format!("shading: {error}"))
     }
 }

@@ -26,6 +26,8 @@ fn make_piece_config(id: &str, score: u64) -> PieceConfig {
         move_paths: vec![vec![IVec2::new(1, 0)]],
         capture_paths: vec![vec![IVec2::new(1, 0)]],
         special_moves: vec![],
+        destination_requirements: vec![],
+        shading: vec![],
     }
 }
 

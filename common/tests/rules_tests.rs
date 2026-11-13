@@ -29,6 +29,8 @@ fn piece_config(id: &str, moves: &[[i32; 2]], captures: &[[i32; 2]]) -> PieceCon
         move_paths: paths(moves),
         capture_paths: paths(captures),
         special_moves: vec![],
+        destination_requirements: vec![],
+        shading: vec![],
     }
 }
 

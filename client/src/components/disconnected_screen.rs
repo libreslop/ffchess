@@ -31,9 +31,11 @@ pub fn disconnected_screen(props: &DisconnectedScreenProps) -> Html {
             if props.disconnected { "1" } else { "0" },
             if props.disconnected { "all" } else { "none" }
         )}>
-            <div style="text-align: center; color: #fff; padding: 20px;">
-                <h1 style="color: #fff; margin: 0; font-size: 4em; letter-spacing: 4px; text-shadow: 3px 3px 0 rgba(0,0,0,0.6);">{title}</h1>
-                <p style="margin: 20px 0 0; font-size: 1.2em; color: #fff; letter-spacing: 1px;">{msg}</p>
+            // Text scales with the viewport width so narrow screens never overflow, capped at
+            // half the original 4em title.
+            <div style="text-align: center; color: #fff; padding: 20px; box-sizing: border-box; max-width: 100%; overflow-wrap: anywhere;">
+                <h1 style="color: #fff; margin: 0; font-size: min(2em, 7.5vw); letter-spacing: 2px; text-shadow: 2px 2px 0 rgba(0,0,0,0.6);">{title}</h1>
+                <p style="margin: 10px 0 0; font-size: min(1em, 4vw); color: #fff; letter-spacing: 1px;">{msg}</p>
             </div>
         </div>
     }

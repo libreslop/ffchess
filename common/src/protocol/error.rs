@@ -11,6 +11,8 @@ pub enum GameError {
     TargetFriendly,
     InvalidMove,
     PathBlocked,
+    /// The move breaks one of the mover's destination requirements.
+    DestinationRestricted,
     NoPieceOnShop,
     KingRestrictedShop,
     ShopNotFound,
@@ -45,6 +47,7 @@ impl GameError {
                 | Self::TargetFriendly
                 | Self::InvalidMove
                 | Self::PathBlocked
+                | Self::DestinationRestricted
                 | Self::ShopNotFound
                 | Self::ActionCancelled
         )
@@ -61,6 +64,7 @@ impl fmt::Display for GameError {
             Self::TargetFriendly => write!(f, "Target square is occupied by a friendly piece"),
             Self::InvalidMove => write!(f, "Invalid move"),
             Self::PathBlocked => write!(f, "Path is blocked by another piece"),
+            Self::DestinationRestricted => write!(f, "This piece may not move there"),
             Self::NoPieceOnShop => write!(f, "No piece of yours on the shop square"),
             Self::KingRestrictedShop => write!(f, "The King can only recruit Pawns"),
             Self::ShopNotFound => write!(f, "Shop not found at this position"),

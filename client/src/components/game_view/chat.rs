@@ -303,7 +303,7 @@ pub fn game_chat(props: &GameChatProps) -> Html {
             <div
                 data-chat-ui="true"
                 ref={chat_log_ref}
-                style="padding: 0; overflow-y: auto;"
+                style="padding: 0; overflow: hidden;"
             >
                 {
                     html! {

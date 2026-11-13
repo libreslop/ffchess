@@ -102,7 +102,7 @@ impl PartneredMove {
             mover.moves_made,
             catalog.is_targeted(state, start, mover.owner_id),
         );
-        if !condition_holds(self.condition.as_ref(), &vars)
+        if !ExprString::holds_if_set(self.condition.as_ref(), &vars)
             || !self
                 .requirements
                 .iter()
@@ -242,11 +242,6 @@ impl Partner {
             piece.moves_made,
             catalog.is_targeted(state, piece.position, piece.owner_id),
         );
-        condition_holds(self.condition.as_ref(), &vars).then_some(piece)
+        ExprString::holds_if_set(self.condition.as_ref(), &vars).then_some(piece)
     }
-}
-
-/// Returns true when `condition` is unset or holds for `vars`.
-fn condition_holds(condition: Option<&ExprString>, vars: &ExprVars) -> bool {
-    condition.is_none_or(|condition| condition.holds(vars))
 }
