@@ -1,37 +1,38 @@
 # Game Loop
 
 The authoritative server loop lives in `server/src/main.rs`. It wakes every `100ms` and runs two
-top-level tasks:
+top-level steps through `ServerState::tick()`:
 
-1. `tick_all_games()`
-2. `tick_previews()`
+1. tick every `GameInstance` (`GameInstance::tick()`),
+2. refresh queue-mode preview targets,
+3. drop private matches nobody plays in or watches anymore.
 
-Each `GameInstance` then runs its own `handle_tick()` routine.
+Each instance keeps all of its mutable state in one `World` behind a single mutex, so a tick (or
+any player request) runs atomically and messages leave in the same order as the state changes
+they describe.
 
 ## Per-Instance Tick Order
 
 `server/src/instance/ticks.rs` currently performs work in this order:
 
-1. Promote queued hook events into the active tick buffer.
-2. Check whether any player channels or spectator channels are attached.
-3. Refresh `last_viewed_at` when someone is watching.
-4. If the instance has been viewed within the last 5 seconds:
-   - process server-side queued moves,
+1. Check whether any player channels or spectator channels are attached.
+2. Refresh `last_viewed_at` when someone is watching.
+3. If the instance has been viewed within the last 5 seconds:
+   - run queued piece actions whose piece is ready,
    - spawn NPCs up to the configured limits,
    - advance NPCs that are off cooldown.
-5. Every 600 ticks (roughly 60 seconds with a 100ms server loop):
+4. Every 600 ticks of this instance (roughly 60 seconds with a 100ms server loop):
    - prune death timestamps older than 10 minutes,
    - prune session secrets older than 5 minutes,
    - prune stale color claims older than 24 hours.
-6. Refresh color activity for currently connected players.
-7. Recalculate the target board size and shrink only if no player-owned piece would fall outside the new boundary.
-8. Resolve buffered hooks for the completed tick.
-9. Drain `removed_pieces` and `removed_players`.
-10. Broadcast a full `UpdateState` snapshot to active players and passive viewers.
+5. Refresh color activity for currently connected players.
+6. Recalculate the target board size and shrink only if no player-owned piece would fall outside the new boundary.
+7. Resolve the hook events collected since the previous tick.
+8. Broadcast a full `UpdateState` snapshot to active players and passive viewers.
 
 ## Why NPCs Pause When Unwatched
 
-The server intentionally gates queued moves and NPC simulation behind a recent-view check:
+The server intentionally gates queued actions and NPC simulation behind a recent-view check:
 
 - if nobody has looked at the instance for more than 5 seconds, the board effectively idles,
 - state still exists,
@@ -55,9 +56,10 @@ At the end of the tick, the server sends one `ServerMessage::UpdateState` contai
 - all current players,
 - all current pieces,
 - all current shops,
-- all piece ids removed during the tick,
-- all player ids removed during the tick,
 - the current board size.
+
+The snapshot is complete, so the client replaces its world with it instead of merging. A client
+whose outgoing buffer is full simply misses a snapshot and catches up on the next one.
 
 The client treats this as authoritative state and layers prediction on top of it.
 
@@ -65,10 +67,9 @@ The client treats this as authoritative state and layers prediction on top of it
 
 ```mermaid
 flowchart TD
-    A[Main loop wakes] --> B[handle_tick per instance]
-    B --> C[begin tick hooks]
-    C --> D{viewed recently?}
-    D -- yes --> E[process queued moves]
+    A[Main loop wakes] --> B[tick per instance]
+    B --> D{viewed recently?}
+    D -- yes --> E[run ready queued actions]
     E --> F[spawn NPCs]
     F --> G[tick NPCs]
     D -- no --> H[skip hot simulation]
@@ -77,6 +78,5 @@ flowchart TD
     I --> J[refresh color activity]
     J --> K[attempt safe board shrink]
     K --> L[resolve hooks]
-    L --> M[drain removed ids]
-    M --> N[broadcast UpdateState]
+    L --> M[broadcast UpdateState]
 ```

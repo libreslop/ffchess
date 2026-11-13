@@ -1,74 +1,94 @@
-//! Shared server state and mode instance registry.
+//! Server-wide registry of instances, queues, previews, and connections.
+//!
+//! Everything lives in one [`Lobby`] behind one mutex. Lobby operations may call into game
+//! instances (which take their own lock), but instances never call back into the lobby, so the
+//! lock order is always lobby before instance.
 
 mod bindings;
-mod games;
+mod connection;
+mod listing;
+mod lobby;
 mod preview;
 mod queue;
+mod requests;
+
+pub use connection::Connection;
 
 use crate::config::ConfigManager;
 use crate::instance::GameInstance;
-use crate::types::ConnectionId;
-use common::models::{PieceConfig, ShopConfig};
-use common::types::{ModeId, PieceTypeId, ShopId};
-use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
-use tokio::sync::RwLock;
+use crate::types::ClientTx;
+use common::models::ModeSummary;
+use common::protocol::ClientMessage;
+use common::types::ModeId;
+use lobby::Lobby;
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
-pub use bindings::ActivePlayerBinding;
-pub use queue::{MatchQueueEntry, QueueJoinResult};
-
-use preview::ModePreviewState;
-
-/// Shared server state containing mode instances and configuration.
+/// Shared server state: configuration plus the lobby of live instances.
 pub struct ServerState {
-    games: Arc<RwLock<HashMap<ModeId, Arc<GameInstance>>>>,
-    config_manager: Arc<ConfigManager>,
-    piece_configs: Arc<HashMap<PieceTypeId, PieceConfig>>,
-    shop_configs: Arc<HashMap<ShopId, ShopConfig>>,
-    private_game_ids: Arc<RwLock<HashSet<ModeId>>>,
-    queue_entries: Arc<RwLock<HashMap<ModeId, Vec<MatchQueueEntry>>>>,
-    connection_bindings: Arc<RwLock<HashMap<ConnectionId, ActivePlayerBinding>>>,
-    preview_state: Arc<RwLock<HashMap<ModeId, ModePreviewState>>>,
+    config: Arc<ConfigManager>,
+    lobby: Mutex<Lobby>,
 }
 
 impl ServerState {
-    /// Builds the global server state and loads configuration.
-    ///
-    /// Returns a `ServerState` with one `GameInstance` per configured mode.
+    /// Loads configuration and creates one public instance per configured mode.
     pub fn new() -> Self {
-        let config_manager = Arc::new(ConfigManager::load(std::path::Path::new("config")));
-        let mut games = HashMap::new();
-
-        let piece_configs = Arc::new(config_manager.pieces.clone());
-        let shop_configs = Arc::new(config_manager.shops.clone());
-
-        for (mode_id, mode_config) in &config_manager.modes {
-            let instance = Arc::new(GameInstance::new(
-                mode_config.clone(),
-                mode_id.clone(),
-                mode_config.queue_layout.clone().map(Arc::new),
-                piece_configs.clone(),
-                shop_configs.clone(),
-                config_manager.global.chat_message_ttl_ms,
-            ));
-            games.insert(mode_id.clone(), instance);
-        }
-
+        let config = Arc::new(ConfigManager::load(&crate::paths::config_dir()));
         Self {
-            games: Arc::new(RwLock::new(games)),
-            config_manager,
-            piece_configs,
-            shop_configs,
-            private_game_ids: Arc::new(RwLock::new(HashSet::new())),
-            queue_entries: Arc::new(RwLock::new(HashMap::new())),
-            connection_bindings: Arc::new(RwLock::new(HashMap::new())),
-            preview_state: Arc::new(RwLock::new(HashMap::new())),
+            lobby: Mutex::new(Lobby::new(config.clone())),
+            config,
         }
+    }
+
+    /// Locks the lobby, ignoring poisoning like the instance locks do.
+    fn lobby(&self) -> MutexGuard<'_, Lobby> {
+        self.lobby.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Returns the loaded configuration.
+    pub fn config(&self) -> &ConfigManager {
+        &self.config
+    }
+
+    /// Returns the public instance of a mode.
+    pub fn public_instance(&self, mode_id: &ModeId) -> Option<Arc<GameInstance>> {
+        self.lobby().public_instance(mode_id).cloned()
+    }
+
+    /// Returns the current status of every public mode.
+    pub fn mode_summaries(&self) -> Vec<ModeSummary> {
+        self.lobby().mode_summaries()
+    }
+
+    /// Registers a new websocket connection to `mode_id` and sends it the board to watch.
+    ///
+    /// Returns `None` when the mode does not exist.
+    pub fn open_connection(&self, mode_id: ModeId, tx: ClientTx) -> Option<Connection> {
+        self.lobby().open_connection(mode_id, tx)
+    }
+
+    /// Handles one message received from a connection.
+    pub fn handle_message(&self, conn: &Connection, message: ClientMessage) {
+        self.lobby().handle_message(conn, message);
+    }
+
+    /// Releases everything a closed connection held.
+    pub fn close_connection(&self, conn: &Connection) {
+        self.lobby().close_connection(conn);
+    }
+
+    /// Advances every instance by one tick, then updates previews and drops finished matches.
+    pub fn tick(&self) {
+        let instances = self.lobby().instances();
+        for instance in instances {
+            instance.tick();
+        }
+        let mut lobby = self.lobby();
+        lobby.refresh_previews();
+        lobby.cleanup_private_games();
     }
 }
 
 impl Default for ServerState {
-    /// Provides a default server state by loading configuration.
     fn default() -> Self {
         Self::new()
     }

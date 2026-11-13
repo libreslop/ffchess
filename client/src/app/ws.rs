@@ -1,9 +1,11 @@
 //! WebSocket connection loop for the client app.
 
-use crate::reducer::{GameAction, GameStateReducer, InitPayload, QueueStatus, UpdateStatePayload};
-use crate::utils::{clear_stored_session, set_stored_id, set_stored_secret};
+use crate::reducer::{
+    DisconnectNotice, GameAction, GameStateReducer, InitPayload, QueueStatus, UpdateStatePayload,
+};
+use crate::utils::SessionStore;
 use common::protocol::{GameError, ServerMessage};
-use common::types::{ModeId, PlayerId};
+use common::types::ModeId;
 use futures_util::{SinkExt, StreamExt};
 use gloo_net::websocket::{Message, futures::WebSocket};
 use std::cell::RefCell;
@@ -12,177 +14,160 @@ use tokio::sync::mpsc;
 use wasm_bindgen_futures::spawn_local;
 use yew::prelude::UseReducerHandle;
 
+/// Delay before reconnecting after the socket closed or failed to open.
+const RECONNECT_DELAY_MS: u32 = 1500;
+
+/// Outgoing websocket frames buffered while the socket is busy.
+const OUTGOING_BUFFER: usize = 256;
+
+/// Shared handle to the latest reducer handle.
+pub type ReducerRef = Rc<RefCell<UseReducerHandle<GameStateReducer>>>;
+
+/// Shared slot holding the sender of the currently open socket.
+pub type SocketSenderRef = Rc<RefCell<Option<mpsc::Sender<Message>>>>;
+
 /// Connects to the server WebSocket and dispatches incoming messages.
 ///
-/// `ws_url` is the endpoint URL, `mode_id` is the selected mode,
-/// `listener_reducer_ref` is the state reducer handle, and `current_ws_tx` stores a sender.
-/// Returns nothing; reconnects in a loop until the app exits.
+/// Reconnects forever; the caller aborts the future to stop.
 pub async fn connect_ws(
     ws_url: String,
     mode_id: ModeId,
-    listener_reducer_ref: Rc<RefCell<UseReducerHandle<GameStateReducer>>>,
-    current_ws_tx: Rc<RefCell<Option<mpsc::Sender<Message>>>>,
+    reducer: ReducerRef,
+    socket_tx: SocketSenderRef,
 ) {
     loop {
-        if let Ok(ws) = WebSocket::open(&ws_url) {
-            let (mut write, mut read) = ws.split();
-            let (internal_tx, mut internal_rx) = mpsc::channel::<Message>(100);
-            *current_ws_tx.borrow_mut() = Some(internal_tx);
-
-            spawn_local(async move {
-                while let Some(m) = internal_rx.recv().await {
-                    if let Err(error) = write.send(m).await {
-                        web_sys::console::error_1(
-                            &format!("WebSocket send failed: {error}").into(),
-                        );
-                    }
-                }
-            });
-
-            while let Some(msg) = read.next().await {
-                match msg {
-                    Ok(Message::Text(text)) => {
-                        let Ok(server_msg) = serde_json::from_str::<ServerMessage>(&text) else {
+        match WebSocket::open(&ws_url) {
+            Ok(ws) => {
+                let (mut write, mut read) = ws.split();
+                let (tx, mut rx) = mpsc::channel::<Message>(OUTGOING_BUFFER);
+                *socket_tx.borrow_mut() = Some(tx);
+                spawn_local(async move {
+                    while let Some(message) = rx.recv().await {
+                        if let Err(error) = write.send(message).await {
                             web_sys::console::error_1(
-                                &format!("Failed to decode server message: {text}").into(),
+                                &format!("WebSocket send failed: {error}").into(),
                             );
-                            continue;
-                        };
-                        let current_reducer = listener_reducer_ref.borrow().clone();
-                        current_reducer.dispatch(match server_msg {
-                        ServerMessage::Init {
-                            player_id,
-                            session_secret,
-                            move_unlock_at,
-                            state,
-                            mode,
-                            pieces,
-                            shops,
-                            chat_room_key,
-                            chat_history,
-                            sync_interval_ms,
-                        } => {
-                            if player_id != PlayerId::nil() {
-                                set_stored_id(&mode_id, player_id);
-                                set_stored_secret(&mode_id, session_secret);
-                            }
-                            let state = *state;
-                            let mode = *mode;
-                            GameAction::SetInit(Box::new(InitPayload {
-                                player_id,
-                                session_secret,
-                                move_unlock_at,
-                                state,
-                                mode,
-                                pieces,
-                                shops,
-                                chat_room_key,
-                                chat_history,
-                                sync_interval_ms,
-                            }))
                         }
-                        ServerMessage::UpdateState {
-                            players,
-                            pieces,
-                            shops,
-                            removed_pieces,
-                            removed_players,
-                            board_size,
-                        } => GameAction::UpdateState(Box::new(UpdateStatePayload {
-                            players,
-                            pieces,
-                            shops,
-                            removed_pieces,
-                            removed_players,
-                            board_size,
-                        })),
-                        ServerMessage::QueueState {
-                            position_in_queue,
-                            queued_players,
-                            required_players,
-                        } => GameAction::SetQueueStatus(QueueStatus {
-                            position_in_queue,
-                            queued_players,
-                            required_players,
-                        }),
-                        ServerMessage::Error(e) => match &e {
-                            GameError::Custom { title, message: _ }
-                                if title.to_lowercase().contains("invalid session secret") =>
-                            {
-                                clear_stored_session(&mode_id);
-                                GameAction::Reset
-                            }
-                            GameError::TargetFriendly => {
-                                web_sys::console::error_1(
-                                    &"Server rejected move: target square is occupied by a friendly piece."
-                                        .into(),
-                                );
-                                GameAction::SetError(e)
-                            }
-                            GameError::Custom { title, message } => GameAction::SetDisconnected {
-                                disconnected: true,
-                                is_fatal: true,
-                                title: Some(title.clone()),
-                                msg: Some(message.clone()),
-                            },
-                            _ => GameAction::SetError(e),
-                        },
-                        ServerMessage::Victory {
-                            title,
-                            message,
-                            focus_target,
-                        } => GameAction::SetVictory {
-                            title,
-                            msg: message,
-                            focus_target,
-                        },
-                        ServerMessage::GameOver {
-                            final_score,
-                            kills,
-                            pieces_captured,
-                            time_survived_secs,
-                        } => GameAction::GameOver {
-                            final_score,
-                            kills,
-                            pieces_captured,
-                            time_survived_secs,
-                        },
-                        ServerMessage::Pong(t, server_time) => GameAction::Pong(t, server_time),
-                        ServerMessage::Chat { line } => GameAction::PushChatLine(line),
-                        });
                     }
-                    Ok(_) => {}
-                    Err(error) => {
-                        web_sys::console::error_1(
+                });
+
+                let mut is_first_message = true;
+                while let Some(message) = read.next().await {
+                    match message {
+                        Ok(Message::Text(text)) => {
+                            match serde_json::from_str::<ServerMessage>(&text) {
+                                Ok(server_message) => {
+                                    if std::mem::take(&mut is_first_message) {
+                                        reducer
+                                            .borrow()
+                                            .dispatch(GameAction::ConnectionEstablished);
+                                    }
+                                    let action = to_action(server_message, &mode_id);
+                                    reducer.borrow().dispatch(action);
+                                }
+                                Err(_) => web_sys::console::error_1(
+                                    &format!("Failed to decode server message: {text}").into(),
+                                ),
+                            }
+                        }
+                        Ok(_) => {}
+                        Err(error) => web_sys::console::error_1(
                             &format!("WebSocket receive failed: {error}").into(),
-                        );
+                        ),
                     }
                 }
+                *socket_tx.borrow_mut() = None;
             }
-            *current_ws_tx.borrow_mut() = None;
-            let current_reducer = listener_reducer_ref.borrow().clone();
-            if !current_reducer.disconnected && !current_reducer.fatal_error {
-                current_reducer.dispatch(GameAction::SetDisconnected {
-                    disconnected: true,
-                    is_fatal: false,
-                    title: None,
-                    msg: None,
-                });
-            }
-            gloo_timers::future::TimeoutFuture::new(1500).await;
-        } else {
-            web_sys::console::error_1(&"WebSocket open failed; retrying.".into());
-            // Avoid tight spin if socket creation fails
-            let current_reducer = listener_reducer_ref.borrow().clone();
-            if !current_reducer.disconnected && !current_reducer.fatal_error {
-                current_reducer.dispatch(GameAction::SetDisconnected {
-                    disconnected: true,
-                    is_fatal: false,
-                    title: None,
-                    msg: None,
-                });
-            }
-            gloo_timers::future::TimeoutFuture::new(1500).await;
+            Err(_) => web_sys::console::error_1(&"WebSocket open failed; retrying.".into()),
         }
+
+        report_connection_lost(&reducer);
+        gloo_timers::future::TimeoutFuture::new(RECONNECT_DELAY_MS).await;
+    }
+}
+
+/// Shows the disconnected overlay unless another overlay already explains the situation.
+pub fn report_connection_lost(reducer: &ReducerRef) {
+    let current = reducer.borrow().clone();
+    if !current.disconnected && !current.fatal_error {
+        current.dispatch(GameAction::SetDisconnected(
+            DisconnectNotice::connection_lost(),
+        ));
+    }
+}
+
+/// Converts a server message into a reducer action, persisting session data on the way.
+fn to_action(message: ServerMessage, mode_id: &ModeId) -> GameAction {
+    match message {
+        ServerMessage::Init {
+            player_id,
+            session_secret,
+            move_unlock_at,
+            state,
+            mode,
+            catalog,
+            chat_room_key,
+            chat_history,
+            sync_interval_ms: _,
+        } => {
+            if !player_id.is_nil() {
+                SessionStore::new(mode_id).save(player_id, session_secret);
+            }
+            GameAction::SetInit(Box::new(InitPayload {
+                player_id,
+                session_secret,
+                move_unlock_at,
+                state: *state,
+                mode: *mode,
+                catalog: *catalog,
+                chat_room_key,
+                chat_history,
+            }))
+        }
+        ServerMessage::UpdateState {
+            players,
+            pieces,
+            shops,
+            board_size,
+        } => GameAction::UpdateState(Box::new(UpdateStatePayload {
+            players,
+            pieces,
+            shops,
+            board_size,
+        })),
+        ServerMessage::ActionResult { id, result } => GameAction::ActionResult { id, result },
+        ServerMessage::QueueState {
+            position_in_queue,
+            queued_players,
+            required_players,
+        } => GameAction::SetQueueStatus(QueueStatus {
+            position_in_queue,
+            queued_players,
+            required_players,
+        }),
+        ServerMessage::Error(GameError::InvalidSession) => {
+            // The stored session can never be used again; the next join starts fresh.
+            SessionStore::new(mode_id).clear();
+            GameAction::SetDisconnected(DisconnectNotice::fatal(
+                "SESSION ERROR".to_string(),
+                GameError::InvalidSession.to_string(),
+            ))
+        }
+        ServerMessage::Error(GameError::Custom { title, message }) => {
+            GameAction::SetDisconnected(DisconnectNotice::fatal(title, message))
+        }
+        ServerMessage::Error(error) => GameAction::SetError(error),
+        ServerMessage::Victory {
+            title,
+            message,
+            focus_target,
+        } => GameAction::SetVictory {
+            title,
+            msg: message,
+            focus_target,
+        },
+        ServerMessage::GameOver(stats) => GameAction::GameOver(stats),
+        ServerMessage::Pong(sent_at, server_time) => GameAction::Pong(sent_at, server_time),
+        ServerMessage::Chat { line } => GameAction::PushChatLine(line),
     }
 }

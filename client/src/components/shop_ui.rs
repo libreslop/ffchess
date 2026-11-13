@@ -1,9 +1,8 @@
 //! Shop overlay component for purchases.
 
-use common::models::{Piece, PieceConfig, ShopConfig};
-use common::types::{PieceTypeId, Score};
+use common::models::{Piece, ShopConfig};
+use common::types::{ExprVars, Score};
 use gloo_events::EventListener;
-use std::collections::HashMap;
 use wasm_bindgen::JsCast;
 use web_sys::{HtmlInputElement, HtmlTextAreaElement, KeyboardEvent};
 use yew::prelude::*;
@@ -12,95 +11,90 @@ use yew::prelude::*;
 #[derive(Properties, PartialEq)]
 pub struct ShopUIProps {
     pub player_score: Score,
-    pub player_pieces_count: usize,
-    pub piece_on_shop: Option<Piece>,
+    /// Pricing variables of the buying player.
+    pub price_vars: ExprVars,
+    pub piece_on_shop: Piece,
     pub shop_config: ShopConfig,
-    pub piece_configs: HashMap<PieceTypeId, PieceConfig>,
     pub on_buy: Callback<usize>,
 }
 
-#[function_component(ShopUI)]
-/// Renders shop items and buy actions for the player.
-///
-/// `props` provides shop context, piece configs, and send channel. Returns rendered HTML.
-pub fn shop_ui(props: &ShopUIProps) -> Html {
-    let Some(group) =
-        common::logic::select_shop_group(&props.shop_config, props.piece_on_shop.as_ref())
-    else {
-        return Html::default();
-    };
-    if group.items.is_empty() {
-        return Html::default();
-    }
-    if props.shop_config.auto_upgrade_single_item && group.items.len() == 1 {
-        return Html::default();
-    }
+/// One purchasable offer as displayed.
+#[derive(Clone, PartialEq)]
+struct OfferView {
+    name: String,
+    price: Score,
+    shows_price: bool,
+    affordable: bool,
+}
 
-    let vars = common::logic::build_price_vars(
-        props.player_pieces_count,
-        props.piece_configs.keys().map(|p_id| (p_id, 0)),
-    );
-    let hotkey_can_buy: Vec<bool> = group
-        .items
+/// Renders shop items and buy actions for the player.
+#[function_component(ShopUI)]
+pub fn shop_ui(props: &ShopUIProps) -> Html {
+    let offers: Vec<OfferView> = props
+        .shop_config
+        .manual_items_for(&props.piece_on_shop)
+        .unwrap_or_default()
         .iter()
         .map(|item| {
-            let price = item
-                .price_expr
-                .as_ref()
-                .map(|expr| Score::from(common::logic::evaluate_expression(expr, &vars) as u64))
-                .unwrap_or_else(Score::zero);
-            props.player_score >= price
+            let price = item.price(&props.price_vars);
+            OfferView {
+                name: item.display_name.clone(),
+                price,
+                shows_price: item.price_expr.is_some(),
+                affordable: props.player_score >= price,
+            }
         })
         .collect();
+    let hotkey_can_buy: Vec<bool> = offers.iter().map(|offer| offer.affordable).collect();
 
     {
         let on_buy = props.on_buy.clone();
-        let hotkey_can_buy = hotkey_can_buy.clone();
-        use_effect_with(
-            (hotkey_can_buy, on_buy.clone()),
-            move |(hotkey_can_buy, on_buy)| {
-                let hotkey_can_buy = hotkey_can_buy.clone();
-                let on_buy = on_buy.clone();
-                let window = web_sys::window().unwrap();
-                let listener = EventListener::new(&window, "keydown", move |event| {
-                    let Some(key_event) = event.dyn_ref::<KeyboardEvent>() else {
-                        return;
-                    };
-                    if key_event.repeat() {
-                        return;
-                    }
-                    if let Some(target) = key_event.target()
-                        && let Some(input) = target.dyn_ref::<HtmlInputElement>()
-                        && !input.read_only()
-                    {
-                        return;
-                    }
-                    if let Some(target) = key_event.target()
-                        && target.dyn_ref::<HtmlTextAreaElement>().is_some()
-                    {
-                        return;
-                    }
-                    let key = key_event.key();
-                    let Some(digit) = key
-                        .chars()
-                        .next()
-                        .and_then(|ch| ch.to_digit(10))
-                        .and_then(|d| usize::try_from(d).ok())
-                    else {
-                        return;
-                    };
-                    if digit == 0 {
-                        return;
-                    }
-                    let index = digit - 1;
-                    if hotkey_can_buy.get(index).copied().unwrap_or(false) {
-                        key_event.prevent_default();
-                        on_buy.emit(index);
-                    }
-                });
-                move || drop(listener)
-            },
-        );
+        use_effect_with((hotkey_can_buy, on_buy), move |(hotkey_can_buy, on_buy)| {
+            let hotkey_can_buy = hotkey_can_buy.clone();
+            let on_buy = on_buy.clone();
+            let window = web_sys::window().expect("window available");
+            let listener = EventListener::new(&window, "keydown", move |event| {
+                let Some(key_event) = event.dyn_ref::<KeyboardEvent>() else {
+                    return;
+                };
+                if key_event.repeat() {
+                    return;
+                }
+                if let Some(target) = key_event.target()
+                    && let Some(input) = target.dyn_ref::<HtmlInputElement>()
+                    && !input.read_only()
+                {
+                    return;
+                }
+                if let Some(target) = key_event.target()
+                    && target.dyn_ref::<HtmlTextAreaElement>().is_some()
+                {
+                    return;
+                }
+                let key = key_event.key();
+                let Some(digit) = key
+                    .chars()
+                    .next()
+                    .and_then(|ch| ch.to_digit(10))
+                    .and_then(|d| usize::try_from(d).ok())
+                else {
+                    return;
+                };
+                if digit == 0 {
+                    return;
+                }
+                let index = digit - 1;
+                if hotkey_can_buy.get(index).copied().unwrap_or(false) {
+                    key_event.prevent_default();
+                    on_buy.emit(index);
+                }
+            });
+            move || drop(listener)
+        });
+    }
+
+    if offers.is_empty() {
+        return Html::default();
     }
 
     html! {
@@ -110,13 +104,8 @@ pub fn shop_ui(props: &ShopUIProps) -> Html {
             </span>
             <div style="display: flex; gap: 4px; flex-wrap: wrap; justify-content: center; pointer-events: auto;">
                 {
-                    group.items.iter().enumerate().map(|(idx, item)| {
-                        let price = item
-                            .price_expr
-                            .as_ref()
-                            .map(|expr| Score::from(common::logic::evaluate_expression(expr, &vars) as u64))
-                            .unwrap_or_else(Score::zero);
-                        let can_afford = props.player_score >= price;
+                    offers.into_iter().enumerate().map(|(idx, offer)| {
+                        let can_afford = offer.affordable;
                         let on_buy_cb = props.on_buy.clone();
                         let on_buy = Callback::from(move |_| {
                             on_buy_cb.emit(idx);
@@ -138,11 +127,11 @@ pub fn shop_ui(props: &ShopUIProps) -> Html {
                                     { (idx + 1).to_string() }
                                 </span>
                                 <span style="font-size: 0.7rem; font-weight: 900; line-height: 1.1; text-align: center; margin-bottom: 2px; text-transform: uppercase;">
-                                    { &item.display_name }
+                                    { offer.name }
                                 </span>
-                                if item.price_expr.is_some() {
+                                if offer.shows_price {
                                     <span style="font-size: 0.65rem; font-family: monospace; font-weight: 600;">
-                                        { price.to_string() }
+                                        { offer.price.to_string() }
                                     </span>
                                 }
                             </button>

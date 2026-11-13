@@ -1,24 +1,23 @@
 //! Geometry and hit-testing helpers for the game view.
 
 use crate::math::{Vec2, vec2};
-use glam::IVec2;
+use common::types::BoardCoord;
 use wasm_bindgen::JsCast;
 use web_sys::{DomRect, Element, EventTarget, HtmlCanvasElement};
 
 /// Reads the current browser window size in CSS pixels.
 pub(super) fn read_window_size() -> Vec2 {
     let window = web_sys::window().expect("window available");
-    let width = window
-        .inner_width()
-        .expect("window width")
-        .as_f64()
-        .expect("window width as f64");
-    let height = window
-        .inner_height()
-        .expect("window height")
-        .as_f64()
-        .expect("window height as f64");
-    vec2(width, height)
+    let dimension = |value: Result<wasm_bindgen::JsValue, _>| {
+        value
+            .ok()
+            .and_then(|value| value.as_f64())
+            .unwrap_or_default()
+    };
+    vec2(
+        dimension(window.inner_width()),
+        dimension(window.inner_height()),
+    )
 }
 
 /// Converts a screen-space pointer position into a grid coordinate.
@@ -29,7 +28,7 @@ pub(super) fn screen_to_grid(
     camera: Vec2,
     tile_size: f64,
     board_rotated_180: bool,
-) -> IVec2 {
+) -> BoardCoord {
     let screen_pos = pos - vec2(rect.left(), rect.top());
     let canvas_center = vec2(canvas.width() as f64 / 2.0, canvas.height() as f64 / 2.0);
     let world_pos = if board_rotated_180 {
@@ -38,7 +37,7 @@ pub(super) fn screen_to_grid(
         screen_pos + camera - canvas_center
     };
     let grid = (world_pos / tile_size).floor();
-    IVec2::new(grid.x as i32, grid.y as i32)
+    BoardCoord::new(grid.x as i32, grid.y as i32)
 }
 
 /// Returns true when a pointer/touch event originates from exempt UI.

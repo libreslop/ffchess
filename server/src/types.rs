@@ -1,7 +1,12 @@
 //! Server-specific primitive wrappers.
 
+use common::protocol::ServerMessage;
 use std::fmt;
+use tokio::sync::mpsc;
 use uuid::Uuid;
+
+/// Outbound message channel of one websocket connection.
+pub type ClientTx = mpsc::Sender<ServerMessage>;
 
 /// Unique identifier for a live websocket connection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -15,14 +20,12 @@ impl ConnectionId {
 }
 
 impl Default for ConnectionId {
-    /// Provides a new random connection identifier.
     fn default() -> Self {
         Self::new()
     }
 }
 
 impl fmt::Display for ConnectionId {
-    /// Formats the identifier as a UUID string.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
     }

@@ -3,9 +3,8 @@
 use crate::canvas::color::{NPC_PIECE_COLOR, PieceIconColors, piece_icon_colors};
 use crate::canvas::types::{PieceDrawParams, PieceNameDrawParams, PieceSvgKey, Renderer};
 use crate::math::{Vec2, vec2};
-use common::types::PieceTypeId;
+use common::types::{PieceTypeId, TimestampMs};
 use gloo_net::http::Request;
-use js_sys;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::JsValue;
 use wasm_bindgen_futures::spawn_local;
@@ -22,46 +21,28 @@ struct PieceSvgHandle {
 }
 
 impl Renderer {
-    /// Draws a piece glyph, cooldown indicator, and optional nameplate.
-    ///
-    /// `params` describes the piece and draw state, `zoom` is the current zoom factor.
-    /// Returns nothing.
-    pub fn draw_piece(&self, params: PieceDrawParams, zoom: f64) {
-        let tile_size = params.tile_size_px * zoom;
+    /// Draws a piece glyph and, for the local player's real pieces, its cooldown indicator.
+    pub(crate) fn draw_piece(&self, params: PieceDrawParams) {
         let base_color = self.owner_color(&params);
         let colors = piece_icon_colors(&base_color);
-        let config = self.piece_configs.get(&params.piece.piece_type);
-
-        let svg_handle = config.and_then(|cfg| {
-            self.resolve_piece_icon(&params.piece.piece_type, &cfg.svg_path, &colors)
-        });
+        let svg_handle = self
+            .catalog
+            .pieces
+            .get(&params.piece.piece_type)
+            .and_then(|config| {
+                self.resolve_piece_icon(&params.piece.piece_type, &config.svg_path, &colors)
+            });
         let svg_ready = svg_handle
             .as_ref()
             .filter(|handle| handle.image.complete() && handle.image.natural_width() > 0);
 
         // Prefer SVGs when available; fall back to a simple circle when missing.
-        if let Some(handle) = svg_ready {
-            self.draw_piece_icon(handle, params, tile_size, zoom);
-        } else {
-            self.draw_piece_fallback(&base_color, params, zoom, tile_size);
+        match svg_ready {
+            Some(handle) => self.draw_piece_icon(handle, params),
+            None => self.draw_piece_fallback(&base_color, params),
         }
-
-        // Only draw cooldown on the real (non-ghost) piece for the owner.
         if self.should_draw_cooldown(&params) {
-            self.draw_cooldown_bar(params, tile_size, zoom, &base_color);
-        }
-
-        if params.alpha >= 1.0 && params.draw_name {
-            self.draw_piece_name(PieceNameDrawParams {
-                piece: params.piece,
-                offset_x: params.offset_x,
-                offset_y: params.offset_y,
-                alpha: params.alpha,
-                state: params.state,
-                zoom,
-                tile_size_px: params.tile_size_px,
-                pos_override: params.pos_override,
-            });
+            self.draw_cooldown_bar(params, &base_color);
         }
     }
 
@@ -79,118 +60,80 @@ impl Renderer {
             .unwrap_or_else(|| NPC_PIECE_COLOR.to_string())
     }
 
-    fn draw_piece_fallback(
-        &self,
-        base_color: &str,
-        params: PieceDrawParams<'_>,
-        zoom: f64,
-        tile_size: f64,
-    ) {
-        let pos = Self::piece_pos(params);
+    /// Draws a "?" disc for pieces whose icon is unavailable.
+    fn draw_piece_fallback(&self, base_color: &str, params: PieceDrawParams<'_>) {
+        let (tile, zoom) = (params.tile_size, params.zoom);
+        let center = params.pos * tile + params.offset + tile / 2.0;
         self.ctx.set_fill_style_str(base_color);
         self.ctx.set_global_alpha(params.alpha);
-
         self.ctx.begin_path();
-        let _ = self.ctx.arc(
-            pos.x * tile_size + params.offset_x + tile_size / 2.0,
-            pos.y * tile_size + params.offset_y + tile_size / 2.0,
-            tile_size / 3.0,
-            0.0,
-            std::f64::consts::TAU,
-        );
+        let _ = self
+            .ctx
+            .arc(center.x, center.y, tile / 3.0, 0.0, std::f64::consts::TAU);
         self.ctx.fill();
-
         self.ctx.set_global_alpha(1.0);
 
         self.ctx
             .set_fill_style_str(&format!("rgba(255, 255, 255, {})", params.alpha));
-        let font_size = 16.0 * zoom;
-        self.ctx.set_font(&format!("bold {}px Arbutus", font_size));
-        let label = "?";
-        let _ = self.ctx.fill_text(
-            label,
-            pos.x * tile_size + params.offset_x + tile_size / 2.0 - (5.0 * zoom),
-            pos.y * tile_size + params.offset_y + tile_size / 2.0 + (6.0 * zoom),
-        );
+        self.ctx
+            .set_font(&format!("bold {}px Arbutus", 16.0 * zoom));
+        let _ = self
+            .ctx
+            .fill_text("?", center.x - 5.0 * zoom, center.y + 6.0 * zoom);
     }
 
     fn should_draw_cooldown(&self, params: &PieceDrawParams<'_>) -> bool {
         params.piece.owner_id == Some(params.player_id) && !params.is_ghost
     }
 
-    fn draw_cooldown_bar(
-        &self,
-        params: PieceDrawParams<'_>,
-        tile_size: f64,
-        zoom: f64,
-        team_color: &str,
-    ) {
-        let pos = Self::piece_pos(params);
-        #[cfg(target_arch = "wasm32")]
-        let now = common::types::TimestampMs::from_millis(
-            js_sys::Date::now() as i64 + params.clock_offset_ms,
-        );
-        #[cfg(not(target_arch = "wasm32"))]
-        let now = common::types::TimestampMs::from_millis(
-            chrono::Utc::now().timestamp_millis() + params.clock_offset_ms,
-        );
-
+    /// Traces the elapsed share of the piece cooldown around its square.
+    fn draw_cooldown_bar(&self, params: PieceDrawParams<'_>, team_color: &str) {
+        let now = TimestampMs::from_millis(js_sys::Date::now() as i64 + params.clock_offset_ms);
         let elapsed = now - params.piece.last_move_time;
         if elapsed >= params.piece.cooldown_ms {
             return;
         }
-
         let progress = elapsed.as_i64() as f64 / params.piece.cooldown_ms.as_i64() as f64;
 
-        let line_width = Self::cooldown_line_width(zoom);
-        let gap = Self::cooldown_gap(tile_size);
-        let inset = (gap + (line_width / 2.0)).min(tile_size / 2.0 - 1.0);
-        let square_size = (tile_size - (2.0 * inset)).max(line_width + 1.0).round();
-        let square_x =
-            Self::align_stroke_coord(pos.x * tile_size + params.offset_x + inset, line_width);
-        let square_y =
-            Self::align_stroke_coord(pos.y * tile_size + params.offset_y + inset, line_width);
+        let tile = params.tile_size;
+        let line_width = Self::cooldown_line_width(params.zoom);
+        let gap = Self::cooldown_gap(tile);
+        let inset = (gap + (line_width / 2.0)).min(tile / 2.0 - 1.0);
+        let square_size = (tile - (2.0 * inset)).max(line_width + 1.0).round();
+        let corner = params.pos * tile + params.offset + inset;
+        let square_x = Self::align_stroke_coord(corner.x, line_width);
+        let square_y = Self::align_stroke_coord(corner.y, line_width);
 
         self.ctx.set_global_alpha(params.alpha);
         self.ctx.set_line_width(line_width);
         self.ctx.set_line_cap("butt");
         self.ctx.set_line_join("miter");
-
         self.ctx.set_stroke_style_str(team_color);
         self.draw_square_progress(square_x, square_y, square_size, progress);
-
         self.ctx.set_global_alpha(1.0);
     }
 
-    fn draw_piece_icon(
-        &self,
-        handle: &PieceSvgHandle,
-        params: PieceDrawParams,
-        tile_size: f64,
-        zoom: f64,
-    ) {
-        let icon_size = Self::piece_icon_size(tile_size, zoom);
-        let pos = Self::piece_pos(params);
-        let draw_x = pos.x * tile_size + params.offset_x + (tile_size - icon_size) / 2.0;
-        let draw_y = pos.y * tile_size + params.offset_y + (tile_size - icon_size) / 2.0;
+    /// Draws the tinted piece icon, using a cached raster when available.
+    fn draw_piece_icon(&self, handle: &PieceSvgHandle, params: PieceDrawParams) {
+        let tile = params.tile_size;
+        let icon_size = Self::piece_icon_size(tile, params.zoom);
+        let corner = params.pos * tile + params.offset + (tile - icon_size) / 2.0;
 
         self.ctx.set_global_alpha(params.alpha);
         self.ctx.set_image_smoothing_enabled(true);
         Self::set_image_smoothing_quality(&self.ctx, "high");
-
-        if let Some(raster) = self.ensure_piece_raster(&handle.key, &handle.image) {
-            let _ = self.ctx.draw_image_with_html_canvas_element_and_dw_and_dh(
-                &raster, draw_x, draw_y, icon_size, icon_size,
-            );
-        } else {
-            let _ = self.ctx.draw_image_with_html_image_element_and_dw_and_dh(
+        let _ = match self.ensure_piece_raster(&handle.key, &handle.image) {
+            Some(raster) => self.ctx.draw_image_with_html_canvas_element_and_dw_and_dh(
+                &raster, corner.x, corner.y, icon_size, icon_size,
+            ),
+            None => self.ctx.draw_image_with_html_image_element_and_dw_and_dh(
                 &handle.image,
-                draw_x,
-                draw_y,
+                corner.x,
+                corner.y,
                 icon_size,
                 icon_size,
-            );
-        }
+            ),
+        };
         self.ctx.set_global_alpha(1.0);
     }
 
@@ -232,13 +175,16 @@ impl Renderer {
         Some(PieceSvgHandle { key, image })
     }
 
+    /// Returns the SVG template of a piece type, starting a fetch on first use.
+    ///
+    /// Failed fetches are not retried, so a missing asset does not cause a request per frame.
     fn ensure_svg_template(&self, piece_type: &PieceTypeId, svg_path: &str) -> Option<String> {
         {
-            let cache = self.svg_cache.borrow();
+            let mut cache = self.svg_cache.borrow_mut();
             if let Some(template) = cache.templates.get(piece_type) {
                 return Some(template.clone());
             }
-            if cache.pending.contains(piece_type) {
+            if !cache.requested.insert(piece_type.clone()) {
                 return None;
             }
         }
@@ -246,71 +192,46 @@ impl Renderer {
         let cache = self.svg_cache.clone();
         let piece_type = piece_type.clone();
         let svg_path = format!("/assets/pieces/{svg_path}");
-        {
-            let mut cache = cache.borrow_mut();
-            cache.pending.insert(piece_type.clone());
-        }
-
         // Fetch the SVG template asynchronously to avoid blocking the render loop.
         spawn_local(async move {
-            let response = Request::get(&svg_path).send().await;
-            let text = if let Ok(response) = response {
-                response.text().await.ok()
-            } else {
-                None
+            let text = match Request::get(&svg_path).send().await {
+                Ok(response) => response.text().await.ok(),
+                Err(_) => None,
             };
-            let mut cache = cache.borrow_mut();
-            cache.pending.remove(&piece_type);
             if let Some(text) = text {
-                cache.templates.insert(piece_type, text);
+                cache.borrow_mut().templates.insert(piece_type, text);
             }
         });
-
         None
     }
 
-    /// Draws a king nameplate above the piece if applicable.
-    ///
-    /// `params` describes the piece and draw state. Returns nothing.
-    pub fn draw_piece_name(&self, params: PieceNameDrawParams<'_>) {
-        let tile_size = params.tile_size_px * params.zoom;
-        let pos = params.pos_override.unwrap_or_else(|| {
-            vec2(
-                params.piece.position.0.x as f64,
-                params.piece.position.0.y as f64,
-            )
-        });
-        if params.piece.piece_type.is_king()
-            && let Some(owner_id) = params.piece.owner_id
-            && let Some(player) = params.state.players.get(&owner_id)
-        {
-            let name = if player.name.trim().is_empty() {
-                "An Unnamed Player"
-            } else {
-                &player.name
-            };
+    /// Draws the owner's name above a king.
+    pub(crate) fn draw_piece_name(&self, params: PieceNameDrawParams<'_>) {
+        let Some(player) = params
+            .piece
+            .owner_id
+            .and_then(|owner| params.state.players.get(&owner))
+        else {
+            return;
+        };
+        let name = match player.name.trim() {
+            "" => "An Unnamed Player",
+            _ => &player.name,
+        };
+        let (tile, zoom) = (params.tile_size, params.zoom);
+        self.ctx.set_font(&format!("{}px Arbutus", 12.0 * zoom));
+        let Ok(metrics) = self.ctx.measure_text(name) else {
+            return;
+        };
+        let anchor = params.pos * tile + params.offset;
+        let x = anchor.x + tile / 2.0 - metrics.width() / 2.0;
+        let y = anchor.y - 5.0 * zoom;
 
-            let name_font_size = 12.0 * params.zoom;
-            self.ctx.set_font(&format!("{}px Arbutus", name_font_size));
-
-            if let Ok(text_metrics) = self.ctx.measure_text(name) {
-                let text_width = text_metrics.width();
-                let x = pos.x * tile_size + params.offset_x + tile_size / 2.0 - text_width / 2.0;
-                let y = pos.y * tile_size + params.offset_y - (5.0 * params.zoom);
-
-                // Draw outline
-                self.ctx
-                    .set_stroke_style_str(&format!("rgba(255, 255, 255, {})", params.alpha));
-                self.ctx.set_line_width(3.0 * params.zoom);
-                let _ = self.ctx.stroke_text(name, x, y);
-
-                // Draw fill
-                self.ctx.set_fill_style_str(player.color.as_ref());
-                self.ctx.set_global_alpha(params.alpha);
-                let _ = self.ctx.fill_text(name, x, y);
-                self.ctx.set_global_alpha(1.0);
-            }
-        }
+        self.ctx.set_stroke_style_str("rgba(255, 255, 255, 1)");
+        self.ctx.set_line_width(3.0 * zoom);
+        let _ = self.ctx.stroke_text(name, x, y);
+        self.ctx.set_fill_style_str(player.color.as_ref());
+        let _ = self.ctx.fill_text(name, x, y);
     }
 
     fn ensure_piece_raster(
@@ -460,14 +381,5 @@ impl Renderer {
         let line_width = Self::cooldown_line_width(zoom);
         let size = tile_size - (4.0 * gap) - (2.0 * line_width);
         size.max(line_width + 1.0).round()
-    }
-
-    fn piece_pos(params: PieceDrawParams<'_>) -> Vec2 {
-        params.pos_override.unwrap_or_else(|| {
-            vec2(
-                params.piece.position.0.x as f64,
-                params.piece.position.0.y as f64,
-            )
-        })
     }
 }

@@ -19,7 +19,7 @@ Non-queue modes only expose the mode room. Queue modes expose both:
 
 ## Server Routing
 
-`server/src/handlers/ws/session.rs` resolves the destination room for each `ClientMessage::Chat`:
+`server/src/state/requests.rs` resolves the destination room for each `ClientMessage::Chat`:
 
 1. if the connection is actively bound to a player, send to that bound `GameInstance`,
 2. otherwise, for queue modes, try the currently watched preview instance,

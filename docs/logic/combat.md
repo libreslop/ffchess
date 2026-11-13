@@ -7,12 +7,13 @@ Combat in `ffchess` is simple at the board layer and rich at the mode layer:
 
 ## Capture Application
 
-The core server helpers live in `server/src/instance/captures.rs`.
+Captures are applied by the shared `Simulation` (`common/src/rules/simulation.rs`); the server
+then handles their consequences in `server/src/instance/world.rs`.
 
 On a successful capture:
 
-1. The target piece is removed from `game.pieces`.
-2. Its id is pushed into `removed_pieces` for the next `UpdateState`.
+1. The target piece is removed from `game.pieces`; the next `UpdateState` snapshot no longer contains it.
+2. Any queued actions of the captured piece are cancelled.
 3. If the capturer is a player:
    - `score` increases by the captured piece config's `score_value`,
    - `pieces_captured` increments,
@@ -38,13 +39,14 @@ That rule affects:
 
 Hook resolution is deliberately delayed until the end of the tick.
 
-The server records events into `HookEventBuffer`:
+The server records events into `HookEvents` (`server/src/instance/hooks/events.rs`):
 
-- capture events,
-- "a player left" events.
+- capture and kill events,
+- "a player left", join, and disconnect events,
+- queue countdown and game start events.
 
-At the start of a tick, queued events are promoted into the active buffer.
-At the end of the tick, the active buffer is resolved against the mode's configured hooks.
+All instance state sits behind one lock, so events recorded between ticks simply accumulate.
+At the end of each tick, the collected events are resolved against the mode's configured hooks.
 
 This keeps capture side effects deterministic even when several things happen inside one tick.
 
@@ -53,7 +55,7 @@ This keeps capture side effects deterministic even when several things happen in
 ### `OnCapture` + `EliminateOwner`
 
 If the captured piece matches `target_piece_id`, remove that captured piece's owner from the game.
-All of their remaining pieces are removed and their queued premoves are cleared.
+All of their remaining pieces are removed and their queued actions are cancelled.
 
 ### `OnCapturePieceActive` + `WinCapturer`
 

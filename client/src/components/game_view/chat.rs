@@ -99,8 +99,10 @@ pub fn game_chat(props: &GameChatProps) -> Html {
     {
         let chat_input_ref = chat_input_ref.clone();
         use_effect_with((), move |_| {
-            let listener =
-                EventListener::new(&web_sys::window().unwrap(), "pointerdown", move |event| {
+            let listener = EventListener::new(
+                &web_sys::window().expect("window available"),
+                "pointerdown",
+                move |event| {
                     let Some(target) = event.target() else {
                         return;
                     };
@@ -120,14 +122,15 @@ pub fn game_chat(props: &GameChatProps) -> Html {
                     {
                         let _ = input.blur();
                     }
-                });
+                },
+            );
             move || drop(listener)
         });
     }
 
     {
         let chat_log_ref = chat_log_ref.clone();
-        use_effect_with(props.reducer.chat_lines.len(), move |_| {
+        use_effect_with(props.reducer.chat.lines.len(), move |_| {
             if let Some(el) = chat_log_ref.cast::<web_sys::HtmlElement>() {
                 el.set_scroll_top(el.scroll_height());
             }
@@ -138,7 +141,7 @@ pub fn game_chat(props: &GameChatProps) -> Html {
     {
         let chat_text = chat_text.clone();
         let expired_line_keys = expired_line_keys.clone();
-        use_effect_with(props.reducer.chat_room_key.clone(), move |_| {
+        use_effect_with(props.reducer.chat.room_key.clone(), move |_| {
             chat_text.set(String::new());
             expired_line_keys.set(HashSet::new());
             || ()
@@ -149,7 +152,7 @@ pub fn game_chat(props: &GameChatProps) -> Html {
         let expired_line_keys = expired_line_keys.clone();
         use_effect_with(
             (
-                props.reducer.chat_lines.clone(),
+                props.reducer.chat.lines.clone(),
                 props.globals.chat_message_ttl_ms,
                 props.reducer.clock_offset_ms,
             ),
@@ -186,7 +189,7 @@ pub fn game_chat(props: &GameChatProps) -> Html {
         let reducer = props.reducer.clone();
         use_effect_with(
             (
-                props.reducer.chat_lines.clone(),
+                props.reducer.chat.lines.clone(),
                 props.globals.chat_message_ttl_ms,
                 props.reducer.clock_offset_ms,
             ),
@@ -234,14 +237,10 @@ pub fn game_chat(props: &GameChatProps) -> Html {
             if message.is_empty() {
                 return;
             }
-            let sent = try_send_client_message(
-                &tx,
-                ClientMessage::Chat {
-                    name_hint: player_name.clone(),
-                    message,
-                },
-                "failed to send Chat",
-            );
+            let sent = tx.send(ClientMessage::Chat {
+                name_hint: player_name.clone(),
+                message,
+            });
             if sent {
                 chat_text.set(String::new());
             }
@@ -291,7 +290,7 @@ pub fn game_chat(props: &GameChatProps) -> Html {
             >
                 {
                     html! {
-                        for props.reducer.chat_lines.iter().map(|line| {
+                        for props.reducer.chat.lines.iter().map(|line| {
                             let key = ChatLineKey::for_line(line);
                             let is_expired = expired_line_keys.contains(&key);
                             let sender_color =
@@ -398,7 +397,7 @@ fn current_chat_line_keys(lines: &[ChatLine]) -> HashSet<ChatLineKey> {
 }
 
 fn chat_surface(reducer: &GameStateReducer) -> ChatSurface {
-    if reducer.phase == ClientPhase::Alive && !reducer.is_dead && !reducer.is_victory {
+    if reducer.phase == ClientPhase::Alive && !reducer.has_match_result() {
         ChatSurface::LightBoard
     } else {
         ChatSurface::DarkOverlay
@@ -497,12 +496,4 @@ fn url_href(token: &str) -> Option<String> {
         return Some(format!("https://{token}"));
     }
     None
-}
-
-fn try_send_client_message(tx: &MsgSender, message: ClientMessage, context: &str) -> bool {
-    if tx.0.try_send(message).is_err() {
-        web_sys::console::error_1(&context.into());
-        return false;
-    }
-    true
 }

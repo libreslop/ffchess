@@ -1,28 +1,24 @@
-//! Main in-game canvas view and input handling.
+//! Main in-game canvas view: wiring of state, input, and overlays.
 
 use super::chat::GameChat;
-use super::geometry::{
-    is_ui_exempt_target, read_window_size, screen_to_grid,
+use super::geometry::{is_ui_exempt_target, read_window_size};
+use super::input::{PointerContext, mouse_leave_handler};
+use super::loops::{
+    CameraLoopInputs, WheelZoomInputs, use_animation_frame, use_camera_loop, use_wheel_zoom,
 };
-use super::helpers::{MOVE_ANIM_MS, apply_visible_ghosts};
-use super::shop_context::ActiveShopMenuQuery;
-use super::types::{
-    DragStart, FpsCounter, InputEnd, InputMove, InputStart, LastTap, LatestStateSnapshot, PieceAnim,
-};
-use crate::camera::{CameraManager, update_camera};
+use super::render::{BoardFrame, use_board_render, use_piece_animations};
+use super::shop_context::ActiveShopQuery;
+use super::touch::TouchContext;
+use super::types::{InputEnd, InputMove, InputStart, LatestStateSnapshot, ViewHandles};
+use crate::app::GlobalClientConfig;
+use crate::camera::CameraManager;
 use crate::canvas::Renderer;
+use crate::components::shop_ui::ShopUI;
 use crate::math::{Vec2, vec2};
-use crate::reducer::{GameAction, GameStateReducer, MsgSender, Pmove};
-use crate::utils::request_fullscreen;
-use common::logic::is_within_board;
-use common::protocol::ClientMessage;
-use common::types::{BoardCoord, DurationMs, PieceId, PlayerId, Score, TimestampMs};
+use crate::reducer::{GameAction, GameStateReducer, MsgSender};
+use common::models::{PieceAction, ShopItemIndex};
+use common::types::{DurationMs, PieceId, Score};
 use gloo_events::EventListener;
-use gloo_render::{AnimationFrame, request_animation_frame};
-use std::cell::RefCell;
-use std::collections::HashMap;
-use std::rc::Rc;
-use wasm_bindgen::JsCast;
 use web_sys::HtmlCanvasElement;
 use yew::prelude::*;
 
@@ -31,1259 +27,191 @@ use yew::prelude::*;
 pub struct GameViewProps {
     pub reducer: UseReducerHandle<GameStateReducer>,
     pub tx: MsgSender,
-    pub render_interval_ms: u32,
-    pub globals: crate::app::GlobalClientConfig,
+    pub globals: GlobalClientConfig,
     pub player_name: String,
 }
 
+/// Renders the board canvas, HUD, shop menu, and chat, and routes input to them.
 #[function_component(GameView)]
-/// Renders the main game view, canvas, and interaction handlers.
-///
-/// `props` provides reducer state, message sender, and render config. Returns rendered HTML.
 pub fn game_view(props: &GameViewProps) -> Html {
+    let reducer = &props.reducer;
+    let globals = &props.globals;
+    let has_match_result = reducer.has_match_result();
+
     let canvas_ref = use_node_ref();
-    let selected_piece_id = use_state(|| None::<PieceId>);
-    let next_pm_id = use_mut_ref(|| 1u64);
-    let manager_ref = use_mut_ref(CameraManager::new);
-    let piece_prev_positions = use_mut_ref(HashMap::<PieceId, BoardCoord>::new);
-    let piece_anims = use_mut_ref(HashMap::<PieceId, PieceAnim>::new);
-    let last_tap = use_mut_ref(|| None::<LastTap>);
-    let touch_gesture_active = use_mut_ref(|| false);
-    let submitted_shop_actions = use_mut_ref(Vec::<(PieceId, BoardCoord)>::new);
-    let submitted_move_premoves = use_mut_ref(Vec::<u64>::new);
-
-    let cam_state = use_state(|| Vec2::ZERO);
-    let zoom_state = use_state(|| 1.0f64);
-    let frame_id = use_state(|| 0u64);
-    let drag_start = use_state(|| None::<DragStart>);
-    let did_pan = use_mut_ref(|| false);
-    let renderer_state = use_state(|| None::<Renderer>);
-    let fps_counter = use_mut_ref(FpsCounter::new);
-
-    let window_size = use_state(read_window_size);
-    let has_match_result = props.reducer.is_dead || props.reducer.is_victory;
-
-    // Drive a steady render heartbeat with requestAnimationFrame so visual elements (e.g., cooldown bars) update every frame
-    {
-        let frame_id = frame_id.clone();
-        use_effect_with((), move |_| {
-            let handle_cell: Rc<RefCell<Option<AnimationFrame>>> = Rc::new(RefCell::new(None));
-            let start_cell = handle_cell.clone();
-            let start_frame = frame_id.clone();
-
-            /// Schedules the next animation frame and updates the frame counter.
-            fn schedule(cell: Rc<RefCell<Option<AnimationFrame>>>, frame: UseStateHandle<u64>) {
-                let inner_cell = cell.clone();
-                let inner_frame = frame.clone();
-                let handle = request_animation_frame(move |ms| {
-                    inner_frame.set(ms as u64);
-                    schedule(inner_cell, inner_frame);
-                });
-                *cell.borrow_mut() = Some(handle);
-            }
-
-            schedule(start_cell, start_frame);
-
-            move || {
-                if let Some(h) = handle_cell.borrow_mut().take() {
-                    drop(h);
-                }
-            }
-        });
-    }
-
-    // Initialize renderer when canvas is bound
-    {
-        let renderer_state = renderer_state.clone();
-        let piece_configs = props.reducer.piece_configs.clone();
-        use_effect_with(
-            (canvas_ref.clone(), piece_configs),
-            move |(canvas_ref, piece_configs)| {
-                if let Some(canvas) = canvas_ref.cast::<HtmlCanvasElement>() {
-                    renderer_state.set(Some(Renderer::new(canvas, piece_configs.clone())));
-                }
-                || ()
-            },
-        );
-    }
-
-    // We use a ref to track the latest state for the interval to avoid stale captures
-    let latest_state =
-        use_mut_ref(|| LatestStateSnapshot::new(props.reducer.clone(), (*drag_start).is_some()));
-    {
-        let mut s = latest_state.borrow_mut();
-        s.update(props.reducer.clone(), (*drag_start).is_some());
-    }
-
-    {
-        let zoom_state = zoom_state.clone();
-        let cam_state = cam_state.clone();
-        let canvas_ref = canvas_ref.clone();
-        let manager_ref = manager_ref.clone();
-        let latest_state = latest_state.clone();
-        let fps_counter = fps_counter.clone();
-        let reducer = props.reducer.clone();
-        let globals = props.globals.clone();
-
-        use_effect_with(props.render_interval_ms, move |&render_ms| {
-            let render_ms = render_ms.max(8);
-            let interval = gloo_timers::callback::Interval::new(render_ms, move || {
-                let (reducer_state, is_dragging) = {
-                    let s = latest_state.borrow();
-                    (s.reducer.clone(), s.is_dragging)
-                };
-
-                {
-                    let mut fc = fps_counter.borrow_mut();
-                    fc.frames += 1;
-                    let now = web_sys::window().unwrap().performance().unwrap().now();
-                    if now - fc.last_ms >= 1000.0 {
-                        let fps = ((fc.frames as f64) * 1000.0 / (now - fc.last_ms)).round() as u32;
-                        reducer.dispatch(GameAction::SetFPS(fps));
-                        fc.frames = 0;
-                        fc.last_ms = now;
-                    }
-                }
-
-                {
-                    let mut manager = manager_ref.borrow_mut();
-
-                    let player_id_val = reducer_state.player_id.unwrap_or_else(PlayerId::nil);
-                    let piece_count = reducer_state
-                        .state
-                        .pieces
-                        .values()
-                        .filter(|p| p.owner_id == Some(player_id_val))
-                        .count();
-
-                    let changed = update_camera(
-                        &mut manager,
-                        crate::camera::CameraUpdateParams {
-                            state: &reducer_state.state,
-                            player_id: reducer_state.player_id,
-                            canvas_ref: &canvas_ref,
-                            is_dragging,
-                            mode: reducer_state.mode.as_ref(),
-                            piece_count,
-                            phase: reducer_state.phase,
-                            is_victory: reducer_state.is_victory,
-                            victory_focus_target: reducer_state.victory_focus_target,
-                            zoom_min: globals.camera_zoom_min,
-                            zoom_max: globals.camera_zoom_max,
-                            zoom_lerp: globals.zoom_lerp,
-                            inertia_decay: globals.inertia_decay,
-                            velocity_cutoff: globals.velocity_cutoff,
-                            pan_lerp_alive: globals.pan_lerp_alive,
-                            pan_lerp_dead: globals.pan_lerp_dead,
-                            tile_size_px: globals.tile_size_px,
-                            death_zoom: globals.death_zoom,
-                            board_rotated_180: reducer_state.board_rotated_180(),
-                        },
-                    );
-
-                    if changed {
-                        zoom_state.set(manager.zoom);
-                        cam_state.set(manager.camera);
-                    }
-                }
-            });
-            move || drop(interval)
-        });
-    }
-
-    {
-        let manager_ref = manager_ref.clone();
-        let canvas_ref = canvas_ref.clone();
-        let input_blocked = has_match_result;
-        let globals = props.globals.clone();
-        let mode = props.reducer.mode.clone();
-        use_effect_with(
-            (canvas_ref.clone(), input_blocked, mode),
-            move |(canvas_ref, input_blocked, mode)| {
-                if let Some(canvas) = canvas_ref.cast::<web_sys::HtmlElement>() {
-                    let manager_ref = manager_ref.clone();
-                    let input_blocked = *input_blocked;
-                    let camera_movement_disabled = mode
-                        .as_ref()
-                        .map(|m| m.disable_camera_movement)
-                        .unwrap_or(false);
-                    let zoom_min = globals.camera_zoom_min;
-                    let zoom_max = globals.camera_zoom_max;
-                    let scroll_base = globals.scroll_zoom_base;
-                    let listener = EventListener::new(&canvas, "wheel", move |e| {
-                        if input_blocked {
-                            return;
-                        }
-                        let e = e.dyn_ref::<web_sys::WheelEvent>().unwrap();
-                        e.prevent_default();
-                        let delta = e.delta_y();
-                        let factor = scroll_base.max(1.01).powf(-delta / 100.0);
-                        let mut manager = manager_ref.borrow_mut();
-                        if manager.input_locked || camera_movement_disabled {
-                            return;
-                        }
-                        manager.mouse_pos = vec2(e.client_x() as f64, e.client_y() as f64);
-                        manager.target_zoom =
-                            (manager.target_zoom * factor).clamp(zoom_min, zoom_max);
-                    });
-                    return Box::new(move || drop(listener)) as Box<dyn FnOnce()>;
-                }
-                Box::new(|| ()) as Box<dyn FnOnce()>
-            },
-        );
-    }
-
-    // Render canvas every frame_id tick
-    {
-        let renderer_state = renderer_state.clone();
-        let reducer = props.reducer.clone();
-        let shop_configs = props.reducer.shop_configs.clone();
-        let piece_configs = props.reducer.piece_configs.clone();
-        let globals = props.globals.clone();
-        let piece_anims = piece_anims.clone();
-        let submitted_shop_actions = submitted_shop_actions.clone();
-        use_effect_with(
-            (
-                *frame_id,
-                cam_state.clone(),
-                zoom_state.clone(),
-                window_size.clone(),
-                reducer.state.clone(),
-                reducer.pm_queue.clone(),
-                reducer.mode.clone(),
-                (
-                    reducer.player_id,
-                    reducer.board_rotated_180(),
-                ),
-                *selected_piece_id,
-                has_match_result,
-                shop_configs,
-                reducer.clock_offset_ms,
-            ),
-            move |(
-                _,
-                cam,
-                zoom,
-                window_size,
-                state,
-                pm_queue,
-                mode,
-                (player_id, board_rotated_180),
-                sid,
-                has_match_result,
-                shop_configs,
-                clock_offset_ms,
-            )| {
-                if let Some(renderer) = renderer_state.as_ref() {
-                    let selected_piece_id = if *has_match_result { None } else { *sid };
-                    let mut ghosts = state.pieces.clone();
-                    let projection = apply_visible_ghosts(
-                        &mut ghosts,
-                        pm_queue,
-                        state,
-                        shop_configs,
-                        &piece_configs,
-                    );
-                    let active_shop_highlight_pos = ActiveShopMenuQuery {
-                        state,
-                        ghosts: &ghosts,
-                        pm_queue,
-                        shop_configs,
-                        player_id: player_id.unwrap_or_else(PlayerId::nil),
-                        camera: **cam,
-                        tile_size: globals.tile_size_px,
-                        submitted_shop_actions: &submitted_shop_actions.borrow(),
-                    }
-                    .resolve()
-                    .map(|(pos, _, _)| pos);
-
-                    let now = web_sys::window().unwrap().performance().unwrap().now();
-                    let mut anims = piece_anims.borrow_mut();
-                    let mut animated_positions = HashMap::new();
-                    anims.retain(|id, anim| {
-                        let Some(_) = state.pieces.get(id) else {
-                            return false;
-                        };
-
-                        let progress = ((now - anim.started_at) / MOVE_ANIM_MS).clamp(0.0, 1.0);
-                        if progress < 1.0 {
-                            let x = anim.start.0.x as f64
-                                + (anim.end.0.x - anim.start.0.x) as f64 * progress;
-                            let y = anim.start.0.y as f64
-                                + (anim.end.0.y - anim.start.0.y) as f64 * progress;
-                            animated_positions.insert(*id, vec2(x, y));
-                            true
-                        } else {
-                            false
-                        }
-                    });
-                    renderer.draw_with_ghosts(crate::canvas::RenderParams {
-                        state,
-                        player_id: player_id.unwrap_or_else(PlayerId::nil),
-                        selected_piece_id,
-                        pmove_lines: &projection.lines,
-                        ghost_pieces: &ghosts,
-                        animated_positions: &animated_positions,
-                        camera_pos: **cam,
-                        canvas_size: **window_size,
-                        zoom: **zoom,
-                        tile_size_px: globals.tile_size_px,
-                        mode: mode.as_ref(),
-                        board_rotated_180: *board_rotated_180,
-                        shop_configs,
-                        active_shop_highlight_pos,
-                        disable_fog_of_war: *has_match_result,
-                        clock_offset_ms: *clock_offset_ms,
-                    });
-                }
-                || ()
-            },
-        );
-    }
-
-    {
-        let window_size = window_size.clone();
-        use_effect_with((), move |_| {
-            let listener = EventListener::new(&web_sys::window().unwrap(), "resize", move |_| {
-                window_size.set(read_window_size());
-            });
-            || drop(listener)
-        });
-    }
-
-    {
-        let selected_piece_id = selected_piece_id.clone();
-        let reset_selection = (props.reducer.player_id, has_match_result);
-        use_effect_with(reset_selection, move |_| {
-            selected_piece_id.set(None);
-            || ()
-        });
-    }
-
-    {
-        let selected_piece_id = selected_piece_id.clone();
-        let player_id = props.reducer.player_id.unwrap_or_else(PlayerId::nil);
-        let pieces = props.reducer.state.pieces.clone();
-        use_effect_with((pieces, player_id), move |(pieces, player_id)| {
-            if let Some(sel) = *selected_piece_id {
-                match pieces.get(&sel) {
-                    Some(p) if p.owner_id == Some(*player_id) => {}
-                    _ => selected_piece_id.set(None),
-                }
-            }
-            || ()
-        });
-    }
-
-    {
-        let piece_prev_positions = piece_prev_positions.clone();
-        let piece_anims = piece_anims.clone();
-        let pieces = props.reducer.state.pieces.clone();
-        use_effect_with(pieces, move |pieces| {
-            let now = web_sys::window().unwrap().performance().unwrap().now();
-            let mut prev = piece_prev_positions.borrow_mut();
-            let mut anims = piece_anims.borrow_mut();
-
-            anims.retain(|id, _| pieces.contains_key(id));
-
-            for (id, piece) in pieces.iter() {
-                if let Some(old_pos) = prev.get(id)
-                    && old_pos != &piece.position
-                {
-                    anims.insert(
-                        *id,
-                        PieceAnim {
-                            start: *old_pos,
-                            end: piece.position,
-                            started_at: now,
-                        },
-                    );
-                }
-            }
-
-            prev.clear();
-            prev.extend(pieces.iter().map(|(id, p)| (*id, p.position)));
-            || ()
-        });
-    }
-
-    {
-        let reducer = props.reducer.clone();
-        let tx = props.tx.clone();
-        let submitted_shop_actions = submitted_shop_actions.clone();
-        use_effect_with(
-            (
-                reducer.pm_queue.clone(),
-                reducer.state.pieces.clone(),
-                reducer.state.shops.clone(),
-                reducer.shop_configs.clone(),
-                reducer.player_id,
-            ),
-            move |(pm_queue, pieces, shops, shop_configs, player_id)| {
-                let player_id = player_id.unwrap_or_else(PlayerId::nil);
-                {
-                    let mut submitted = submitted_shop_actions.borrow_mut();
-                    submitted.retain(|(piece_id, pos)| {
-                        pieces
-                            .get(piece_id)
-                            .map(|piece| {
-                                piece.owner_id == Some(player_id)
-                                    && piece.position == *pos
-                                    && shops.iter().any(|shop| shop.position == *pos)
-                            })
-                            .unwrap_or(false)
-                    });
-                }
-                let pending_shop_pm = pm_queue
-                    .iter()
-                    .find(|pm| pm.shop_item_index.is_some())
-                    .cloned();
-                if let Some(pm) = pending_shop_pm.clone()
-                    && let Some(piece) = pieces.get(&pm.piece_id)
-                    && piece.owner_id == Some(player_id)
-                    && piece.position == BoardCoord(pm.target)
-                    && let Some(shop) = shops.iter().find(|s| s.position == piece.position)
-                    && let Some(shop_config) = shop_configs.get(&shop.shop_id)
-                    && let Some(group) = common::logic::select_shop_group(shop_config, Some(piece))
-                {
-                    let item_index = pm.shop_item_index.unwrap_or_default();
-                    if item_index >= group.items.len() {
-                        web_sys::console::error_1(
-                            &format!(
-                                "Shop action dropped: invalid item index {} for group size {}",
-                                item_index,
-                                group.items.len()
-                            )
-                            .into(),
-                        );
-                        reducer.dispatch(GameAction::RemovePm(pm.id));
-                    } else {
-                        {
-                            let mut submitted = submitted_shop_actions.borrow_mut();
-                            let key = (piece.id, piece.position);
-                            if !submitted.contains(&key) {
-                                submitted.push(key);
-                            }
-                        }
-                        let _ = try_send_client_message(
-                            &tx,
-                            ClientMessage::BuyPiece {
-                                shop_pos: piece.position,
-                                item_index,
-                            },
-                            "failed to send BuyPiece",
-                        );
-                    }
-                } else if let Some(pm) = pending_shop_pm {
-                    web_sys::console::error_1(
-                        &format!(
-                            "Shop action dropped: unresolved shop premove {} for piece {}",
-                            pm.id, pm.piece_id
-                        )
-                        .into(),
-                    );
-                }
-                || ()
-            },
-        );
-    }
-
-    {
-        let reducer = props.reducer.clone();
-        let tx = props.tx.clone();
-        let submitted_move_premoves = submitted_move_premoves.clone();
-        use_effect_with(
-            (
-                reducer.pm_queue.clone(),
-                reducer.state.pieces.clone(),
-                reducer.player_id,
-            ),
-            move |(pm_queue, pieces, player_id)| {
-                let player_id = player_id.unwrap_or_else(PlayerId::nil);
-                {
-                    let mut submitted = submitted_move_premoves.borrow_mut();
-                    submitted.retain(|pm_id| pm_queue.iter().any(|pm| pm.id == *pm_id));
-                }
-
-                for (index, pm) in pm_queue.iter().enumerate() {
-                    if pm.shop_item_index.is_some() {
-                        continue;
-                    }
-                    if submitted_move_premoves.borrow().contains(&pm.id) {
-                        continue;
-                    }
-                    let Some(piece) = pieces.get(&pm.piece_id) else {
-                        web_sys::console::error_1(
-                            &format!(
-                                "Dropping move premove {}: piece {} not found.",
-                                pm.id, pm.piece_id
-                            )
-                            .into(),
-                        );
-                        reducer.dispatch(GameAction::RemovePm(pm.id));
-                        continue;
-                    };
-                    if piece.owner_id != Some(player_id) {
-                        continue;
-                    }
-
-                    let blocked_by_shop = pm_queue[..index]
-                        .iter()
-                        .any(|prev| prev.piece_id == pm.piece_id && prev.shop_item_index.is_some());
-                    if blocked_by_shop {
-                        continue;
-                    }
-
-                    let _ = try_send_client_message(
-                        &tx,
-                        ClientMessage::MovePiece {
-                            piece_id: pm.piece_id,
-                            target: BoardCoord(pm.target),
-                        },
-                        "failed to send MovePiece",
-                    );
-                    submitted_move_premoves.borrow_mut().push(pm.id);
-                }
-                || ()
-            },
-        );
-    }
-
-    {
-        let reducer = props.reducer.clone();
-        use_effect_with(
-            (
-                reducer.pm_queue.clone(),
-                reducer.state.clone(),
-                reducer.shop_configs.clone(),
-                reducer.piece_configs.clone(),
-            ),
-            move |(pm_queue, state, shop_configs, piece_configs)| {
-                if !pm_queue.is_empty() {
-                    let mut ghosts = state.pieces.clone();
-                    let projection = apply_visible_ghosts(
-                        &mut ghosts,
-                        pm_queue,
-                        state,
-                        shop_configs,
-                        piece_configs,
-                    );
-                    for invalid_id in projection.invalid_pmove_ids {
-                        reducer.dispatch(GameAction::RemovePm(invalid_id));
-                    }
-                }
-                || ()
-            },
-        );
-    }
-
-    let handle_input_start = {
-        let selected_piece_id = selected_piece_id.clone();
-        let drag_start = drag_start.clone();
-        let manager_ref = manager_ref.clone();
-        let did_pan = did_pan.clone();
-        let canvas_ref = canvas_ref.clone();
-        let reducer = props.reducer.clone();
-        let tile_size_px = props.globals.tile_size_px;
-        Callback::from(move |input: InputStart| {
-            if reducer.is_dead || reducer.is_victory {
-                return;
-            }
-            let mut manager = manager_ref.borrow_mut();
-            if manager.input_locked {
-                return;
-            }
-            *did_pan.borrow_mut() = false;
-            let canvas = canvas_ref.cast::<HtmlCanvasElement>().unwrap();
-            let rect = canvas.get_bounding_client_rect();
-            let zoom = manager.zoom;
-            let tile_size = tile_size_px * zoom;
-            let target = screen_to_grid(
-                input.pos,
-                &rect,
-                &canvas,
-                manager.camera,
-                tile_size,
-                reducer.board_rotated_180(),
-            );
-
-            let board_size = reducer.state.board_size;
-            let mut is_interactive = false;
-            let camera_movement_disabled = reducer
-                .mode
-                .as_ref()
-                .map(|m| m.disable_camera_movement)
-                .unwrap_or(false);
-
-            if !input.is_right_click && is_within_board(BoardCoord(target), board_size) {
-                let mut ghosts = reducer.state.pieces.clone();
-                let _ = apply_visible_ghosts(
-                    &mut ghosts,
-                    &reducer.pm_queue,
-                    &reducer.state,
-                    &reducer.shop_configs,
-                    &reducer.piece_configs,
-                );
-
-                if ghosts.values().any(|p| p.position == target) {
-                    is_interactive = true;
-                } else if let Some(sid) = *selected_piece_id
-                    && let Some(piece) = ghosts.get(&sid)
-                    && let Some(config) = reducer.piece_configs.get(&piece.piece_type)
-                    && common::logic::is_valid_move(common::logic::MoveValidationParams {
-                        piece_config: config,
-                        start: piece.position,
-                        end: BoardCoord(target),
-                        is_capture: ghosts.values().any(|p| p.position == target),
-                        board_size,
-                        pieces: &ghosts,
-                        moving_owner: piece.owner_id,
-                    })
-                {
-                    is_interactive = true;
-                }
-            }
-            drag_start.set(Some(DragStart {
-                pos: input.pos,
-                allow_panning: !is_interactive && !camera_movement_disabled,
-            }));
-            manager.velocity = Vec2::ZERO;
-        })
+    let selected = use_state(|| None::<PieceId>);
+    let drag_start = use_state(|| None);
+    let latest = use_mut_ref(|| LatestStateSnapshot {
+        reducer: reducer.clone(),
+        is_dragging: false,
+    });
+    *latest.borrow_mut() = LatestStateSnapshot {
+        reducer: reducer.clone(),
+        is_dragging: drag_start.is_some(),
     };
+    let handles = ViewHandles {
+        canvas_ref: canvas_ref.clone(),
+        camera: use_mut_ref(CameraManager::new),
+        cam_state: use_state(|| Vec2::ZERO),
+        zoom_state: use_state(|| 1.0f64),
+        drag_start,
+        did_pan: use_mut_ref(|| false),
+        selected: selected.clone(),
+        latest: latest.clone(),
+        touch_gesture_active: use_mut_ref(|| false),
+        last_tap: use_mut_ref(|| None),
+    };
+    let window_size = use_window_size();
+    use_animation_frame();
 
-    let handle_input_move = {
-        let drag_start = drag_start.clone();
-        let cam_state = cam_state.clone();
-        let manager_ref = manager_ref.clone();
-        let did_pan = did_pan.clone();
-        let reducer = props.reducer.clone();
-        Callback::from(move |input: InputMove| {
-            if reducer.is_dead || reducer.is_victory {
-                return;
-            }
-            let mut manager = manager_ref.borrow_mut();
-            if manager.input_locked {
-                return;
-            }
-            manager.mouse_pos = input.pos;
-            if let Some(start) = *drag_start {
-                if !start.allow_panning {
-                    return;
-                }
-                let camera_movement_disabled = reducer
-                    .mode
-                    .as_ref()
-                    .map(|m| m.disable_camera_movement)
-                    .unwrap_or(false);
-                if camera_movement_disabled {
-                    manager.velocity = Vec2::ZERO;
-                    return;
-                }
-                let delta = input.pos - start.pos;
-                if delta.x.abs().max(delta.y.abs()) > 0.1 {
-                    *did_pan.borrow_mut() = true;
-                    let board_rotated_180 = reducer.board_rotated_180();
-                    if board_rotated_180 {
-                        manager.camera += delta;
-                        manager.velocity = delta;
-                    } else {
-                        manager.camera -= delta;
-                        manager.velocity = -delta;
-                    }
+    let renderer = use_renderer(&canvas_ref, reducer);
+    let projection = use_memo(
+        (
+            reducer.state.clone(),
+            reducer.premoves.clone(),
+            reducer.catalog.clone(),
+        ),
+        |(state, premoves, catalog)| premoves.project(state, catalog),
+    );
+    use_camera_loop(CameraLoopInputs {
+        camera: handles.camera.clone(),
+        latest,
+        canvas_ref: canvas_ref.clone(),
+        cam_state: handles.cam_state.clone(),
+        zoom_state: handles.zoom_state.clone(),
+        globals: globals.clone(),
+    });
+    use_wheel_zoom(WheelZoomInputs {
+        camera: handles.camera.clone(),
+        canvas_ref: canvas_ref.clone(),
+        input_blocked: has_match_result,
+        camera_locked: reducer.camera_movement_disabled(),
+        zoom_min: globals.camera_zoom_min,
+        zoom_max: globals.camera_zoom_max,
+        scroll_base: globals.scroll_zoom_base,
+    });
+    use_selection_cleanup(&selected, reducer);
+    use_cancel_drag_on_match_end(&handles, has_match_result);
 
-                    let player_id_val = reducer.player_id.unwrap_or_else(PlayerId::nil);
-                    let is_alive = reducer.state.players.contains_key(&player_id_val)
-                        && player_id_val != PlayerId::nil();
+    let player_id = reducer.viewer_id();
+    let camera = *handles.cam_state;
+    let active_shop = ActiveShopQuery {
+        predicted: &projection.state,
+        premoves: &reducer.premoves,
+        catalog: &reducer.catalog,
+        player_id,
+        camera,
+        tile_size: globals.tile_size_px,
+    }
+    .resolve();
 
-                    if !is_alive {
-                        manager.target_camera = manager.camera;
-                    }
-                    cam_state.set(manager.camera);
-                    drag_start.set(Some(DragStart {
-                        pos: input.pos,
-                        allow_panning: true,
-                    }));
-                }
+    let anims = use_piece_animations(reducer);
+    use_board_render(BoardFrame {
+        renderer,
+        reducer: reducer.clone(),
+        projection: projection.clone(),
+        anims,
+        active_shop: active_shop.clone(),
+        selected: *selected,
+        camera,
+        zoom: *handles.zoom_state,
+        canvas_size: window_size,
+        tile_size_px: globals.tile_size_px,
+    });
+
+    let pointer = PointerContext {
+        handles: handles.clone(),
+        reducer: reducer.clone(),
+        tx: props.tx.clone(),
+        projection,
+        tile_size_px: globals.tile_size_px,
+    }
+    .handlers();
+    let touch = TouchContext {
+        handles: handles.clone(),
+        reducer: reducer.clone(),
+        zoom_min: globals.camera_zoom_min,
+        zoom_max: globals.camera_zoom_max,
+    }
+    .handlers(&pointer);
+    let mouse_pos = |e: &MouseEvent| vec2(e.client_x() as f64, e.client_y() as f64);
+    let on_mouse_down = pointer.start.reform(move |e: MouseEvent| InputStart {
+        pos: mouse_pos(&e),
+        is_right_click: e.button() == 2,
+    });
+    let on_mouse_move = pointer
+        .moved
+        .reform(move |e: MouseEvent| InputMove { pos: mouse_pos(&e) });
+    let on_mouse_up = pointer.end.reform(move |e: MouseEvent| InputEnd {
+        pos: mouse_pos(&e),
+        is_right_click: e.button() == 2,
+    });
+    let unless_exempt = |callback: Callback<MouseEvent>| {
+        Callback::from(move |e: MouseEvent| {
+            if !is_ui_exempt_target(e.target()) {
+                callback.emit(e);
             }
         })
     };
 
-    let handle_input_end = {
-        let canvas_ref = canvas_ref.clone();
-        let reducer = props.reducer.clone();
-        let tx = props.tx.clone();
-        let selected_piece_id = selected_piece_id.clone();
-        let next_pm_id = next_pm_id.clone();
-        let submitted_move_premoves = submitted_move_premoves.clone();
-        let manager_ref = manager_ref.clone();
-        let drag_start = drag_start.clone();
-        let did_pan = did_pan.clone();
-        let tile_size_px = props.globals.tile_size_px;
-
-        Callback::from(move |input: InputEnd| {
-            if reducer.is_dead || reducer.is_victory {
-                drag_start.set(None);
-                manager_ref.borrow_mut().velocity = Vec2::ZERO;
-                *did_pan.borrow_mut() = false;
-                return;
-            }
-            if manager_ref.borrow().input_locked {
-                drag_start.set(None);
-                manager_ref.borrow_mut().velocity = Vec2::ZERO;
-                *did_pan.borrow_mut() = false;
-                return;
-            }
-            let start = *drag_start;
-            drag_start.set(None);
-
-            let mut is_tap = true;
-            if let Some(start) = start {
-                let delta = input.pos - start.pos;
-                let dist = delta.length();
-                if *did_pan.borrow() {
-                    is_tap = false;
-                }
-                if start.allow_panning && dist > 10.0 {
-                    is_tap = false;
-                }
-                if !start.allow_panning {
-                    manager_ref.borrow_mut().velocity = Vec2::ZERO;
-                }
-            } else {
-                manager_ref.borrow_mut().velocity = Vec2::ZERO;
-            }
-            *did_pan.borrow_mut() = false;
-
-            if !is_tap {
-                return;
-            }
-
-            let canvas = canvas_ref.cast::<HtmlCanvasElement>().unwrap();
-            let rect = canvas.get_bounding_client_rect();
-            let manager = manager_ref.borrow_mut();
-            let zoom = manager.zoom;
-            let tile_size = tile_size_px * zoom;
-            let target = screen_to_grid(
-                input.pos,
-                &rect,
-                &canvas,
-                manager.camera,
-                tile_size,
-                reducer.board_rotated_180(),
-            );
-            let player_id = reducer.player_id.unwrap_or_else(PlayerId::nil);
-
-            if input.is_right_click {
-                selected_piece_id.set(None);
-                return;
-            }
-
-            let mut current_ghosts = reducer.state.pieces.clone();
-            let _ = apply_visible_ghosts(
-                &mut current_ghosts,
-                &reducer.pm_queue,
-                &reducer.state,
-                &reducer.shop_configs,
-                &reducer.piece_configs,
-            );
-            let selected_id = *selected_piece_id;
-
-            // Check if clicking on an ACTUAL piece that has premoves (to clear them)
-            let actual_piece_at_target = reducer.state.pieces.values().find(|p| {
-                p.owner_id == Some(player_id)
-                    && p.position == target
-                    && reducer.pm_queue.iter().any(|pm| pm.piece_id == p.id)
-            });
-
-            if let Some(p) = actual_piece_at_target {
-                let _ = try_send_client_message(
-                    &tx,
-                    ClientMessage::ClearPremoves { piece_id: p.id },
-                    "failed to send ClearPremoves",
-                );
-                reducer.dispatch(GameAction::ClearPm(p.id));
-                if selected_id == Some(p.id) {
-                    selected_piece_id.set(None);
-                } else {
-                    selected_piece_id.set(Some(p.id));
-                }
-                return;
-            }
-
-            let target_has_piece = current_ghosts.values().any(|p| p.position == target);
-            let mut handled_action = false;
-
-            if let Some(sid) = selected_id {
-                let proj_p = current_ghosts.get(&sid);
-                if let Some(p) = proj_p {
-                    if target == p.position {
-                        selected_piece_id.set(None);
-                        handled_action = true;
-                    } else if let Some(other) = current_ghosts
-                        .values()
-                        .find(|p| p.position == target && p.owner_id == Some(player_id))
-                    {
-                        selected_piece_id.set(Some(other.id));
-                        handled_action = true;
-                    } else {
-                        let target_occupied =
-                            current_ghosts.values().find(|gp| gp.position == target);
-                        let is_capture = target_occupied.is_some()
-                            && target_occupied.unwrap().owner_id != Some(player_id);
-
-                        if let Some(config) = reducer.piece_configs.get(&p.piece_type)
-                            && common::logic::is_valid_move(common::logic::MoveValidationParams {
-                                piece_config: config,
-                                start: p.position,
-                                end: BoardCoord(target),
-                                is_capture,
-                                board_size: reducer.state.board_size,
-                                pieces: &current_ghosts,
-                                moving_owner: p.owner_id,
-                            })
-                        {
-                            let blocked_by_shop = reducer
-                                .pm_queue
-                                .iter()
-                                .any(|pm| pm.piece_id == sid && pm.shop_item_index.is_some());
-                            if !blocked_by_shop {
-                                let _ = try_send_client_message(
-                                    &tx,
-                                    ClientMessage::MovePiece {
-                                        piece_id: sid,
-                                        target: BoardCoord(target),
-                                    },
-                                    "failed to send MovePiece",
-                                );
-                            }
-                            let pm_id = {
-                                let mut next_id = next_pm_id.borrow_mut();
-                                let id = *next_id;
-                                *next_id += 1;
-                                id
-                            };
-                            if blocked_by_shop {
-                                web_sys::console::log_1(
-                                    &format!(
-                                        "Queued deferred move premove {} for piece {} behind shop action.",
-                                        pm_id, sid
-                                    )
-                                    .into(),
-                                );
-                            } else {
-                                submitted_move_premoves.borrow_mut().push(pm_id);
-                            }
-                            reducer.dispatch(GameAction::AddPmove(Pmove {
-                                id: pm_id,
-                                piece_id: sid,
-                                target,
-                                shop_item_index: None,
-                            }));
-                            handled_action = true;
-                        }
-                    }
-                }
-            } else {
-                let piece = current_ghosts
-                    .values()
-                    .find(|p| p.position == target && p.owner_id == Some(player_id));
-                if let Some(p) = piece {
-                    selected_piece_id.set(Some(p.id));
-                    handled_action = true;
-                }
-            }
-
-            if !handled_action && !target_has_piece && selected_id.is_some() {
-                selected_piece_id.set(None);
-            }
-        })
-    };
-
-    // Cancel panning when cursor leaves the screen
-    let handle_mouse_leave = {
-        let drag_start = drag_start.clone();
-        let manager_ref = manager_ref.clone();
-        let did_pan = did_pan.clone();
-        Callback::from(move |_| {
-            let prev = *drag_start;
-            drag_start.set(None);
-            *did_pan.borrow_mut() = false;
-            if let Some(prev) = prev
-                && prev.allow_panning
-            {
-                // Treat like a mouse release: keep current velocity for inertia but lock target to current position
-                let mut mgr = manager_ref.borrow_mut();
-                mgr.target_camera = mgr.camera;
-            }
-        })
-    };
-
-    // Stop ongoing pan/zoom inputs immediately after death so death focus can take over
-    {
-        let drag_start = drag_start.clone();
-        let manager_ref = manager_ref.clone();
-        let did_pan = did_pan.clone();
-        use_effect_with(has_match_result, move |has_match_result| {
-            if *has_match_result {
-                drag_start.set(None);
-                manager_ref.borrow_mut().velocity = Vec2::ZERO;
-                *did_pan.borrow_mut() = false;
-            }
-            || ()
-        });
-    }
-
-    let window_size = *window_size;
-    let width = window_size.x;
-    let height = window_size.y;
-
-    let player_id = props.reducer.player_id.unwrap_or_else(PlayerId::nil);
-    let player_score = props
-        .reducer
+    let player_score = reducer
         .state
         .players
         .get(&player_id)
-        .map(|p| p.score)
-        .unwrap_or_else(Score::zero);
-    let player_pieces_count = props
-        .reducer
-        .state
-        .pieces
-        .values()
-        .filter(|p| p.owner_id == Some(player_id))
-        .count();
-    let queue_countdown_secs =
-        queue_countdown_remaining_secs(props.reducer.move_unlock_at, props.reducer.clock_offset_ms);
-    let mut ui_ghosts = props.reducer.state.pieces.clone();
-    let _ = apply_visible_ghosts(
-        &mut ui_ghosts,
-        &props.reducer.pm_queue,
-        &props.reducer.state,
-        &props.reducer.shop_configs,
-        &props.reducer.piece_configs,
-    );
-
-    let cam = *cam_state;
-    let shop_menu_context = ActiveShopMenuQuery {
-        state: &props.reducer.state,
-        ghosts: &ui_ghosts,
-        pm_queue: &props.reducer.pm_queue,
-        shop_configs: &props.reducer.shop_configs,
-        player_id,
-        camera: cam,
-        tile_size: props.globals.tile_size_px,
-        submitted_shop_actions: &submitted_shop_actions.borrow(),
-    }
-    .resolve();
-    let shop_on_which_player_is = shop_menu_context
-        .as_ref()
-        .map(|(pos, shop_id, _)| (*pos, shop_id.clone()));
-    let piece_on_shop = shop_menu_context.as_ref().map(|(_, _, p)| p.clone());
-
+        .map_or_else(Score::zero, |player| player.score);
     let on_shop_buy = {
-        let reducer = props.reducer.clone();
-        let next_pm_id = next_pm_id.clone();
-        let piece_on_shop = piece_on_shop.clone();
-        let shop_menu_context = shop_menu_context.clone();
-        Callback::from(move |item_index: usize| {
-            let Some(piece) = piece_on_shop.as_ref() else {
-                web_sys::console::error_1(
-                    &"Shop click ignored: no player piece is currently on a shop.".into(),
-                );
-                return;
-            };
-            let Some((shop_pos, shop_id, _)) = shop_menu_context.as_ref() else {
-                web_sys::console::error_1(&"Shop click ignored: no active shop context.".into());
-                return;
-            };
-            let Some(shop_config) = reducer.shop_configs.get(shop_id) else {
-                web_sys::console::error_1(
-                    &format!("Shop click ignored: missing shop config for {}.", shop_id).into(),
-                );
-                return;
-            };
-            if shop_config.auto_upgrade_single_item
-                && let Some(group) = common::logic::select_shop_group(shop_config, Some(piece))
-                && group.items.len() == 1
-            {
-                web_sys::console::log_1(
-                    &"Shop click ignored: auto-upgrade shop has only one item.".into(),
-                );
-                return;
+        let reducer = reducer.clone();
+        let tx = props.tx.clone();
+        let piece_id = active_shop.as_ref().map(|shop| shop.piece.id);
+        Callback::from(move |item: usize| {
+            if let Some(piece_id) = piece_id {
+                reducer.dispatch(GameAction::QueueAction {
+                    piece_id,
+                    action: PieceAction::Buy {
+                        item: ShopItemIndex(item),
+                    },
+                    tx: tx.clone(),
+                });
             }
-            let pm_id = {
-                let mut next_id = next_pm_id.borrow_mut();
-                let id = *next_id;
-                *next_id += 1;
-                id
-            };
-            reducer.dispatch(GameAction::AddPmove(Pmove {
-                id: pm_id,
-                piece_id: piece.id,
-                target: shop_pos.0,
-                shop_item_index: Some(item_index),
-            }));
         })
     };
+    let shop_menu = active_shop.as_ref().and_then(|shop| {
+        let shop_config = reducer.catalog.shops.get(&shop.shop_id)?.clone();
+        Some(html! {
+            <ShopUI
+                player_score={player_score}
+                price_vars={reducer.catalog.price_vars(&reducer.state, player_id)}
+                piece_on_shop={shop.piece.clone()}
+                shop_config={shop_config}
+                on_buy={on_shop_buy}
+            />
+        })
+    });
+    let countdown_secs = reducer
+        .move_unlock_at
+        .map(|unlock_at| unlock_at - reducer.server_now())
+        .filter(|remaining| *remaining > DurationMs::zero())
+        .map(|remaining| remaining.as_u64().div_ceil(1000));
 
     html! {
         <div class="fixed inset-0 bg-slate-100 overflow-hidden touch-none"
-             onmousedown={
-                 let handle_input_start = handle_input_start.clone();
-                 Callback::from(move |e: MouseEvent| {
-                     if is_ui_exempt_target(e.target()) {
-                         return;
-                     }
-                     handle_input_start.emit(InputStart {
-                         pos: vec2(e.client_x() as f64, e.client_y() as f64),
-                         is_right_click: e.button() == 2,
-                     });
-                 })
-             }
-             onmousemove={
-                 let handle_input_move = handle_input_move.clone();
-                 Callback::from(move |e: MouseEvent| {
-                     if is_ui_exempt_target(e.target()) {
-                         return;
-                     }
-                     handle_input_move.emit(InputMove {
-                         pos: vec2(e.client_x() as f64, e.client_y() as f64),
-                     });
-                 })
-             }
-             onmouseup={
-                 let handle_input_end = handle_input_end.clone();
-                 Callback::from(move |e: MouseEvent| {
-                     if is_ui_exempt_target(e.target()) {
-                         return;
-                     }
-                     handle_input_end.emit(InputEnd {
-                         pos: vec2(e.client_x() as f64, e.client_y() as f64),
-                         is_right_click: e.button() == 2,
-                     });
-                 })
-             }
-             onmouseleave={handle_mouse_leave}
+             onmousedown={unless_exempt(on_mouse_down)}
+             onmousemove={unless_exempt(on_mouse_move)}
+             onmouseup={unless_exempt(on_mouse_up)}
+             onmouseleave={mouse_leave_handler(handles)}
              oncontextmenu={Callback::from(|e: MouseEvent| e.prevent_default())}
-            ontouchstart={
-                let handle_input_start = handle_input_start.clone();
-                let manager_ref = manager_ref.clone();
-                let drag_start = drag_start.clone();
-                let latest_state = latest_state.clone();
-                let input_blocked = has_match_result;
-                let touch_gesture_active = touch_gesture_active.clone();
-                Callback::from(move |e: TouchEvent| {
-                    if is_ui_exempt_target(e.target()) {
-                        return;
-                    }
-                    e.prevent_default();
-                    if input_blocked {
-                        return;
-                    }
-                    if e.touches().length() == 2 {
-                        *touch_gesture_active.borrow_mut() = true;
-                        // Begin pinch zoom
-                        let t0 = e.touches().get(0).unwrap();
-                        let t1 = e.touches().get(1).unwrap();
-                        let p0 = vec2(t0.client_x() as f64, t0.client_y() as f64);
-                        let p1 = vec2(t1.client_x() as f64, t1.client_y() as f64);
-                        let dist = (p1 - p0).length();
-                        let center = (p0 + p1) * 0.5;
-                        let mut mgr = manager_ref.borrow_mut();
-                        mgr.last_touch_dist = Some(dist);
-                        mgr.last_touch_center = Some(center);
-                        mgr.velocity = Vec2::ZERO;
-                        drop(mgr);
-                        drag_start.set(None);
-                        if let Ok(mut s) = latest_state.try_borrow_mut() {
-                            s.is_dragging = false;
-                        }
-                    } else if let Some(touch) = e.touches().get(0) {
-                        *touch_gesture_active.borrow_mut() = false;
-                        handle_input_start.emit(InputStart {
-                            pos: vec2(touch.client_x() as f64, touch.client_y() as f64),
-                            is_right_click: false,
-                        });
-                        let mut mgr = manager_ref.borrow_mut();
-                        mgr.last_touch_dist = None;
-                        mgr.last_touch_center = None;
-                    }
-                })
-            }
-            ontouchmove={
-                let handle_input_move = handle_input_move.clone();
-                let manager_ref = manager_ref.clone();
-                let canvas_ref = canvas_ref.clone();
-                let input_blocked = has_match_result;
-                let cam_state = cam_state.clone();
-                let zoom_state = zoom_state.clone();
-                let latest_state = latest_state.clone();
-                let reducer = props.reducer.clone();
-                let zoom_min = props.globals.camera_zoom_min;
-                let zoom_max = props.globals.camera_zoom_max;
-                let drag_start = drag_start.clone();
-                let touch_gesture_active = touch_gesture_active.clone();
-                Callback::from(move |e: TouchEvent| {
-                    if is_ui_exempt_target(e.target()) {
-                        return;
-                    }
-                    e.prevent_default();
-                    if input_blocked {
-                        return;
-                    }
-                    if e.touches().length() == 2 {
-                        *touch_gesture_active.borrow_mut() = true;
-                        let t0 = e.touches().get(0).unwrap();
-                        let t1 = e.touches().get(1).unwrap();
-                        let p0 = vec2(t0.client_x() as f64, t0.client_y() as f64);
-                        let p1 = vec2(t1.client_x() as f64, t1.client_y() as f64);
-                        let dist = (p1 - p0).length();
-                        let center = (p0 + p1) * 0.5;
-                        let mut mgr = manager_ref.borrow_mut();
-                        if let Some(prev) = mgr.last_touch_dist {
-                            let factor = (dist / prev).powf(0.8); // dampen sensitivity
-                            mgr.mouse_pos = center;
-                            let camera_movement_disabled = reducer
-                                .mode
-                                .as_ref()
-                                .map(|m| m.disable_camera_movement)
-                                .unwrap_or(false);
-                            if !camera_movement_disabled
-                                && let Some(prev_center) = mgr.last_touch_center
-                            {
-                                let pan = center - prev_center;
-                                let board_rotated_180 = reducer.board_rotated_180();
-                                if board_rotated_180 {
-                                    mgr.camera += pan;
-                                } else {
-                                    mgr.camera -= pan;
-                                }
-                                mgr.target_camera = mgr.camera;
-                            }
-                            mgr.last_touch_center = Some(center);
-                            if !camera_movement_disabled {
-                                let old_zoom = mgr.zoom;
-                                let new_zoom = (old_zoom * factor).clamp(zoom_min, zoom_max);
-                                if (new_zoom - old_zoom).abs() > 0.000001
-                                    && let Some(canvas) =
-                                        canvas_ref.cast::<web_sys::HtmlCanvasElement>()
-                                {
-                                    let rect = canvas.get_bounding_client_rect();
-                                    let screen_pos = center - vec2(rect.left(), rect.top());
-                                    let canvas_center = vec2(
-                                        canvas.width() as f64 / 2.0,
-                                        canvas.height() as f64 / 2.0,
-                                    );
-                                    let mut mouse_delta = screen_pos - canvas_center;
-                                    if reducer.board_rotated_180() {
-                                        mouse_delta = -mouse_delta;
-                                    }
-                                    let ratio = new_zoom / old_zoom;
-                                    mgr.camera = (mgr.camera + mouse_delta) * ratio - mouse_delta;
-                                    mgr.target_camera = mgr.camera;
-                                }
-                                mgr.target_zoom = new_zoom;
-                                mgr.zoom = new_zoom; // apply immediately for smooth pinch
-                            }
-                            mgr.velocity = Vec2::ZERO;
-                            mgr.last_touch_dist = Some(dist);
-                            let new_cam = mgr.camera;
-                            let new_zoom = mgr.zoom;
-                            drop(mgr);
-                            cam_state.set(new_cam);
-                            zoom_state.set(new_zoom);
-                        } else {
-                            mgr.last_touch_dist = Some(dist);
-                            drop(mgr);
-                        }
-                        if let Ok(mut s) = latest_state.try_borrow_mut() {
-                            s.is_dragging = false;
-                        }
-                    } else if let Some(touch) = e.touches().get(0) {
-                        let pos = vec2(touch.client_x() as f64, touch.client_y() as f64);
-                        if let Some(start) = *drag_start {
-                            let dist = (pos - start.pos).length();
-                            if start.allow_panning && dist > 10.0 {
-                                *touch_gesture_active.borrow_mut() = true;
-                            }
-                        }
-                        {
-                            let mut mgr = manager_ref.borrow_mut();
-                            mgr.last_touch_dist = None;
-                            mgr.last_touch_center = None;
-                        }
-                        handle_input_move.emit(InputMove { pos });
-                    }
-                })
-            }
-            ontouchend={
-                let handle_input_end = handle_input_end.clone();
-                let manager_ref = manager_ref.clone();
-                let drag_start = drag_start.clone();
-                let latest_state = latest_state.clone();
-                let last_tap = last_tap.clone();
-                let touch_gesture_active = touch_gesture_active.clone();
-                Callback::from(move |e: TouchEvent| {
-                    if is_ui_exempt_target(e.target()) {
-                        return;
-                    }
-                    e.prevent_default();
-                    {
-                        let mut mgr = manager_ref.borrow_mut();
-                        mgr.last_touch_dist = None;
-                        mgr.last_touch_center = None;
-                    }
-                    drag_start.set(None);
-                    if let Ok(mut s) = latest_state.try_borrow_mut() {
-                        s.is_dragging = false;
-                    }
-                    {
-                        let mut gesture = touch_gesture_active.borrow_mut();
-                        if *gesture {
-                            if e.touches().length() == 0 {
-                                *gesture = false;
-                            }
-                            return;
-                        }
-                    }
-                    if let Some(touch) = e.changed_touches().get(0) {
-                        if e.touches().length() == 0 {
-                            let now = web_sys::window()
-                                .and_then(|w| w.performance())
-                                .map(|p| p.now())
-                                .unwrap_or(0.0);
-                            let pos = vec2(touch.client_x() as f64, touch.client_y() as f64);
-                            let mut last = last_tap.borrow_mut();
-                            if let Some(prev) = *last {
-                                let dt = now - prev.time_ms;
-                                let delta = pos - prev.pos;
-                                if dt <= 300.0 && delta.length_squared() <= 900.0 {
-                                    *last = None;
-                                    request_fullscreen();
-                                    return;
-                                }
-                            }
-                            *last = Some(LastTap {
-                                time_ms: now,
-                                pos,
-                            });
-                        }
-                        handle_input_end.emit(InputEnd {
-                            pos: vec2(touch.client_x() as f64, touch.client_y() as f64),
-                            is_right_click: false,
-                        });
-                    }
-                })
-            }
+             ontouchstart={touch.start}
+             ontouchmove={touch.moved}
+             ontouchend={touch.end}
         >
             <canvas
                 ref={canvas_ref}
-                width={width.to_string()}
-                height={height.to_string()}
+                width={window_size.x.to_string()}
+                height={window_size.y.to_string()}
                 class="block w-full h-full"
             />
 
-            if let Some(remaining_secs) = queue_countdown_secs {
+            if let Some(remaining_secs) = countdown_secs {
                 <div
                     class="pointer-events-none absolute left-1/2 top-1/2"
                     style="transform: translate(-50%, -50%); color: #fde047; font-size: clamp(42px, 9vw, 88px); font-weight: 900; line-height: 1; text-shadow: 0 2px 0 rgba(0,0,0,0.55); z-index: 120;"
@@ -1300,49 +228,90 @@ pub fn game_view(props: &GameViewProps) -> Html {
                 </div>
             </div>
 
-            if let Some((_shop_pos, shop_id)) = shop_on_which_player_is.as_ref() {
-                if let Some(shop_config) = props.reducer.shop_configs.get(shop_id) {
-                    <crate::components::shop_ui::ShopUI
-                        player_score={player_score}
-                        player_pieces_count={player_pieces_count}
-                        piece_on_shop={piece_on_shop}
-                        shop_config={shop_config.clone()}
-                        piece_configs={props.reducer.piece_configs.clone()}
-                        on_buy={on_shop_buy.clone()}
-                    />
-                }
-            }
+            { shop_menu.unwrap_or_default() }
 
             <GameChat
-                reducer={props.reducer.clone()}
+                reducer={reducer.clone()}
                 tx={props.tx.clone()}
-                globals={props.globals.clone()}
+                globals={globals.clone()}
                 player_name={props.player_name.clone()}
-            />
-
-            <crate::components::fatal_notification::FatalNotification
-                show={props.reducer.fatal_error}
-                title={props.reducer.disconnected_title.clone()}
-                msg={props.reducer.disconnected_msg.clone()}
             />
         </div>
     }
 }
 
-fn try_send_client_message(tx: &MsgSender, message: ClientMessage, context: &str) -> bool {
-    if tx.0.try_send(message).is_err() {
-        web_sys::console::error_1(&context.into());
-        return false;
+/// Tracks the browser window size.
+#[hook]
+fn use_window_size() -> Vec2 {
+    let size = use_state(read_window_size);
+    {
+        let size = size.clone();
+        use_effect_with((), move |_| {
+            let window = web_sys::window().expect("window available");
+            let listener =
+                EventListener::new(&window, "resize", move |_| size.set(read_window_size()));
+            || drop(listener)
+        });
     }
-    true
+    *size
 }
 
-fn queue_countdown_remaining_secs(
-    move_unlock_at: Option<TimestampMs>,
-    clock_offset_ms: i64,
-) -> Option<u64> {
-    let unlock_at = move_unlock_at?;
-    let now = TimestampMs::from_millis(js_sys::Date::now() as i64 + clock_offset_ms);
-    let remaining = unlock_at - now;
-    (remaining > DurationMs::zero()).then_some(remaining.as_u64().div_ceil(1000))
+/// Creates the canvas renderer once the canvas exists, recreating it when configs change.
+#[hook]
+fn use_renderer(
+    canvas_ref: &NodeRef,
+    reducer: &UseReducerHandle<GameStateReducer>,
+) -> Option<Renderer> {
+    let renderer = use_state(|| None::<Renderer>);
+    {
+        let renderer = renderer.clone();
+        use_effect_with(
+            (canvas_ref.clone(), reducer.catalog.clone()),
+            move |(canvas_ref, catalog)| {
+                if let Some(canvas) = canvas_ref.cast::<HtmlCanvasElement>() {
+                    renderer.set(Renderer::new(canvas, catalog.clone()));
+                }
+            },
+        );
+    }
+    (*renderer).clone()
+}
+
+/// Drops the selection when the session changes or the selected piece is no longer ours.
+#[hook]
+fn use_selection_cleanup(
+    selected: &UseStateHandle<Option<PieceId>>,
+    reducer: &UseReducerHandle<GameStateReducer>,
+) {
+    {
+        let selected = selected.clone();
+        use_effect_with((reducer.player_id, reducer.has_match_result()), move |_| {
+            selected.set(None)
+        });
+    }
+    let player_id = reducer.viewer_id();
+    let still_ours = selected.is_none_or(|piece_id| {
+        reducer
+            .state
+            .pieces
+            .get(&piece_id)
+            .is_some_and(|piece| piece.owner_id == Some(player_id))
+    });
+    let selected = selected.clone();
+    use_effect_with(still_ours, move |still_ours| {
+        if !still_ours {
+            selected.set(None);
+        }
+    });
+}
+
+/// Stops ongoing pans and zooms when the match ends so the end-screen camera can take over.
+#[hook]
+fn use_cancel_drag_on_match_end(handles: &ViewHandles, has_match_result: bool) {
+    let handles = handles.clone();
+    use_effect_with(has_match_result, move |has_match_result| {
+        if *has_match_result {
+            handles.cancel_drag();
+        }
+    });
 }

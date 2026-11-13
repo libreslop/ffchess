@@ -2,8 +2,8 @@ use crate::types::Score;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 /// Enumerates gameplay errors sent from the server to clients.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum GameError {
     PieceNotFound,
     NotYourPiece,
@@ -16,10 +16,39 @@ pub enum GameError {
     ShopNotFound,
     ShopDepleted,
     PlayerNotFound,
-    InsufficientScore { needed: Score, have: Score },
+    InsufficientScore {
+        needed: Score,
+        have: Score,
+    },
     NoSpaceNearby,
+    /// The action was dropped because an earlier action of the same chain failed or was cleared.
+    ActionCancelled,
+    /// The stored session secret does not match the requested player id.
+    InvalidSession,
     Internal(String),
-    Custom { title: String, message: String },
+    Custom {
+        title: String,
+        message: String,
+    },
+}
+
+impl GameError {
+    /// Returns true when the error should be shown to the player as a toast.
+    ///
+    /// Clients only send actions that are valid on their predicted board, so a rejection for
+    /// one of these reasons means another piece moved in the meantime and invalidated the
+    /// premove. Such actions are dropped quietly.
+    pub fn is_user_visible(&self) -> bool {
+        !matches!(
+            self,
+            Self::PieceNotFound
+                | Self::TargetFriendly
+                | Self::InvalidMove
+                | Self::PathBlocked
+                | Self::ShopNotFound
+                | Self::ActionCancelled
+        )
+    }
 }
 
 impl fmt::Display for GameError {
@@ -41,6 +70,8 @@ impl fmt::Display for GameError {
                 write!(f, "Insufficient score. Need {}, have {}", needed, have)
             }
             Self::NoSpaceNearby => write!(f, "No free space nearby"),
+            Self::ActionCancelled => write!(f, "Action cancelled"),
+            Self::InvalidSession => write!(f, "Invalid session secret for this player ID."),
             Self::Internal(s) => write!(f, "Internal error: {}", s),
             Self::Custom { title, message } => write!(f, "{}: {}", title, message),
         }

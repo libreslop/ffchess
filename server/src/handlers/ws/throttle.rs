@@ -1,30 +1,38 @@
+//! Per-connection rate limiting of client messages.
+
 use common::types::{DurationMs, TimestampMs};
 
-const MIN_MESSAGE_INTERVAL_MS: i64 = 50;
+/// Messages a client may send in a burst.
+const BURST: f64 = 40.0;
 
-/// Enforces a minimum interval between accepted websocket messages.
+/// Sustained messages per second a client may send.
+const REFILL_PER_SEC: f64 = 20.0;
+
+/// Token bucket that allows short bursts (such as several premoves in a row) while capping
+/// the sustained message rate.
 pub(super) struct MessageThrottle {
-    last_message_at: Option<TimestampMs>,
+    tokens: f64,
+    refilled_at: TimestampMs,
 }
 
 impl MessageThrottle {
-    /// Creates a fresh message throttle with no prior accepted message.
-    pub(super) fn new() -> Self {
+    /// Creates a full bucket.
+    pub(super) fn new(now: TimestampMs) -> Self {
         Self {
-            last_message_at: None,
+            tokens: BURST,
+            refilled_at: now,
         }
     }
 
-    /// Returns whether the next message should be accepted.
-    pub(super) fn allow_next(&mut self) -> bool {
-        let now = crate::time::now_ms();
-        if let Some(last_message_at) = self.last_message_at
-            && now - last_message_at < DurationMs::from_millis(MIN_MESSAGE_INTERVAL_MS)
-        {
+    /// Returns whether a message arriving at `now` is accepted, consuming a token if so.
+    pub(super) fn allow(&mut self, now: TimestampMs) -> bool {
+        let elapsed = (now - self.refilled_at).max(DurationMs::zero());
+        self.tokens = (self.tokens + elapsed.as_secs_f64() * REFILL_PER_SEC).min(BURST);
+        self.refilled_at = now;
+        if self.tokens < 1.0 {
             return false;
         }
-
-        self.last_message_at = Some(now);
+        self.tokens -= 1.0;
         true
     }
 }

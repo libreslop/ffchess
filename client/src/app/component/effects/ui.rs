@@ -1,15 +1,21 @@
 //! Effects related to local UI state, cooldowns, and overlays.
 
-use crate::reducer::{ClientPhase, GameAction, GameStateReducer, MsgSender};
+use crate::reducer::{ClientPhase, DisconnectNotice, GameAction, GameStateReducer, MsgSender};
 use crate::ui_state::{CooldownSeconds, JoinStep, RejoinFlow};
-use crate::utils::{set_death_timestamp, set_stored_name};
+use crate::utils::{DeathRecord, SessionStore, local_now, store_name};
 use common::protocol::ClientMessage;
-use common::types::{ModeId, PlayerId};
+use common::types::{DurationMs, ModeId};
 use gloo_timers::callback::{Interval, Timeout};
 use std::cell::RefCell;
 use std::rc::Rc;
 use yew::hook;
 use yew::prelude::*;
+
+/// How long an error notice stays visible, matching the toast animation.
+const ERROR_VISIBLE_MS: u32 = 3000;
+
+/// Respawn cooldown assumed when the mode config is not known yet.
+const DEFAULT_RESPAWN_COOLDOWN: DurationMs = DurationMs(5000);
 
 /// Clears the joining spinner when join-related state updates.
 #[hook]
@@ -24,88 +30,117 @@ pub fn use_joining_reset_effect(
             reducer.queue_status.clone(),
             reducer.disconnected,
         ),
-        move |_| {
-            is_joining.set(false);
-        },
+        move |_| is_joining.set(false),
     );
 }
 
-/// Resets fatal error flags after a delay.
+/// Returns to name entry when kit selection is left showing for a mode with a single kit.
+///
+/// Single-kit modes skip kit selection by joining right away, but the step stays on
+/// kit selection afterwards. Once the player is back on the menu without a join in flight
+/// (a failed join, or a reconnect after the server dropped the session), that leftover step
+/// would show a kit picker with one choice.
 #[hook]
-pub fn use_fatal_error_reset_effect(reducer: UseReducerHandle<GameStateReducer>) {
-    let fatal_error = reducer.fatal_error;
-    let reducer_handle = reducer.clone();
-    use_effect_with(fatal_error, move |&fatal| {
-        let mut timeout = None;
-        if fatal {
-            timeout = Some(Timeout::new(5000, move || {
-                reducer_handle.dispatch(GameAction::SetDisconnected {
-                    disconnected: false,
-                    is_fatal: false,
-                    title: None,
-                    msg: None,
-                });
-            }));
-        }
-        move || {
-            if let Some(t) = timeout {
-                drop(t);
-            }
+pub fn use_single_kit_step_reset_effect(
+    join_step: UseStateHandle<JoinStep>,
+    reducer: UseReducerHandle<GameStateReducer>,
+    is_joining: bool,
+    single_kit: bool,
+) {
+    let idle_on_menu = reducer.phase == ClientPhase::Menu && !is_joining;
+    let stale = single_kit && idle_on_menu && join_step.is_select_kit();
+    use_effect_with(stale, move |&stale| {
+        if stale {
+            join_step.set(JoinStep::EnterName);
         }
     });
 }
 
-/// Ticks the landing cooldown once per second while active.
+/// Hides each error notice once its toast animation has finished.
+#[hook]
+pub fn use_error_auto_clear_effect(reducer: UseReducerHandle<GameStateReducer>) {
+    let serial = reducer.error.as_ref().map(|notice| notice.serial);
+    use_effect_with(serial, move |serial| {
+        let timeout = serial.map(|serial| {
+            Timeout::new(ERROR_VISIBLE_MS, move || {
+                reducer.dispatch(GameAction::ClearError(serial));
+            })
+        });
+        move || drop(timeout)
+    });
+}
+
+/// Resets fatal error flags after a delay.
+#[hook]
+pub fn use_fatal_error_reset_effect(
+    reducer: UseReducerHandle<GameStateReducer>,
+    hide_after_ms: u32,
+) {
+    let fatal_error = reducer.fatal_error;
+    use_effect_with(fatal_error, move |&fatal| {
+        let timeout = fatal.then(|| {
+            Timeout::new(hide_after_ms, move || {
+                reducer.dispatch(GameAction::SetDisconnected(DisconnectNotice::none()));
+            })
+        });
+        move || drop(timeout)
+    });
+}
+
+/// Starts counting `cooldown` down from `start` once per second.
+///
+/// `mirror` holds the same value for callbacks that read it outside of renders. Returns the
+/// interval driving the countdown, or `None` when there is nothing to count.
+fn start_countdown(
+    cooldown: UseStateHandle<CooldownSeconds>,
+    mirror: Rc<RefCell<CooldownSeconds>>,
+    start: CooldownSeconds,
+) -> Option<Interval> {
+    *mirror.borrow_mut() = start;
+    cooldown.set(start);
+    start.is_active().then(|| {
+        Interval::new(1000, move || {
+            let current = *mirror.borrow();
+            if current.is_active() {
+                let next = current.decrement();
+                *mirror.borrow_mut() = next;
+                cooldown.set(next);
+            }
+        })
+    })
+}
+
+/// Counts the landing cooldown down from its initial value.
 #[hook]
 pub fn use_landing_cooldown_effect(
     landing_cooldown: UseStateHandle<CooldownSeconds>,
     lc_ref: Rc<RefCell<CooldownSeconds>>,
 ) {
-    let lc = landing_cooldown.clone();
-    let lc_ref = lc_ref.clone();
-    use_effect_with(*lc, move |&initial_lc| {
-        let mut interval = None;
-        if initial_lc.is_active() {
-            *lc_ref.borrow_mut() = initial_lc;
-            let lc_inner = lc.clone();
-            let lr = lc_ref.clone();
-            interval = Some(Interval::new(1000, move || {
-                let mut cur = *lr.borrow();
-                if cur.is_active() {
-                    cur = cur.decrement();
-                    *lr.borrow_mut() = cur;
-                    lc_inner.set(cur);
-                }
-            }));
-        }
-        || drop(interval)
+    let initial = *use_memo((), |_| *landing_cooldown);
+    use_effect_with((), move |_| {
+        let interval = start_countdown(landing_cooldown, lc_ref, initial);
+        move || drop(interval)
     });
 }
 
-/// Syncs the player name to the stored name when loading from server state.
+/// Syncs the player name to the server-chosen name when none was entered.
 #[hook]
 pub fn use_player_name_sync_effect(
     player_name: UseStateHandle<String>,
     reducer: UseReducerHandle<GameStateReducer>,
 ) {
-    let player_name = player_name.clone();
+    let server_name = reducer
+        .active_player_id()
+        .and_then(|player_id| reducer.state.players.get(&player_id))
+        .map(|player| player.name.trim().to_string());
     use_effect_with(
-        (
-            reducer.player_id,
-            reducer.state.players.clone(),
-            (*player_name).clone(),
-        ),
-        move |(player_id, players, current_name)| {
+        (server_name, (*player_name).clone()),
+        move |(server_name, current_name)| {
             if current_name.trim().is_empty()
-                && let Some(pid) = *player_id
-                && pid != PlayerId::nil()
-                && let Some(player) = players.get(&pid)
+                && let Some(server_name) = server_name.as_ref().filter(|name| !name.is_empty())
             {
-                let server_name = player.name.trim();
-                if !server_name.is_empty() {
-                    player_name.set(server_name.to_string());
-                    set_stored_name(server_name);
-                }
+                player_name.set(server_name.clone());
+                store_name(server_name);
             }
         },
     );
@@ -118,40 +153,36 @@ pub fn use_disconnected_overlay_effect(
     reducer: UseReducerHandle<GameStateReducer>,
     is_joined: bool,
     is_queueing: bool,
-    has_match_result: bool,
+    hide_after_ms: u32,
 ) {
-    let show_disconnected = show_disconnected.clone();
     let should_show = reducer.disconnected
         && !reducer.fatal_error
         && (is_joined || is_queueing)
-        && !has_match_result;
-    use_effect_with(should_show, move |&should| {
-        if should {
+        && !reducer.has_match_result();
+    use_effect_with(should_show, move |&should_show| {
+        let timeout = if should_show {
             show_disconnected.set(true);
-            Box::new(|| ()) as Box<dyn FnOnce()>
+            None
         } else {
-            let sd = show_disconnected.clone();
-            let handle = Timeout::new(300, move || {
-                sd.set(false);
-            });
-            Box::new(move || drop(handle)) as Box<dyn FnOnce()>
-        }
+            Some(Timeout::new(hide_after_ms, move || {
+                show_disconnected.set(false)
+            }))
+        };
+        move || drop(timeout)
     });
 }
 
-/// Keeps the rejoin flow in sync with match/queue state.
+/// Ends the rejoin flow once the player is back in a match.
 #[hook]
 pub fn use_rejoin_flow_reset_effect(
     rejoin_flow: UseStateHandle<RejoinFlow>,
     reducer: UseReducerHandle<GameStateReducer>,
-    has_match_result: bool,
 ) {
-    let rejoin_flow = rejoin_flow.clone();
     use_effect_with(
         (
             reducer.phase,
             reducer.queue_status.clone(),
-            has_match_result,
+            reducer.has_match_result(),
             *rejoin_flow,
         ),
         move |(phase, queue_status, has_match_result, flow)| {
@@ -175,11 +206,7 @@ pub fn use_preview_default_effect(
     preview_default_ref: Rc<RefCell<Option<bool>>>,
     is_joined: bool,
 ) {
-    let tx = tx.clone();
-    let join_step = join_step.clone();
-    let reducer = reducer.clone();
-    let preview_default_ref = preview_default_ref.clone();
-    let has_tx = (*tx).is_some();
+    let has_tx = tx.is_some();
     use_effect_with(
         (
             *join_step,
@@ -188,78 +215,55 @@ pub fn use_preview_default_effect(
             has_tx,
             is_joined,
         ),
-        move |(step, queue_status, mode, _has_tx, joined)| {
+        move |(step, queue_status, mode, _, joined)| {
             if *joined {
                 preview_default_ref.borrow_mut().take();
                 return;
             }
-
-            let should_force = mode
-                .as_ref()
-                .map(|mode| {
-                    mode.queue_players.as_u32() >= 2
-                        && (step.is_select_kit() || queue_status.is_some())
-                })
-                .unwrap_or(false);
-
-            if let Some(sender) = tx.as_ref() {
-                let mut last_sent = preview_default_ref.borrow_mut();
-                if last_sent.as_ref() == Some(&should_force) {
-                    return;
-                }
-                *last_sent = Some(should_force);
-                if let Err(error) = sender.0.try_send(ClientMessage::SetPreviewDefault {
+            let should_force = mode.as_ref().is_some_and(|mode| {
+                mode.queue_players.as_u32() >= 2 && (step.is_select_kit() || queue_status.is_some())
+            });
+            let Some(sender) = tx.as_ref() else {
+                return;
+            };
+            let mut last_sent = preview_default_ref.borrow_mut();
+            if *last_sent != Some(should_force)
+                && sender.send(ClientMessage::SetPreviewDefault {
                     enabled: should_force,
-                }) {
-                    web_sys::console::error_1(
-                        &format!("Failed to send SetPreviewDefault: {error}").into(),
-                    );
-                }
+                })
+            {
+                *last_sent = Some(should_force);
             }
         },
     );
 }
 
-/// Tracks cooldown when a match ends.
+/// Starts the rejoin cooldown when a match ends and remembers the death for page reloads.
 #[hook]
 pub fn use_rejoin_cooldown_effect(
     rejoin_cooldown: UseStateHandle<CooldownSeconds>,
     rc_ref: Rc<RefCell<CooldownSeconds>>,
     current_mode_id: UseStateHandle<ModeId>,
     reducer: UseReducerHandle<GameStateReducer>,
-    has_match_result: bool,
 ) {
-    let rejoin_cooldown = rejoin_cooldown.clone();
-    let rc_ref = rc_ref.clone();
-    let current_mode_id = current_mode_id.clone();
-    let reducer = reducer.clone();
-    use_effect_with(has_match_result, move |has_match_result| {
-        let mut interval = None;
-        if *has_match_result {
-            let cd_ms = reducer
-                .mode
-                .as_ref()
-                .map(|m| m.respawn_cooldown_ms)
-                .unwrap_or_else(|| common::types::DurationMs::from_millis(5000));
-            set_death_timestamp(
-                &current_mode_id,
-                common::types::TimestampMs::from_millis(js_sys::Date::now() as i64),
-                cd_ms,
-            );
-            let cooldown_sec = CooldownSeconds::from_seconds((cd_ms.as_u64() / 1000) as u32);
-            rejoin_cooldown.set(cooldown_sec);
-            *rc_ref.borrow_mut() = cooldown_sec;
-            let rc = rejoin_cooldown.clone();
-            let rr = rc_ref.clone();
-            interval = Some(Interval::new(1000, move || {
-                let mut val = *rr.borrow();
-                if val.is_active() {
-                    val = val.decrement();
-                    *rr.borrow_mut() = val;
-                    rc.set(val);
-                }
-            }));
-        }
-        || drop(interval)
+    use_effect_with(reducer.has_match_result(), move |&has_match_result| {
+        let interval = has_match_result
+            .then(|| {
+                let cooldown = reducer
+                    .mode
+                    .as_ref()
+                    .map_or(DEFAULT_RESPAWN_COOLDOWN, |mode| mode.respawn_cooldown_ms);
+                SessionStore::new(&current_mode_id).record_death(DeathRecord {
+                    died_at: local_now(),
+                    cooldown,
+                });
+                start_countdown(
+                    rejoin_cooldown,
+                    rc_ref,
+                    CooldownSeconds::from_duration(cooldown),
+                )
+            })
+            .flatten();
+        move || drop(interval)
     });
 }

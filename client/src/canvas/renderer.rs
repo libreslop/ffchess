@@ -1,505 +1,488 @@
-//! Canvas rendering implementation for the board and pieces.
+//! Canvas rendering of the board, shops, move hints, pieces, and fog of war.
 
 use super::color::hex_to_rgba;
 use super::types::{PieceDrawParams, PieceNameDrawParams, PieceSvgCache, RenderParams, Renderer};
-use crate::math::Vec2;
-use common::logic::{evaluate_expression, is_valid_move, is_within_board};
-use common::models::PieceConfig;
-use common::types::{PieceTypeId, PlayerId};
+use crate::math::{Vec2, vec2};
+use common::models::{GameModeClientConfig, Piece};
+use common::rules::{Catalog, MoveKind};
+use common::types::{BoardCoord, ExprVars, PlayerId};
 use glam::IVec2;
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::rc::Rc;
 use wasm_bindgen::JsCast;
 use web_sys::HtmlCanvasElement;
 
-impl Renderer {
-    /// Creates a new renderer for a given canvas and config sets.
-    ///
-    /// `canvas` is the HTML canvas element, `piece_configs` and `shop_configs` define assets.
-    /// Returns a ready-to-use `Renderer`.
-    pub fn new(
-        canvas: HtmlCanvasElement,
-        piece_configs: HashMap<PieceTypeId, PieceConfig>,
-    ) -> Self {
-        let ctx = canvas
-            .get_context("2d")
-            .unwrap()
-            .unwrap()
-            .dyn_into::<web_sys::CanvasRenderingContext2d>()
-            .unwrap();
-        Self {
-            ctx,
-            piece_configs,
-            svg_cache: Rc::new(RefCell::new(PieceSvgCache::new())),
+/// Fill color around the board.
+const OFF_BOARD_COLOR: &str = "#e2e8f0";
+const BOARD_COLOR: &str = "#ffffff";
+const DARK_SQUARE_COLOR: &str = "#f1f5f9";
+const GRID_COLOR: &str = "#cbd5e1";
+const BORDER_COLOR: &str = "#1e293b";
+const DEFAULT_SHOP_COLOR: &str = "#fde047";
+const DEFAULT_SHOP_FOCUS_COLOR: &str = "rgba(253, 224, 71, 0.35)";
+const DEFAULT_HINT_COLOR: &str = "rgba(59, 130, 246, 0.4)";
+const DEFAULT_LINE_COLOR: &str = "rgba(59, 130, 246, 0.5)";
+
+/// Opacity of predicted piece positions.
+const GHOST_ALPHA: f64 = 0.4;
+
+/// Things this many squares beyond the view radius are still drawn so they fade into the fog.
+const VIEW_MARGIN_SQUARES: i32 = 2;
+
+/// Fog radius used when no mode is known, scaled by army size.
+const FALLBACK_FOG_RADIUS: f64 = 15.0;
+
+/// Maps board coordinates to screen pixels for one frame.
+#[derive(Clone, Copy)]
+struct FrameGeometry {
+    tile: f64,
+    zoom: f64,
+    offset: Vec2,
+    rotated: bool,
+}
+
+impl FrameGeometry {
+    /// Maps a square to its on-screen square, flipping the board when rotated.
+    fn map_square(&self, square: IVec2) -> IVec2 {
+        if self.rotated {
+            -square - IVec2::ONE
+        } else {
+            square
         }
     }
 
-    /// Renders a full frame including board, shops, pieces, and fog of war.
-    ///
-    /// `params` bundles render inputs for the frame. Returns nothing.
-    pub fn draw_with_ghosts(&self, params: RenderParams<'_>) {
-        let RenderParams {
-            state,
-            player_id,
-            selected_piece_id,
-            pmove_lines,
-            ghost_pieces,
-            animated_positions,
-            camera_pos,
-            canvas_size,
-            zoom,
-            tile_size_px,
-            mode,
-            board_rotated_180,
-            shop_configs,
-            active_shop_highlight_pos,
-            disable_fog_of_war,
-            clock_offset_ms,
-        } = params;
-        let width = canvas_size.x;
-        let height = canvas_size.y;
-        let tile_size = tile_size_px * zoom;
-        let player_king = state
-            .players
-            .get(&player_id)
-            .and_then(|p| state.pieces.get(&p.king_id));
+    /// Maps a fractional square position, flipping the board when rotated.
+    fn map_pos(&self, pos: Vec2) -> Vec2 {
+        if self.rotated { -pos - Vec2::ONE } else { pos }
+    }
 
-        let has_king = player_king.is_some();
-        let king_pos = player_king
-            .map(|k| k.position)
-            .unwrap_or(common::types::BoardCoord(IVec2::ZERO));
-        let piece_count = state
-            .pieces
-            .values()
-            .filter(|p| p.owner_id == Some(player_id))
-            .count();
+    /// Maps a grid line coordinate, flipping the board when rotated.
+    fn map_line(&self, line: i32) -> i32 {
+        if self.rotated { -line } else { line }
+    }
 
-        let fog_of_war_radius = if let Some(m) = mode {
-            let mut vars = HashMap::new();
-            vars.insert("player_piece_count".to_string(), piece_count as f64);
-            m.fog_of_war_radius
+    /// Returns the top-left pixel of a square.
+    fn square_origin(&self, square: BoardCoord) -> Vec2 {
+        self.map_square(square.0).as_dvec2() * self.tile + self.offset
+    }
+
+    /// Returns the center pixel of a square.
+    fn square_center(&self, square: BoardCoord) -> Vec2 {
+        self.square_origin(square) + self.tile / 2.0
+    }
+
+    /// Returns the pixel of a grid line intersection.
+    fn line_point(&self, x: i32, y: i32) -> Vec2 {
+        vec2(self.map_line(x) as f64, self.map_line(y) as f64) * self.tile + self.offset
+    }
+}
+
+/// The part of the board the local player can see.
+#[derive(Clone, Copy)]
+struct Visibility {
+    center: BoardCoord,
+    radius_squares: i32,
+    radius_px: f64,
+    fogged: bool,
+}
+
+impl Visibility {
+    /// Returns true when `pos` is close enough to the view center to be drawn.
+    fn shows(&self, pos: BoardCoord) -> bool {
+        pos.chebyshev_distance(self.center) <= self.radius_squares + VIEW_MARGIN_SQUARES
+    }
+}
+
+/// Evaluates the fog-of-war radius for a player owning `piece_count` pieces.
+///
+/// Returns `None` when the mode has no fog of war.
+fn fog_radius(mode: Option<&GameModeClientConfig>, piece_count: usize) -> Option<f64> {
+    match mode {
+        Some(mode) => {
+            let vars = ExprVars::new().with("player_piece_count", piece_count as f64);
+            mode.fog_of_war_radius
                 .as_ref()
-                .map(|expr| evaluate_expression(expr, &vars))
-        } else {
-            let zoom_factor = (piece_count as f64).sqrt().max(1.0);
-            Some(15.0 * zoom_factor)
-        };
-        let fog_is_disabled = disable_fog_of_war || fog_of_war_radius.is_none();
+                .map(|expr| expr.evaluate(&vars))
+        }
+        None => Some(FALLBACK_FOG_RADIUS * (piece_count as f64).sqrt().max(1.0)),
+    }
+}
 
-        let view_radius_squares = if player_id == PlayerId::nil() || !has_king || fog_is_disabled {
-            state.board_size.as_i32()
-        } else {
-            fog_of_war_radius.unwrap_or(0.0).max(0.0) as i32
-        };
-        let view_radius_px = (view_radius_squares as f64 + 0.5) * tile_size;
+impl Renderer {
+    /// Creates a renderer drawing onto `canvas` with pieces from `catalog`.
+    pub fn new(canvas: HtmlCanvasElement, catalog: Rc<Catalog>) -> Option<Self> {
+        let ctx = canvas
+            .get_context("2d")
+            .ok()??
+            .dyn_into::<web_sys::CanvasRenderingContext2d>()
+            .ok()?;
+        Some(Self {
+            ctx,
+            catalog,
+            svg_cache: Rc::new(RefCell::new(PieceSvgCache::default())),
+        })
+    }
 
-        // Background (Off-board color)
-        self.ctx.set_fill_style_str("#e2e8f0");
-        self.ctx.fill_rect(0.0, 0.0, width, height);
-
-        // Offset mapping world -> screen
-        let canvas_center = canvas_size * 0.5;
-        let offset = if board_rotated_180 {
-            canvas_center + camera_pos
-        } else {
-            canvas_center - camera_pos
-        };
-        let offset_x = offset.x;
-        let offset_y = offset.y;
-        let map_grid = |g: IVec2| {
-            if board_rotated_180 {
-                IVec2::new(-g.x - 1, -g.y - 1)
+    /// Renders a full frame including board, shops, pieces, and fog of war.
+    pub fn draw(&self, params: RenderParams<'_>) {
+        let tile = params.tile_size_px * params.zoom;
+        let canvas_center = params.canvas_size * 0.5;
+        let geometry = FrameGeometry {
+            tile,
+            zoom: params.zoom,
+            offset: if params.board_rotated_180 {
+                canvas_center + params.camera_pos
             } else {
-                g
-            }
+                canvas_center - params.camera_pos
+            },
+            rotated: params.board_rotated_180,
         };
-        let map_grid_f = |p: Vec2| {
-            if board_rotated_180 {
-                -p - Vec2::new(1.0, 1.0)
-            } else {
-                p
-            }
-        };
-        let map_line = |v: i32| {
-            if board_rotated_180 { -v } else { v }
-        };
+        let visibility = self.visibility(&params, tile);
 
-        let half = state.board_size.half();
-        let limit_pos = state.board_size.limit_pos();
-
-        // Board Pixel Boundaries
-        let board_left = -(half as f64) * tile_size + offset_x;
-        let board_top = -(half as f64) * tile_size + offset_y;
-        let board_dim = state.board_size.as_i32() as f64 * tile_size;
-
-        // Draw Board Background
-        self.ctx.set_fill_style_str("#ffffff");
+        self.ctx.set_fill_style_str(OFF_BOARD_COLOR);
         self.ctx
-            .fill_rect(board_left, board_top, board_dim, board_dim);
+            .fill_rect(0.0, 0.0, params.canvas_size.x, params.canvas_size.y);
+        self.draw_board(&params, &geometry);
+        self.draw_shops(&params, &geometry, &visibility);
+        let hints = self.move_hints(&params);
+        self.draw_quiet_hints(&hints, &geometry);
+        self.draw_premove_lines(&params, &geometry);
+        self.draw_pieces(&params, &geometry, &visibility);
+        self.draw_capture_hints(&hints, &geometry);
+        self.draw_king_names(&params, &geometry, &visibility);
+        self.draw_fog(&params, &geometry, &visibility);
+    }
 
-        let start_x = -half;
-        let end_x = limit_pos;
-        let start_y = -half;
-        let end_y = limit_pos;
+    /// Works out what the local player sees: everything, or a fogged circle around their king.
+    fn visibility(&self, params: &RenderParams<'_>, tile: f64) -> Visibility {
+        let state = params.state;
+        let king = state.king_of(params.player_id);
+        let fog = fog_radius(params.mode, state.pieces_of(params.player_id).count());
+        let fogged = !params.disable_fog_of_war
+            && fog.is_some()
+            && !params.player_id.is_nil()
+            && king.is_some();
+        let radius_squares = if fogged {
+            fog.unwrap_or_default().max(0.0) as i32
+        } else {
+            state.board_size.as_i32()
+        };
+        Visibility {
+            center: king.map_or_else(BoardCoord::default, |king| king.position),
+            radius_squares,
+            radius_px: (radius_squares as f64 + 0.5) * tile,
+            fogged,
+        }
+    }
 
-        // Checkerboard
-        self.ctx.set_fill_style_str("#f1f5f9");
-        for x in start_x..end_x {
-            for y in start_y..end_y {
-                // Proper checkerboard for centered system
+    /// Draws the board surface, checkerboard, grid lines, and border.
+    fn draw_board(&self, params: &RenderParams<'_>, geometry: &FrameGeometry) {
+        let board_size = params.state.board_size;
+        let (low, high) = (-board_size.half(), board_size.limit_pos());
+        let tile = geometry.tile;
+        let corner = vec2(low as f64, low as f64) * tile + geometry.offset;
+        let dim = board_size.as_i32() as f64 * tile;
+
+        self.ctx.set_fill_style_str(BOARD_COLOR);
+        self.ctx.fill_rect(corner.x, corner.y, dim, dim);
+
+        self.ctx.set_fill_style_str(DARK_SQUARE_COLOR);
+        for x in low..high {
+            for y in low..high {
                 if (x.rem_euclid(2) + y.rem_euclid(2)) % 2 != 0 {
-                    let mapped = map_grid(IVec2::new(x, y));
-                    self.ctx.fill_rect(
-                        mapped.x as f64 * tile_size + offset_x,
-                        mapped.y as f64 * tile_size + offset_y,
-                        tile_size,
-                        tile_size,
-                    );
+                    let origin = geometry.square_origin(BoardCoord::new(x, y));
+                    self.ctx.fill_rect(origin.x, origin.y, tile, tile);
                 }
             }
         }
 
-        // Grid Lines
-        self.ctx.set_stroke_style_str("#cbd5e1");
+        self.ctx.set_stroke_style_str(GRID_COLOR);
         self.ctx.set_line_width(1.0);
         self.ctx.begin_path();
-
-        for x in start_x..=end_x {
-            let mapped_x = map_line(x);
-            let mapped_start_y = map_line(start_y);
-            let mapped_end_y = map_line(end_y);
-            self.ctx.move_to(
-                mapped_x as f64 * tile_size + offset_x,
-                mapped_start_y as f64 * tile_size + offset_y,
-            );
-            self.ctx.line_to(
-                mapped_x as f64 * tile_size + offset_x,
-                mapped_end_y as f64 * tile_size + offset_y,
-            );
-        }
-        for y in start_y..=end_y {
-            let mapped_y = map_line(y);
-            let mapped_start_x = map_line(start_x);
-            let mapped_end_x = map_line(end_x);
-            self.ctx.move_to(
-                mapped_start_x as f64 * tile_size + offset_x,
-                mapped_y as f64 * tile_size + offset_y,
-            );
-            self.ctx.line_to(
-                mapped_end_x as f64 * tile_size + offset_x,
-                mapped_y as f64 * tile_size + offset_y,
-            );
+        for line in low..=high {
+            for (from, to) in [
+                (
+                    geometry.line_point(line, low),
+                    geometry.line_point(line, high),
+                ),
+                (
+                    geometry.line_point(low, line),
+                    geometry.line_point(high, line),
+                ),
+            ] {
+                self.ctx.move_to(from.x, from.y);
+                self.ctx.line_to(to.x, to.y);
+            }
         }
         self.ctx.stroke();
 
-        // Draw Board Border (Above Grid)
-        self.ctx.set_stroke_style_str("#1e293b");
+        self.ctx.set_stroke_style_str(BORDER_COLOR);
         self.ctx.set_line_width(2.0);
-        self.ctx
-            .stroke_rect(board_left, board_top, board_dim, board_dim);
+        self.ctx.stroke_rect(corner.x, corner.y, dim, dim);
+    }
 
-        // Shops
-        for shop in &state.shops {
-            if (shop.position.0 - king_pos.0).abs().max_element() <= view_radius_squares + 2 {
-                let color = shop_configs
-                    .get(&shop.shop_id)
-                    .and_then(|c| c.color.as_ref())
-                    .map(|s| s.as_ref())
-                    .unwrap_or("#fde047");
-                let mapped = map_grid(shop.position.0);
-                self.ctx.set_fill_style_str(color);
-                self.ctx.fill_rect(
-                    mapped.x as f64 * tile_size + offset_x + 5.0 * zoom,
-                    mapped.y as f64 * tile_size + offset_y + 5.0 * zoom,
-                    tile_size - 10.0 * zoom,
-                    tile_size - 10.0 * zoom,
-                );
-            }
-        }
-
-        if let Some(highlight_pos) = active_shop_highlight_pos
-            && (highlight_pos.0 - king_pos.0).abs().max_element() <= view_radius_squares + 2
+    /// Draws shop squares and the highlight of the shop whose menu is open.
+    fn draw_shops(
+        &self,
+        params: &RenderParams<'_>,
+        geometry: &FrameGeometry,
+        visibility: &Visibility,
+    ) {
+        let (tile, zoom) = (geometry.tile, geometry.zoom);
+        for shop in params
+            .state
+            .shops
+            .iter()
+            .filter(|shop| visibility.shows(shop.position))
         {
-            let color = state
+            let color = self
+                .catalog
                 .shops
-                .iter()
-                .find(|shop| shop.position == highlight_pos)
-                .and_then(|shop| shop_configs.get(&shop.shop_id))
-                .and_then(|c| c.focus_color.as_ref().or(c.color.as_ref()))
-                .map(|s| s.as_ref())
-                .unwrap_or("rgba(253, 224, 71, 0.35)");
-            let mapped = map_grid(highlight_pos.0);
+                .get(&shop.shop_id)
+                .and_then(|config| config.color.as_deref())
+                .unwrap_or(DEFAULT_SHOP_COLOR);
+            let origin = geometry.square_origin(shop.position);
             self.ctx.set_fill_style_str(color);
             self.ctx.fill_rect(
-                mapped.x as f64 * tile_size + offset_x + 2.0,
-                mapped.y as f64 * tile_size + offset_y + 2.0,
-                tile_size - 4.0,
-                tile_size - 4.0,
+                origin.x + 5.0 * zoom,
+                origin.y + 5.0 * zoom,
+                tile - 10.0 * zoom,
+                tile - 10.0 * zoom,
             );
         }
 
-        // Markers for valid moves:
-        // - quiet move: center circle in team color
-        // - capture move: 4 corner triangles in team color (drawn above pieces later)
-        let mut quiet_move_markers: Vec<IVec2> = Vec::new();
-        let mut capture_move_markers: Vec<IVec2> = Vec::new();
-        let mut move_marker_color = "rgba(59, 130, 246, 0.4)".to_string();
-        if let Some(sid) = selected_piece_id
-            && let Some(piece) = ghost_pieces.get(&sid)
-            && let Some(config) = self.piece_configs.get(&piece.piece_type)
-        {
-            move_marker_color = piece
-                .owner_id
-                .and_then(|owner_id| state.players.get(&owner_id))
-                .map(|player| hex_to_rgba(player.color.as_ref(), 0.4))
-                .unwrap_or_else(|| "rgba(59, 130, 246, 0.4)".to_string());
-            let range = 10;
-            for x in (piece.position.0.x - range)..(piece.position.0.x + range + 1) {
-                for y in (piece.position.0.y - range)..(piece.position.0.y + range + 1) {
-                    let t = IVec2::new(x, y);
-                    if !is_within_board(common::types::BoardCoord(t), state.board_size) {
-                        continue;
-                    }
+        let Some(highlight) = params
+            .active_shop_highlight_pos
+            .filter(|pos| visibility.shows(*pos))
+        else {
+            return;
+        };
+        let color = params
+            .state
+            .shop_at(highlight)
+            .and_then(|shop| self.catalog.shops.get(&shop.shop_id))
+            .and_then(|config| config.focus_color.as_deref().or(config.color.as_deref()))
+            .unwrap_or(DEFAULT_SHOP_FOCUS_COLOR);
+        let origin = geometry.square_origin(highlight);
+        self.ctx.set_fill_style_str(color);
+        self.ctx
+            .fill_rect(origin.x + 2.0, origin.y + 2.0, tile - 4.0, tile - 4.0);
+    }
 
-                    let target_piece = ghost_pieces.values().find(|p| p.position == t);
-                    let is_friendly = target_piece
-                        .map(|tp| tp.owner_id == Some(player_id))
-                        .unwrap_or(false);
-                    if is_friendly {
-                        continue;
-                    }
+    /// Lists the legal destinations of the selected piece and the color to mark them in.
+    fn move_hints(&self, params: &RenderParams<'_>) -> (Vec<(BoardCoord, MoveKind)>, String) {
+        let predicted = &params.projection.state;
+        let Some(piece) = params
+            .selected_piece_id
+            .and_then(|id| predicted.pieces.get(&id))
+        else {
+            return (Vec::new(), DEFAULT_HINT_COLOR.to_string());
+        };
+        let Some(config) = self.catalog.pieces.get(&piece.piece_type) else {
+            return (Vec::new(), DEFAULT_HINT_COLOR.to_string());
+        };
+        let color = piece
+            .owner_id
+            .and_then(|owner| params.state.players.get(&owner))
+            .map_or_else(
+                || DEFAULT_HINT_COLOR.to_string(),
+                |player| hex_to_rgba(player.color.as_ref(), 0.4),
+            );
+        (
+            config.legal_moves(predicted, piece.position, piece.owner_id),
+            color,
+        )
+    }
 
-                    let is_capture = target_piece.is_some();
-                    if is_valid_move(common::logic::MoveValidationParams {
-                        piece_config: config,
-                        start: piece.position,
-                        end: common::types::BoardCoord(t),
-                        is_capture,
-                        board_size: state.board_size,
-                        pieces: ghost_pieces,
-                        moving_owner: piece.owner_id,
-                    }) {
-                        if is_capture {
-                            capture_move_markers.push(t);
-                        } else {
-                            quiet_move_markers.push(t);
-                        }
-                    }
-                }
-            }
-
-            self.ctx.set_fill_style_str(&move_marker_color);
-            let circle_radius = tile_size * 0.16;
-            for target in &quiet_move_markers {
-                let mapped = map_grid(*target);
-                let center_x = mapped.x as f64 * tile_size + offset_x + tile_size / 2.0;
-                let center_y = mapped.y as f64 * tile_size + offset_y + tile_size / 2.0;
-                self.ctx.begin_path();
-                let _ = self.ctx.arc(
-                    center_x,
-                    center_y,
-                    circle_radius,
-                    0.0,
-                    std::f64::consts::PI * 2.0,
-                );
-                self.ctx.fill();
-            }
-        }
-
-        // Premove lines (already validated against projected ghost state)
-        for line in pmove_lines {
-            if let Some(real_p) = state.pieces.get(&line.piece_id) {
-                let color = if let Some(owner_id) = real_p.owner_id {
-                    if let Some(player) = state.players.get(&owner_id) {
-                        hex_to_rgba(player.color.as_ref(), 0.5)
-                    } else {
-                        "rgba(59, 130, 246, 0.5)".to_string()
-                    }
-                } else {
-                    "rgba(59, 130, 246, 0.5)".to_string()
-                };
-
-                self.ctx.set_stroke_style_str(&color);
-                self.ctx.set_line_width(2.0);
-
-                let mapped_start = map_grid(line.start.0);
-                let mapped_target = map_grid(line.target.0);
-                self.ctx.begin_path();
-                self.ctx.move_to(
-                    mapped_start.x as f64 * tile_size + offset_x + tile_size / 2.0,
-                    mapped_start.y as f64 * tile_size + offset_y + tile_size / 2.0,
-                );
-                self.ctx.line_to(
-                    mapped_target.x as f64 * tile_size + offset_x + tile_size / 2.0,
-                    mapped_target.y as f64 * tile_size + offset_y + tile_size / 2.0,
-                );
-                self.ctx.stroke();
-            }
-        }
-
-        // Pieces
-        for (id, ghost) in ghost_pieces {
-            if (ghost.position.0 - king_pos.0).abs().max_element() <= view_radius_squares + 2 {
-                let static_pos = map_grid_f(Vec2::new(
-                    ghost.position.0.x as f64,
-                    ghost.position.0.y as f64,
-                ));
-                let pos_override = animated_positions.get(id).copied().map(map_grid_f);
-                if let Some(real) = state.pieces.get(id) {
-                    if real.position != ghost.position {
-                        // Draw ghost (predicted) piece faded
-                        self.draw_piece(
-                            PieceDrawParams {
-                                piece: ghost,
-                                player_id,
-                                offset_x,
-                                offset_y,
-                                alpha: 0.4,
-                                state,
-                                draw_name: false,
-                                is_ghost: true,
-                                pos_override: Some(static_pos),
-                                tile_size_px,
-                                clock_offset_ms,
-                            },
-                            zoom,
-                        );
-
-                        // Draw real (server) piece solid
-                        let real_static_pos = map_grid_f(Vec2::new(
-                            real.position.0.x as f64,
-                            real.position.0.y as f64,
-                        ));
-                        self.draw_piece(
-                            PieceDrawParams {
-                                piece: real,
-                                player_id,
-                                offset_x,
-                                offset_y,
-                                alpha: 1.0,
-                                state,
-                                draw_name: false,
-                                is_ghost: false,
-                                pos_override: pos_override.or(Some(real_static_pos)),
-                                tile_size_px,
-                                clock_offset_ms,
-                            },
-                            zoom,
-                        );
-                    } else {
-                        // Piece is not moving or not ours
-                        self.draw_piece(
-                            PieceDrawParams {
-                                piece: ghost,
-                                player_id,
-                                offset_x,
-                                offset_y,
-                                alpha: 1.0,
-                                state,
-                                draw_name: false,
-                                is_ghost: false,
-                                pos_override: pos_override.or(Some(static_pos)),
-                                tile_size_px,
-                                clock_offset_ms,
-                            },
-                            zoom,
-                        );
-                    }
-                }
-            }
-        }
-
-        // Capture markers above pieces.
-        if selected_piece_id.is_some() {
-            self.ctx.set_fill_style_str(&move_marker_color);
-            let corner = tile_size * 0.22;
-            for target in &capture_move_markers {
-                let mapped = map_grid(*target);
-                let x = mapped.x as f64 * tile_size + offset_x;
-                let y = mapped.y as f64 * tile_size + offset_y;
-
-                self.ctx.begin_path();
-                self.ctx.move_to(x, y);
-                self.ctx.line_to(x + corner, y);
-                self.ctx.line_to(x, y + corner);
-                self.ctx.close_path();
-                self.ctx.fill();
-
-                self.ctx.begin_path();
-                self.ctx.move_to(x + tile_size, y);
-                self.ctx.line_to(x + tile_size - corner, y);
-                self.ctx.line_to(x + tile_size, y + corner);
-                self.ctx.close_path();
-                self.ctx.fill();
-
-                self.ctx.begin_path();
-                self.ctx.move_to(x, y + tile_size);
-                self.ctx.line_to(x + corner, y + tile_size);
-                self.ctx.line_to(x, y + tile_size - corner);
-                self.ctx.close_path();
-                self.ctx.fill();
-
-                self.ctx.begin_path();
-                self.ctx.move_to(x + tile_size, y + tile_size);
-                self.ctx.line_to(x + tile_size - corner, y + tile_size);
-                self.ctx.line_to(x + tile_size, y + tile_size - corner);
-                self.ctx.close_path();
-                self.ctx.fill();
-            }
-        }
-
-        // Second pass: Draw player names on top of everything
-        for (id, ghost_piece) in ghost_pieces {
-            let piece = state.pieces.get(id).unwrap_or(ghost_piece);
-            if piece.piece_type.is_king()
-                && (piece.position.0 - king_pos.0).abs().max_element() <= view_radius_squares + 2
-            {
-                let static_pos = map_grid_f(Vec2::new(
-                    piece.position.0.x as f64,
-                    piece.position.0.y as f64,
-                ));
-                let pos_override = animated_positions
-                    .get(id)
-                    .copied()
-                    .map(map_grid_f)
-                    .or(Some(static_pos));
-                self.draw_piece_name(PieceNameDrawParams {
-                    piece,
-                    offset_x,
-                    offset_y,
-                    alpha: 1.0,
-                    state,
-                    zoom,
-                    tile_size_px,
-                    pos_override,
-                });
-            }
-        }
-
-        // Fog of War Overlay
-        if !fog_is_disabled && player_id != PlayerId::nil() && has_king {
-            let mapped_king = map_grid(king_pos.0);
-            let king_screen_x = mapped_king.x as f64 * tile_size + offset_x + tile_size / 2.0;
-            let king_screen_y = mapped_king.y as f64 * tile_size + offset_y + tile_size / 2.0;
-
-            let gradient = self
+    /// Marks quiet move destinations with a dot.
+    fn draw_quiet_hints(
+        &self,
+        (hints, color): &(Vec<(BoardCoord, MoveKind)>, String),
+        geometry: &FrameGeometry,
+    ) {
+        self.ctx.set_fill_style_str(color);
+        let radius = geometry.tile * 0.16;
+        for (target, _) in hints.iter().filter(|(_, kind)| *kind == MoveKind::Quiet) {
+            let center = geometry.square_center(*target);
+            self.ctx.begin_path();
+            let _ = self
                 .ctx
-                .create_radial_gradient(
-                    king_screen_x,
-                    king_screen_y,
-                    view_radius_px * 0.6,
-                    king_screen_x,
-                    king_screen_y,
-                    view_radius_px,
-                )
-                .unwrap();
-
-            let _ = gradient.add_color_stop(0.0, "rgba(255, 255, 255, 0.0)");
-            let _ = gradient.add_color_stop(1.0, "rgba(255, 255, 255, 1.0)");
-
-            self.ctx.set_fill_style_canvas_gradient(&gradient);
-            self.ctx.fill_rect(0.0, 0.0, width, height);
+                .arc(center.x, center.y, radius, 0.0, std::f64::consts::TAU);
+            self.ctx.fill();
         }
+    }
+
+    /// Marks capture destinations with four corner triangles, drawn above the pieces.
+    fn draw_capture_hints(
+        &self,
+        (hints, color): &(Vec<(BoardCoord, MoveKind)>, String),
+        geometry: &FrameGeometry,
+    ) {
+        self.ctx.set_fill_style_str(color);
+        let (tile, corner) = (geometry.tile, geometry.tile * 0.22);
+        for (target, _) in hints.iter().filter(|(_, kind)| *kind == MoveKind::Capture) {
+            let origin = geometry.square_origin(*target);
+            for (dx, dy) in [(1.0, 1.0), (-1.0, 1.0), (1.0, -1.0), (-1.0, -1.0)] {
+                let tip = origin
+                    + vec2(
+                        if dx > 0.0 { 0.0 } else { tile },
+                        if dy > 0.0 { 0.0 } else { tile },
+                    );
+                self.ctx.begin_path();
+                self.ctx.move_to(tip.x, tip.y);
+                self.ctx.line_to(tip.x + dx * corner, tip.y);
+                self.ctx.line_to(tip.x, tip.y + dy * corner);
+                self.ctx.close_path();
+                self.ctx.fill();
+            }
+        }
+    }
+
+    /// Draws a line for every predicted move, in the moving player's color.
+    fn draw_premove_lines(&self, params: &RenderParams<'_>, geometry: &FrameGeometry) {
+        for line in &params.projection.lines {
+            let Some(piece) = params.state.pieces.get(&line.piece_id) else {
+                continue;
+            };
+            let color = piece
+                .owner_id
+                .and_then(|owner| params.state.players.get(&owner))
+                .map_or_else(
+                    || DEFAULT_LINE_COLOR.to_string(),
+                    |player| hex_to_rgba(player.color.as_ref(), 0.5),
+                );
+            let (from, to) = (
+                geometry.square_center(line.start),
+                geometry.square_center(line.target),
+            );
+            self.ctx.set_stroke_style_str(&color);
+            self.ctx.set_line_width(2.0);
+            self.ctx.begin_path();
+            self.ctx.move_to(from.x, from.y);
+            self.ctx.line_to(to.x, to.y);
+            self.ctx.stroke();
+        }
+    }
+
+    /// Draws every visible piece, plus a faded copy where queued actions will move it.
+    ///
+    /// Pieces whose queued actions only change them in place (such as an upgrade) are drawn
+    /// as predicted, with their real cooldown.
+    fn draw_pieces(
+        &self,
+        params: &RenderParams<'_>,
+        geometry: &FrameGeometry,
+        visibility: &Visibility,
+    ) {
+        let predicted = &params.projection.state.pieces;
+        for (id, real) in &params.state.pieces {
+            let ghost = predicted.get(id);
+            let shown = match ghost {
+                Some(ghost) if ghost.position != real.position => {
+                    if visibility.shows(ghost.position) {
+                        self.draw_piece(self.piece_params(
+                            params,
+                            geometry,
+                            ghost,
+                            GHOST_ALPHA,
+                            true,
+                            None,
+                        ));
+                    }
+                    real.clone()
+                }
+                Some(ghost) => Piece {
+                    last_move_time: real.last_move_time,
+                    cooldown_ms: real.cooldown_ms,
+                    ..ghost.clone()
+                },
+                None => real.clone(),
+            };
+            if visibility.shows(shown.position) {
+                let animated = params.animated_positions.get(id).copied();
+                self.draw_piece(self.piece_params(params, geometry, &shown, 1.0, false, animated));
+            }
+        }
+    }
+
+    /// Builds the draw parameters of one piece.
+    fn piece_params<'a>(
+        &self,
+        params: &RenderParams<'a>,
+        geometry: &FrameGeometry,
+        piece: &'a Piece,
+        alpha: f64,
+        is_ghost: bool,
+        animated: Option<Vec2>,
+    ) -> PieceDrawParams<'a> {
+        let square = animated.unwrap_or_else(|| piece.position.0.as_dvec2());
+        PieceDrawParams {
+            piece,
+            player_id: params.player_id,
+            offset: geometry.offset,
+            alpha,
+            state: params.state,
+            is_ghost,
+            pos: geometry.map_pos(square),
+            tile_size: geometry.tile,
+            zoom: geometry.zoom,
+            clock_offset_ms: params.clock_offset_ms,
+        }
+    }
+
+    /// Draws player names above kings, on top of everything else on the board.
+    fn draw_king_names(
+        &self,
+        params: &RenderParams<'_>,
+        geometry: &FrameGeometry,
+        visibility: &Visibility,
+    ) {
+        for (id, king) in &params.state.pieces {
+            if !king.piece_type.is_king() || !visibility.shows(king.position) {
+                continue;
+            }
+            let square = params
+                .animated_positions
+                .get(id)
+                .copied()
+                .unwrap_or_else(|| king.position.0.as_dvec2());
+            self.draw_piece_name(PieceNameDrawParams {
+                piece: king,
+                offset: geometry.offset,
+                state: params.state,
+                zoom: geometry.zoom,
+                tile_size: geometry.tile,
+                pos: geometry.map_pos(square),
+            });
+        }
+    }
+
+    /// Fades everything outside the view radius around the local king to white.
+    fn draw_fog(
+        &self,
+        params: &RenderParams<'_>,
+        geometry: &FrameGeometry,
+        visibility: &Visibility,
+    ) {
+        if !visibility.fogged || params.player_id == PlayerId::nil() {
+            return;
+        }
+        let center = geometry.square_center(visibility.center);
+        let radius = visibility.radius_px;
+        let Ok(gradient) = self.ctx.create_radial_gradient(
+            center.x,
+            center.y,
+            radius * 0.6,
+            center.x,
+            center.y,
+            radius,
+        ) else {
+            return;
+        };
+        let _ = gradient.add_color_stop(0.0, "rgba(255, 255, 255, 0.0)");
+        let _ = gradient.add_color_stop(1.0, "rgba(255, 255, 255, 1.0)");
+        self.ctx.set_fill_style_canvas_gradient(&gradient);
+        self.ctx
+            .fill_rect(0.0, 0.0, params.canvas_size.x, params.canvas_size.y);
     }
 }

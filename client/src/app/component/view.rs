@@ -5,10 +5,10 @@ use crate::components::{
     DisconnectedScreen, EndScreen, EndScreenKind, ErrorToast, FatalNotification, GameView,
     JoinScreen, Leaderboard,
 };
-use crate::reducer::{GameStateReducer, MsgSender, QueueStatus};
+use crate::reducer::{GameStateReducer, MsgSender};
 use crate::ui_state::{CooldownSeconds, JoinStep};
-use common::models::{GameModeClientConfig, ModeSummary};
-use common::types::{KitId, ModeId, PlayerId};
+use common::models::ModeSummary;
+use common::types::{KitId, ModeId};
 use yew::prelude::*;
 
 /// Render inputs for the root application view.
@@ -18,20 +18,15 @@ pub struct AppViewProps {
     pub tx: Option<MsgSender>,
     pub show_disconnected: bool,
     pub has_interacted: bool,
-    pub has_match_result: bool,
     pub is_joined: bool,
-    pub is_victory: bool,
     pub force_join_overlay: bool,
-    pub player_id: PlayerId,
     pub player_name: String,
     pub join_step: JoinStep,
     pub on_name_input: Callback<InputEvent>,
     pub on_name_submit: Callback<SubmitEvent>,
     pub on_join: Callback<KitId>,
     pub landing_cooldown: CooldownSeconds,
-    pub queue_status: Option<QueueStatus>,
     pub is_joining: bool,
-    pub mode: Option<GameModeClientConfig>,
     pub mode_options: Vec<ModeSummary>,
     pub selected_mode_id: ModeId,
     pub on_select_mode: Callback<ModeId>,
@@ -45,16 +40,17 @@ pub fn render_app(props: AppViewProps) -> Html {
     let global_cfg = props.global_cfg;
     let reducer = props.reducer;
     let tx = props.tx;
-    let has_match_result = props.has_match_result;
+    let has_match_result = reducer.has_match_result();
     let is_joined = props.is_joined;
-    let is_victory = props.is_victory;
+    let is_victory = reducer.is_victory();
     let force_join_overlay = props.force_join_overlay;
-    let player_id = props.player_id;
-    let show_scoreboard = props
+    let player_id = reducer.viewer_id();
+    let queue_status = reducer.queue_status.clone();
+    let show_scoreboard = reducer
         .mode
         .as_ref()
-        .map(|mode| mode.show_scoreboard)
-        .unwrap_or(true);
+        .is_none_or(|mode| mode.show_scoreboard);
+    let victory = reducer.victory.clone();
 
     html! {
         <div style="margin: 0; padding: 0; width: 100vw; height: 100vh; overflow: hidden; position: relative; background: #f0f2f5;">
@@ -70,7 +66,6 @@ pub fn render_app(props: AppViewProps) -> Html {
                     key="stable-game-view"
                     reducer={reducer.clone()}
                     tx={sender}
-                    render_interval_ms={global_cfg.render_interval_ms}
                     globals={global_cfg.clone()}
                     player_name={props.player_name.clone()}
                 />
@@ -86,7 +81,7 @@ pub fn render_app(props: AppViewProps) -> Html {
             if props.show_disconnected {
                 <DisconnectedScreen
                     show={true}
-                    disconnected={reducer.disconnected && !reducer.fatal_error && (is_joined || props.queue_status.is_some()) && !has_match_result}
+                    disconnected={reducer.disconnected && !reducer.fatal_error && (is_joined || queue_status.is_some()) && !has_match_result}
                     title={reducer.disconnected_title.clone()}
                     msg={reducer.disconnected_msg.clone()}
                 />
@@ -101,12 +96,12 @@ pub fn render_app(props: AppViewProps) -> Html {
             if has_match_result && !force_join_overlay {
                 <EndScreen
                     kind={if is_victory { EndScreenKind::Victory } else { EndScreenKind::Defeat }}
-                    title={reducer.victory_title.clone()}
-                    message={reducer.victory_msg.clone()}
-                    score={reducer.last_score}
-                    kills={reducer.last_kills}
-                    captured={reducer.last_captured}
-                    survival_secs={reducer.last_survival_secs}
+                    title={victory.as_ref().map(|victory| victory.title.clone())}
+                    message={victory.as_ref().map(|victory| victory.message.clone())}
+                    score={reducer.stats.score}
+                    kills={reducer.stats.kills}
+                    captured={reducer.stats.captured}
+                    survival_secs={reducer.stats.survival_secs}
                     on_rejoin={props.on_rejoin.clone()}
                     rejoin_cooldown={props.rejoin_cooldown}
                 />
@@ -145,10 +140,10 @@ pub fn render_app(props: AppViewProps) -> Html {
                     landing_cooldown={props.landing_cooldown}
                     join_step={props.join_step}
                     on_join={props.on_join.clone()}
-                    error={reducer.error.clone()}
-                    queue_status={props.queue_status.clone()}
+                    error={reducer.error.as_ref().map(|notice| notice.error.clone())}
+                    queue_status={queue_status.clone()}
                     is_loading={props.is_joining}
-                    mode={props.mode.clone()}
+                    mode={reducer.mode.clone()}
                     mode_options={props.mode_options.clone()}
                     selected_mode_id={props.selected_mode_id.clone()}
                     on_select_mode={props.on_select_mode.clone()}
@@ -156,9 +151,9 @@ pub fn render_app(props: AppViewProps) -> Html {
                 />
             }
 
-            if let Some(error) = &reducer.error {
+            if let Some(notice) = &reducer.error {
                 if is_joined && !has_match_result {
-                    <ErrorToast error={error.clone()} />
+                    <ErrorToast key={notice.serial} error={notice.error.clone()} />
                 }
             }
         </div>

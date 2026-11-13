@@ -1,195 +1,134 @@
-//! Matchmaking queue tracking for queue-based modes.
+//! Matchmaking queues of queue-based modes.
 
-use super::ServerState;
-use crate::instance::GameInstance;
-use crate::types::ConnectionId;
-use common::protocol::ServerMessage;
-use common::types::{KitId, ModeId, PlayerCount};
+use super::connection::Connection;
+use super::lobby::Lobby;
+use crate::instance::{GameInstance, JoinRequest};
+use crate::types::{ClientTx, ConnectionId};
+use common::protocol::{GameError, ServerMessage};
+use common::types::{KitId, ModeId, PlayerCount, QueuePosition};
 use std::sync::Arc;
-use tokio::sync::mpsc;
-use uuid::Uuid;
 
-/// Queue entry for matchmaking modes.
-#[derive(Clone)]
-pub struct MatchQueueEntry {
-    conn_id: ConnectionId,
-    tx: mpsc::Sender<ServerMessage>,
-    name: String,
+/// A connection waiting for a match.
+pub(super) struct QueueEntry {
+    pub(super) conn_id: ConnectionId,
+    tx: ClientTx,
+    pub(super) name: String,
     kit_name: KitId,
 }
 
-impl MatchQueueEntry {
-    /// Creates a new matchmaking queue entry.
-    pub fn new(
-        conn_id: ConnectionId,
-        tx: mpsc::Sender<ServerMessage>,
-        name: String,
-        kit_name: KitId,
-    ) -> Self {
-        Self {
-            conn_id,
-            tx,
+impl Lobby {
+    /// Returns how many connections wait in the queue of a mode.
+    pub(super) fn queue_len(&self, mode_id: &ModeId) -> PlayerCount {
+        PlayerCount::new(self.queues.get(mode_id).map_or(0, Vec::len) as u32)
+    }
+
+    /// Returns the name a queued connection entered.
+    pub(super) fn queued_name(&self, mode_id: &ModeId, conn_id: ConnectionId) -> Option<String> {
+        self.queues
+            .get(mode_id)?
+            .iter()
+            .find(|entry| entry.conn_id == conn_id)
+            .map(|entry| entry.name.clone())
+    }
+
+    /// Puts a connection in its mode's queue and starts a match once enough players wait.
+    pub(super) fn enqueue(&mut self, conn: &Connection, name: String, kit_name: KitId) {
+        let Some(required) = self
+            .mode(&conn.mode_id)
+            .and_then(|mode| mode.queue_requirement())
+        else {
+            conn.send_error(GameError::Internal(
+                "Matchmaking mode is not configured".to_string(),
+            ));
+            return;
+        };
+        self.ensure_preview_watcher(conn);
+
+        let queue = self.queues.entry(conn.mode_id.clone()).or_default();
+        queue.retain(|entry| entry.conn_id != conn.id);
+        queue.push(QueueEntry {
+            conn_id: conn.id,
+            tx: conn.tx.clone(),
             name,
             kit_name,
+        });
+        let required = required.as_u32() as usize;
+        if queue.len() >= required {
+            let players: Vec<QueueEntry> = queue.drain(..required).collect();
+            self.start_match(&conn.mode_id, players);
+            self.refresh_preview(&conn.mode_id);
+        }
+        self.broadcast_queue_state(&conn.mode_id);
+    }
+
+    /// Removes a connection from its mode's queue, updating everyone still waiting.
+    pub(super) fn dequeue(&mut self, mode_id: &ModeId, conn_id: ConnectionId) {
+        let Some(queue) = self.queues.get_mut(mode_id) else {
+            return;
+        };
+        let before = queue.len();
+        queue.retain(|entry| entry.conn_id != conn_id);
+        let removed = queue.len() != before;
+        if queue.is_empty() {
+            self.queues.remove(mode_id);
+        }
+        if removed {
+            self.broadcast_queue_state(mode_id);
         }
     }
 
-    /// Returns the queued connection id.
-    pub fn conn_id(&self) -> ConnectionId {
-        self.conn_id
-    }
-
-    /// Returns the channel sender for this queued client.
-    pub fn tx(&self) -> &mpsc::Sender<ServerMessage> {
-        &self.tx
-    }
-
-    /// Returns the queued player name.
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-
-    /// Returns the queued kit name.
-    pub fn kit_name(&self) -> &KitId {
-        &self.kit_name
-    }
-
-    /// Consumes the entry into its owned components.
-    pub fn into_parts(self) -> (ConnectionId, mpsc::Sender<ServerMessage>, String, KitId) {
-        (self.conn_id, self.tx, self.name, self.kit_name)
-    }
-}
-
-/// Result of attempting to enqueue a player into a matchmaking queue.
-pub enum QueueJoinResult {
-    Waiting,
-    Matched {
-        match_instance: Arc<GameInstance>,
-        players: Vec<MatchQueueEntry>,
-    },
-}
-
-impl ServerState {
-    /// Returns the configured queue size for a mode if it is a matchmaking mode.
-    pub fn queue_target_players(&self, mode_id: &ModeId) -> Option<PlayerCount> {
-        self.config_manager
-            .modes
-            .get(mode_id)
-            .and_then(|mode| mode.queue_requirement())
-    }
-
-    /// Returns the current queue length for a mode.
-    pub async fn queue_len(&self, mode_id: &ModeId) -> PlayerCount {
-        self.queue_entries
-            .read()
-            .await
-            .get(mode_id)
-            .map(|queue| PlayerCount::new(queue.len() as u32))
-            .unwrap_or_else(PlayerCount::zero)
-    }
-
-    /// Returns a snapshot of current queue entries and required size.
-    pub async fn queue_snapshot(
-        &self,
-        mode_id: &ModeId,
-    ) -> Option<(PlayerCount, Vec<MatchQueueEntry>)> {
-        let required = self.queue_target_players(mode_id)?;
-        let entries = self
-            .queue_entries
-            .read()
-            .await
-            .get(mode_id)
-            .cloned()
-            .unwrap_or_default();
-        Some((required, entries))
-    }
-
-    /// Removes a connection from a mode queue if present.
-    pub async fn remove_from_queue(&self, mode_id: &ModeId, conn_id: ConnectionId) -> bool {
-        let mut queues = self.queue_entries.write().await;
-        let (removed, became_empty) = {
-            let Some(entries) = queues.get_mut(mode_id) else {
-                return false;
-            };
-            let before = entries.len();
-            entries.retain(|entry| entry.conn_id != conn_id);
-            (entries.len() != before, entries.is_empty())
+    /// Creates a private match for `players` and moves them into it.
+    fn start_match(&mut self, mode_id: &ModeId, players: Vec<QueueEntry>) {
+        let Some(template) = self.mode(mode_id) else {
+            return;
         };
-        if became_empty {
-            queues.remove(mode_id);
-        }
-        removed
-    }
-
-    /// Returns the queued player name for a connection when present.
-    pub async fn queued_name(&self, mode_id: &ModeId, conn_id: ConnectionId) -> Option<String> {
-        self.queue_entries
-            .read()
-            .await
-            .get(mode_id)
-            .and_then(|entries| {
-                entries
-                    .iter()
-                    .find(|entry| entry.conn_id() == conn_id)
-                    .map(|entry| entry.name().to_string())
-            })
-    }
-
-    /// Enqueues a player for a matchmaking mode.
-    ///
-    /// Returns `None` if the mode is not a matchmaking mode.
-    pub async fn enqueue_matchmaking(
-        &self,
-        mode_id: &ModeId,
-        entry: MatchQueueEntry,
-    ) -> Option<QueueJoinResult> {
-        let required = self.queue_target_players(mode_id)?.as_u32() as usize;
-        let players = {
-            let mut queues = self.queue_entries.write().await;
-            let queue = queues.entry(mode_id.clone()).or_default();
-            if let Some(idx) = queue
-                .iter()
-                .position(|queued| queued.conn_id == entry.conn_id)
-            {
-                queue.remove(idx);
-            }
-            queue.push(entry);
-            if queue.len() < required {
-                return Some(QueueJoinResult::Waiting);
-            }
-            queue.drain(0..required).collect::<Vec<_>>()
-        };
-
-        let template = self.config_manager.modes.get(mode_id)?.clone();
-        let private_mode_id = ModeId::from(format!("{}__{}", mode_id.as_ref(), Uuid::new_v4()));
-        let mut private_mode = template;
-        private_mode.id = private_mode_id.clone();
-        private_mode.queue_players = PlayerCount::zero();
-
-        let match_instance = Arc::new(GameInstance::new(
-            private_mode,
-            mode_id.clone(),
-            self.config_manager
-                .modes
-                .get(mode_id)
-                .and_then(|mode| mode.queue_layout.clone())
-                .map(Arc::new),
-            self.piece_configs.clone(),
-            self.shop_configs.clone(),
-            self.config_manager.global.chat_message_ttl_ms,
+        let instance = Arc::new(GameInstance::private_match(
+            template,
+            self.config.catalog.clone(),
+            self.config.global.chat_ttl(),
         ));
-        match_instance.start_queue_countdown().await;
-        match_instance.spawn_initial_shops().await;
-
+        instance.start_countdown();
+        instance.spawn_initial_shops();
         self.games
-            .write()
-            .await
-            .insert(private_mode_id.clone(), match_instance.clone());
-        self.private_game_ids.write().await.insert(private_mode_id);
+            .insert(instance.mode_id().clone(), instance.clone());
 
-        Some(QueueJoinResult::Matched {
-            match_instance,
-            players,
-        })
+        for entry in players {
+            self.remove_preview_watcher(mode_id, entry.conn_id);
+            let joined = instance.join(JoinRequest {
+                name: entry.name,
+                kit_name: entry.kit_name,
+                tx: entry.tx.clone(),
+                player_id: None,
+                session_secret: None,
+            });
+            match joined {
+                Ok((player_id, secret)) => {
+                    self.bind(entry.conn_id, player_id, instance.clone());
+                    self.send_init(&entry.tx, &instance, player_id, secret);
+                }
+                Err(error) => {
+                    let _ = entry.tx.try_send(ServerMessage::Error(error));
+                }
+            }
+        }
+    }
+
+    /// Tells every queued connection of a mode its position and the queue size.
+    fn broadcast_queue_state(&self, mode_id: &ModeId) {
+        let Some(required_players) = self.mode(mode_id).and_then(|mode| mode.queue_requirement())
+        else {
+            return;
+        };
+        let Some(queue) = self.queues.get(mode_id) else {
+            return;
+        };
+        let queued_players = PlayerCount::new(queue.len() as u32);
+        for (index, entry) in queue.iter().enumerate() {
+            let _ = entry.tx.try_send(ServerMessage::QueueState {
+                position_in_queue: QueuePosition::new(index as u32 + 1),
+                queued_players,
+                required_players,
+            });
+        }
     }
 }

@@ -1,347 +1,315 @@
-//! Player join/leave logic for a game instance.
+//! Player join and departure handling.
 
-use super::GameInstance;
-use crate::time::now_ms;
-use common::models::{GameState, Piece, Player};
-use common::protocol::{GameError, ServerMessage};
-use common::types::{DurationMs, KitId, PieceId, PlayerId, Score, SessionSecret, TimestampMs};
-use tokio::sync::mpsc;
+use super::world::World;
+use crate::spawning::{find_random_nearby_free_pos, find_spawn_pos};
+use crate::types::ClientTx;
+use common::models::{KitConfig, Piece, Player, QueuePresetPlayerConfig};
+use common::protocol::{GameError, GameOverStats, ServerMessage};
+use common::types::{
+    BoardCoord, KitId, PieceId, PieceTypeId, PlayerId, Score, SessionSecret, TimestampMs,
+};
+use rand::Rng;
 
-impl GameInstance {
-    /// Adds a player to the game, spawning their kit pieces.
+/// NPCs this close to a fresh spawn are removed so new players are not ambushed.
+const SPAWN_SAFE_RADIUS: f32 = 15.0;
+
+/// Kit pieces spawn within this many squares of the king.
+const KIT_SPREAD_RADIUS: i32 = 2;
+
+/// Random placement attempts per kit piece before using another spawn spot.
+const KIT_PLACEMENT_ATTEMPTS: usize = 10;
+
+/// A request to enter the match as a player.
+pub struct JoinRequest {
+    pub name: String,
+    pub kit_name: KitId,
+    pub tx: ClientTx,
+    /// Previous player id of a returning player.
+    pub player_id: Option<PlayerId>,
+    /// Secret proving ownership of `player_id`.
+    pub session_secret: Option<SessionSecret>,
+}
+
+/// Why a player leaves the board.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Departure {
+    /// Left voluntarily; receives final stats.
+    Left,
+    /// Connection dropped; announced in chat and treated as leaving.
+    Disconnected,
+    /// Left to join again elsewhere; no final stats are sent.
+    Detached,
+    /// King was captured; the connection stays to show the end screen.
+    Eliminated,
+}
+
+impl Departure {
+    /// Returns true when the player's connection is no longer attached afterwards.
+    fn releases_channel(self) -> bool {
+        !matches!(self, Self::Eliminated)
+    }
+
+    /// Returns true when the departure counts as leaving the match for hooks.
+    fn is_leave(self) -> bool {
+        !matches!(self, Self::Eliminated)
+    }
+}
+
+/// Where a joining player's army is placed.
+struct Deployment {
+    king_id: PieceId,
+    board_rotation_deg: i32,
+}
+
+impl World {
+    /// Adds a player to the match and spawns their army.
     ///
-    /// `name` is the display name, `kit_name` selects the kit, `tx` is the outbound channel,
-    /// `pid` and `provided_secret` allow rejoining an existing player.
-    /// Returns the assigned player id and session secret.
-    pub async fn add_player(
-        &self,
-        name: String,
-        kit_name: KitId,
-        tx: mpsc::Sender<ServerMessage>,
-        pid: Option<PlayerId>,
-        provided_secret: Option<SessionSecret>,
+    /// Returns the player id and the session secret for future rejoins.
+    pub(super) fn join(
+        &mut self,
+        request: JoinRequest,
+        now: TimestampMs,
     ) -> Result<(PlayerId, SessionSecret), GameError> {
-        let kit = self
-            .mode_config
-            .kits
-            .iter()
-            .find(|k| k.name == kit_name)
+        let setup = self.setup.clone();
+        let kit = setup
+            .mode
+            .kit(&request.kit_name)
             .ok_or_else(|| GameError::Internal("Kit not found".to_string()))?;
-        if !kit.pieces.iter().any(|p| p.is_king()) {
+        if !kit.has_king() {
             return Err(GameError::Internal("Kit missing king piece".to_string()));
         }
+        self.check_capacity()?;
 
-        let now = now_ms();
-        let player_id = pid.unwrap_or_default();
-
-        let mut secrets = self.session_secrets.write().await;
-        let session_secret = if let Some((stored_secret, last_use)) = secrets.get_mut(&player_id) {
-            if Some(*stored_secret) != provided_secret {
-                return Err(GameError::Custom {
-                    title: "SESSION ERROR".to_string(),
-                    message: "Invalid session secret for this player ID.".to_string(),
-                });
-            }
-            *last_use = now;
-            *stored_secret
-        } else {
-            let new_secret = SessionSecret::new();
-            secrets.insert(player_id, (new_secret, now));
-            new_secret
-        };
-        drop(secrets);
-
-        let respawn_ms = self.mode_config.respawn_cooldown_ms;
-        if respawn_ms > DurationMs::zero() {
-            let deaths = self.death_timestamps.read().await;
-            if let Some(death_time) = deaths.get(&player_id) {
-                let elapsed = now - *death_time;
-                if elapsed < respawn_ms {
-                    let remaining = (respawn_ms - elapsed).as_u64() / 1000;
-                    return Err(GameError::Custom {
-                        title: "Respawn cooldown".to_string(),
-                        message: format!("Wait {} seconds", remaining.max(1)),
-                    });
-                }
-            }
-        }
-
-        let color = {
-            let active_ids: Vec<PlayerId> =
-                self.player_channels.read().await.keys().cloned().collect();
-            let mut cm = self.color_manager.write().await;
-            cm.get_or_assign_color(player_id, &active_ids)
-        };
-
-        self.player_channels.write().await.insert(player_id, tx);
-        self.victory_players.write().await.remove(&player_id);
-
-        let mut game = self.game.write().await;
-        let was_empty = game.players.is_empty();
-        let new_size =
-            common::logic::calculate_board_size(&self.mode_config, game.players.len() + 1);
-        if new_size > game.board_size {
-            game.board_size = new_size;
-            self.prune_out_of_bounds(&mut game).await;
-        }
-
-        let (king_id, board_rotation_deg) = if self.queue_layout.is_some() {
-            self.spawn_from_queue_layout(&mut game, player_id)?
-        } else {
-            (
-                self.spawn_from_kit(&mut game, player_id, &kit.pieces)
-                    .await?,
-                0,
-            )
-        };
-
-        let joined_player_name = name.clone();
-        let player = Player {
-            id: player_id,
-            name,
-            score: Score::zero(),
-            kills: 0,
-            pieces_captured: 0,
-            join_time: now,
-            king_id,
-            color,
-            board_rotation_deg,
-        };
-
-        game.players.insert(player_id, player);
-        drop(game);
-
-        self.record_player_join_event(joined_player_name).await;
-
-        if was_empty {
-            *self.last_started_at.write().await = now;
-        }
-
-        self.death_timestamps.write().await.remove(&player_id);
-
-        Ok((player_id, session_secret))
-    }
-
-    fn spawn_from_queue_layout(
-        &self,
-        game: &mut GameState,
-        player_id: PlayerId,
-    ) -> Result<(PieceId, i32), GameError> {
-        let queue_layout = self
-            .queue_layout
-            .as_ref()
-            .ok_or_else(|| GameError::Internal("Queue layout missing".to_string()))?;
-        let spawn_slot = game.players.len();
-        let player_layout =
-            queue_layout
-                .players
-                .get(spawn_slot)
-                .ok_or_else(|| GameError::Custom {
-                    title: "Match Full".to_string(),
-                    message: "No more spawn slots are available in this match.".to_string(),
-                })?;
-
-        let mut king_id = None;
-        for layout_piece in &player_layout.pieces {
-            let p_id = PieceId::new();
-            let p_pos = layout_piece.board_coord();
-
-            if !common::logic::is_within_board(p_pos, game.board_size) {
-                return Err(GameError::Internal(format!(
-                    "Queue preset position {} is outside board size {}",
-                    p_pos, game.board_size
-                )));
-            }
-            if game.pieces.values().any(|piece| piece.position == p_pos) {
-                return Err(GameError::Internal(format!(
-                    "Queue preset position {} is occupied",
-                    p_pos
-                )));
-            }
-
-            if layout_piece.piece_id.is_king() {
-                king_id = Some(p_id);
-            }
-
-            game.pieces.insert(
-                p_id,
-                Piece {
-                    id: p_id,
-                    owner_id: Some(player_id),
-                    piece_type: layout_piece.piece_id.clone(),
-                    position: p_pos,
-                    last_move_time: TimestampMs::from_millis(0),
-                    cooldown_ms: DurationMs::zero(),
-                },
-            );
-        }
-
-        let king_id = king_id
-            .ok_or_else(|| GameError::Internal("Queue preset missing king piece".to_string()))?;
-        Ok((king_id, player_layout.board_rotation_deg))
-    }
-
-    async fn spawn_from_kit(
-        &self,
-        game: &mut GameState,
-        player_id: PlayerId,
-        kit_pieces: &[common::types::PieceTypeId],
-    ) -> Result<PieceId, GameError> {
-        let spawn_pos = crate::spawning::find_spawn_pos(game);
-
-        // Clear NPCs near spawn to avoid unfair immediate collisions.
+        let player_id = request.player_id.unwrap_or_default();
+        let session_secret = self
+            .sessions
+            .authenticate(player_id, request.session_secret, now)?;
+        if let Some(wait) =
+            self.sessions
+                .respawn_wait(player_id, setup.mode.respawn_cooldown_ms, now)
         {
-            let mut rp = self.removed_pieces.write().await;
-            game.pieces.retain(|id, p| {
-                if p.owner_id.is_none() && (p.position - spawn_pos).as_vec2().length() <= 15.0 {
-                    rp.push(*id);
-                    false
-                } else {
-                    true
-                }
+            return Err(GameError::Custom {
+                title: "Respawn cooldown".to_string(),
+                message: format!("Wait {} seconds", (wait.as_u64() / 1000).max(1)),
             });
         }
 
-        let mut king_id = None;
-        let mut rng = rand::thread_rng();
-        for p_type_id in kit_pieces {
-            let p_id = PieceId::new();
-            let p_pos = if p_type_id.is_king() {
-                king_id = Some(p_id);
-                if crate::spawning::is_free_position(game, spawn_pos) {
-                    spawn_pos
-                } else {
-                    crate::spawning::find_random_nearby_free_pos(
-                        game,
-                        spawn_pos,
-                        &mut rng,
-                        -2..=2,
-                        10,
-                    )
-                    .unwrap_or_else(|| crate::spawning::find_spawn_pos(game))
-                }
-            } else {
-                crate::spawning::find_random_nearby_free_pos(game, spawn_pos, &mut rng, -2..=2, 10)
-                    .or_else(|| {
-                        if crate::spawning::is_free_position(game, spawn_pos) {
-                            Some(spawn_pos)
-                        } else {
-                            None
-                        }
-                    })
-                    .unwrap_or_else(|| crate::spawning::find_spawn_pos(game))
-            };
-
-            game.pieces.insert(
-                p_id,
-                Piece {
-                    id: p_id,
-                    owner_id: Some(player_id),
-                    piece_type: p_type_id.clone(),
-                    position: common::BoardCoord(p_pos),
-                    last_move_time: TimestampMs::from_millis(0),
-                    cooldown_ms: DurationMs::zero(),
-                },
-            );
-        }
-
-        king_id.ok_or_else(|| GameError::Internal("Kit missing king piece".to_string()))
-    }
-
-    /// Removes a player from the game and emits a final score message.
-    ///
-    /// `player_id` identifies the player to remove. Returns nothing.
-    pub async fn remove_player(&self, player_id: PlayerId) {
-        self.send_game_over(player_id).await;
-        self.remove_player_from_instance(player_id, true).await;
-    }
-
-    /// Sends the departing player their final score payload before removal.
-    async fn send_game_over(&self, player_id: PlayerId) {
-        let stats = {
-            let game = self.game.read().await;
-            game.players
-                .get(&player_id)
-                .map(|p| (p.score, p.kills, p.pieces_captured, p.join_time))
+        self.grow_board_for(self.state.players.len() + 1);
+        let deployment = match &setup.mode.queue_layout {
+            Some(layout) => {
+                let slot = layout
+                    .players
+                    .get(self.state.players.len())
+                    .ok_or_else(|| GameError::Custom {
+                        title: "Match Full".to_string(),
+                        message: "No more spawn slots are available in this match.".to_string(),
+                    })?;
+                self.deploy_layout(player_id, slot)?
+            }
+            None => self.deploy_kit(player_id, kit),
         };
 
-        if let Some((score, kills, pieces_captured, join_time)) = stats {
-            let now_ms = now_ms();
-            let duration = (now_ms - join_time).as_u64() / 1000;
-            let channels = self.player_channels.read().await;
-            if let Some(tx) = channels.get(&player_id) {
-                let _ = tx.try_send(ServerMessage::GameOver {
-                    final_score: score,
-                    kills,
-                    pieces_captured,
-                    time_survived_secs: duration,
-                });
-            }
+        let color = self
+            .colors
+            .get_or_assign_color(player_id, &self.outbox.player_ids(), now);
+        let was_empty = self.state.players.is_empty();
+        self.record_join(request.name.clone());
+        self.state.players.insert(
+            player_id,
+            Player {
+                id: player_id,
+                name: request.name,
+                score: Score::zero(),
+                kills: 0,
+                pieces_captured: 0,
+                join_time: now,
+                king_id: deployment.king_id,
+                color,
+                board_rotation_deg: deployment.board_rotation_deg,
+            },
+        );
+        self.outbox.add_player(player_id, request.tx);
+        self.actions.forget_player(player_id);
+        self.victors.remove(&player_id);
+        self.sessions.clear_death(player_id);
+        if was_empty {
+            self.clock.last_started_at = now;
         }
+        Ok((player_id, session_secret))
     }
 
-    /// Removes a player from the game without locking player_channels (caller must hold it).
-    pub(super) async fn remove_player_only_state(&self, player_id: PlayerId) {
-        self.remove_player_from_instance(player_id, false).await;
-    }
-
-    /// Removes a player from the game without sending a GameOver payload.
+    /// Removes a player from the match.
     ///
-    /// Used when a player is leaving via the join flow.
-    pub async fn detach_player(&self, player_id: PlayerId) {
-        self.remove_player_from_instance(player_id, true).await;
-    }
-
-    /// Removes one player from live state and clears any stale queued premoves they owned.
-    async fn remove_player_from_instance(&self, player_id: PlayerId, remove_channel: bool) {
-        let (removed, removed_piece_ids) = {
-            let mut game = self.game.write().await;
-            if remove_channel {
-                self.player_channels.write().await.remove(&player_id);
-            }
-            let (removed_internal, pieces) = self.remove_player_state(player_id, &mut game).await;
-            if removed_internal {
-                self.record_player_leave_event().await;
-            }
-            (removed_internal, pieces)
-        };
-
-        if removed {
-            self.clear_queued_moves_for_pieces(removed_piece_ids).await;
-        }
-    }
-
-    /// Removes a player from active state and cleans up their owned pieces.
-    ///
-    /// `player_id` identifies the removed player and `game` is the mutable state to update.
-    pub(super) async fn remove_player_state(
-        &self,
+    /// Returns true when the player was still on the board.
+    pub(super) fn remove_player(
+        &mut self,
         player_id: PlayerId,
-        game: &mut GameState,
-    ) -> (bool, Vec<PieceId>) {
-        if game.players.remove(&player_id).is_none() {
-            return (false, Vec::new());
+        departure: Departure,
+        now: TimestampMs,
+    ) -> bool {
+        let Some(player) = self.state.players.get(&player_id) else {
+            if departure.releases_channel() {
+                self.outbox.remove_player(player_id);
+            }
+            return false;
+        };
+
+        match departure {
+            Departure::Left | Departure::Disconnected => {
+                let stats = GameOverStats {
+                    final_score: player.score,
+                    kills: player.kills,
+                    pieces_captured: player.pieces_captured,
+                    time_survived_secs: (now - player.join_time).as_u64() / 1000,
+                };
+                if departure == Departure::Disconnected {
+                    self.record_disconnect(player.name.clone());
+                }
+                self.outbox
+                    .send_to_player(player_id, ServerMessage::GameOver(stats));
+            }
+            Departure::Detached | Departure::Eliminated => {}
         }
 
-        self.victory_players.write().await.remove(&player_id);
-        self.removed_players.write().await.push(player_id);
-        self.death_timestamps
-            .write()
-            .await
-            .insert(player_id, now_ms());
-        let mut removed_piece_log = self.removed_pieces.write().await;
-        let mut removed_piece_ids = Vec::new();
-        game.pieces.retain(|id, p| {
-            if p.owner_id == Some(player_id) {
-                removed_piece_log.push(*id);
-                removed_piece_ids.push(*id);
-                false
-            } else {
-                true
-            }
-        });
-        drop(removed_piece_log);
+        self.state.players.remove(&player_id);
+        if departure.releases_channel() {
+            self.outbox.remove_player(player_id);
+        }
+        if departure.is_leave() {
+            self.record_leave();
+        }
+        self.victors.remove(&player_id);
+        self.sessions.record_death(player_id, now);
+        let removed = self
+            .state
+            .remove_pieces_where(|piece| piece.owner_id == Some(player_id));
+        self.cancel_actions_of(removed);
+        true
+    }
 
-        (true, removed_piece_ids)
+    /// Rejects joins once the mode's player limit is reached.
+    fn check_capacity(&self) -> Result<(), GameError> {
+        let max_players = self.setup.mode.max_players.as_u32() as usize;
+        if max_players > 0 && self.state.players.len() >= max_players {
+            return Err(GameError::Custom {
+                title: "Game Full".to_string(),
+                message: "This game is full. Try again later.".to_string(),
+            });
+        }
+        Ok(())
+    }
+
+    /// Enlarges the board when the mode wants more room for `player_count` players.
+    fn grow_board_for(&mut self, player_count: usize) {
+        let wanted = self.setup.mode.board_size_for(player_count);
+        if wanted > self.state.board_size {
+            self.state.board_size = wanted;
+        }
+    }
+
+    /// Places a queue-mode preset army; nothing is placed unless every square is usable.
+    fn deploy_layout(
+        &mut self,
+        player_id: PlayerId,
+        slot: &QueuePresetPlayerConfig,
+    ) -> Result<Deployment, GameError> {
+        for placement in &slot.pieces {
+            let pos = placement.board_coord();
+            if !self.state.board_size.contains(pos) {
+                return Err(GameError::Internal(format!(
+                    "Queue preset position {pos} is outside board size {}",
+                    self.state.board_size
+                )));
+            }
+            if self.state.piece_at(pos).is_some() {
+                return Err(GameError::Internal(format!(
+                    "Queue preset position {pos} is occupied"
+                )));
+            }
+        }
+        if !slot
+            .pieces
+            .iter()
+            .any(|placement| placement.piece_id.is_king())
+        {
+            return Err(GameError::Internal(
+                "Queue preset missing king piece".to_string(),
+            ));
+        }
+
+        let mut king_id = PieceId::nil();
+        for placement in &slot.pieces {
+            let id = self.place_piece(player_id, &placement.piece_id, placement.board_coord());
+            if placement.piece_id.is_king() {
+                king_id = id;
+            }
+        }
+        Ok(Deployment {
+            king_id,
+            board_rotation_deg: slot.board_rotation_deg,
+        })
+    }
+
+    /// Places a kit army around a fresh spawn point, clearing nearby NPCs first.
+    fn deploy_kit(&mut self, player_id: PlayerId, kit: &KitConfig) -> Deployment {
+        let mut rng = rand::thread_rng();
+        let spawn = find_spawn_pos(&self.state, &mut rng);
+        self.state.remove_pieces_where(|piece| {
+            !piece.is_player_owned()
+                && (piece.position - spawn).as_vec2().length() <= SPAWN_SAFE_RADIUS
+        });
+
+        let mut king_id = PieceId::nil();
+        for piece_type in &kit.pieces {
+            let pos = self.kit_piece_position(spawn, piece_type.is_king(), &mut rng);
+            let id = self.place_piece(player_id, piece_type, pos);
+            if piece_type.is_king() {
+                king_id = id;
+            }
+        }
+        Deployment {
+            king_id,
+            board_rotation_deg: 0,
+        }
+    }
+
+    /// Picks a square for one kit piece near `spawn`.
+    ///
+    /// Kings prefer the spawn square itself, other pieces prefer squares around it.
+    fn kit_piece_position(
+        &self,
+        spawn: BoardCoord,
+        is_king: bool,
+        rng: &mut impl Rng,
+    ) -> BoardCoord {
+        let spawn_if_free = || self.state.is_free(spawn).then_some(spawn);
+        let mut nearby = || {
+            find_random_nearby_free_pos(
+                &self.state,
+                spawn,
+                &mut *rng,
+                KIT_SPREAD_RADIUS,
+                KIT_PLACEMENT_ATTEMPTS,
+            )
+        };
+        let preferred = if is_king {
+            spawn_if_free().or_else(nearby)
+        } else {
+            nearby().or_else(spawn_if_free)
+        };
+        preferred.unwrap_or_else(|| find_spawn_pos(&self.state, rng))
+    }
+
+    /// Inserts one ready-to-move piece for `player_id`.
+    fn place_piece(
+        &mut self,
+        player_id: PlayerId,
+        piece_type: &PieceTypeId,
+        pos: BoardCoord,
+    ) -> PieceId {
+        let piece = Piece::new(Some(player_id), piece_type.clone(), pos);
+        let id = piece.id;
+        self.state.pieces.insert(id, piece);
+        id
     }
 }

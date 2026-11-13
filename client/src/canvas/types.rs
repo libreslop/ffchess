@@ -1,9 +1,10 @@
 //! Data structures used by the canvas renderer.
 
-use crate::components::game_view::helpers::VisiblePremoveLine;
 use crate::math::Vec2;
-use common::models::{GameModeClientConfig, GameState, Piece, PieceConfig, ShopConfig};
-use common::types::{PieceId, PieceTypeId, PlayerId, ShopId};
+use crate::premoves::Projection;
+use common::models::{GameModeClientConfig, GameState, Piece};
+use common::rules::Catalog;
+use common::types::{BoardCoord, PieceId, PieceTypeId, PlayerId};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
@@ -12,8 +13,8 @@ use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, HtmlImageElement};
 /// Canvas renderer with cached configs and drawing state.
 #[derive(Clone)]
 pub struct Renderer {
-    pub ctx: CanvasRenderingContext2d,
-    pub piece_configs: HashMap<PieceTypeId, PieceConfig>,
+    pub(crate) ctx: CanvasRenderingContext2d,
+    pub(crate) catalog: Rc<Catalog>,
     pub(crate) svg_cache: Rc<RefCell<PieceSvgCache>>,
 }
 
@@ -21,16 +22,10 @@ pub struct Renderer {
 #[derive(Default)]
 pub(crate) struct PieceSvgCache {
     pub(crate) templates: HashMap<PieceTypeId, String>,
-    pub(crate) pending: HashSet<PieceTypeId>,
+    /// Piece types whose template is being fetched or failed to load.
+    pub(crate) requested: HashSet<PieceTypeId>,
     pub(crate) images: HashMap<PieceSvgKey, HtmlImageElement>,
     pub(crate) rasters: HashMap<PieceSvgKey, HtmlCanvasElement>,
-}
-
-impl PieceSvgCache {
-    /// Creates an empty SVG cache.
-    pub(crate) fn new() -> Self {
-        Self::default()
-    }
 }
 
 /// Cache key for a specific piece icon tinted with team colors.
@@ -44,31 +39,29 @@ pub(crate) struct PieceSvgKey {
 
 /// Parameters for drawing a single piece.
 #[derive(Clone, Copy)]
-pub struct PieceDrawParams<'a> {
+pub(crate) struct PieceDrawParams<'a> {
     pub piece: &'a Piece,
     pub player_id: PlayerId,
-    pub offset_x: f64,
-    pub offset_y: f64,
+    pub offset: Vec2,
     pub alpha: f64,
     pub state: &'a GameState,
-    pub draw_name: bool,
     pub is_ghost: bool,
-    pub pos_override: Option<Vec2>,
-    pub tile_size_px: f64,
+    /// Square position to draw at, possibly fractional while animating.
+    pub pos: Vec2,
+    pub tile_size: f64,
+    pub zoom: f64,
     pub clock_offset_ms: i64,
 }
 
 /// Parameters for drawing a piece name overlay.
 #[derive(Clone, Copy)]
-pub struct PieceNameDrawParams<'a> {
+pub(crate) struct PieceNameDrawParams<'a> {
     pub piece: &'a Piece,
-    pub offset_x: f64,
-    pub offset_y: f64,
-    pub alpha: f64,
+    pub offset: Vec2,
     pub state: &'a GameState,
     pub zoom: f64,
-    pub tile_size_px: f64,
-    pub pos_override: Option<Vec2>,
+    pub tile_size: f64,
+    pub pos: Vec2,
 }
 
 /// Parameters for a single render pass.
@@ -77,8 +70,7 @@ pub struct RenderParams<'a> {
     pub state: &'a GameState,
     pub player_id: PlayerId,
     pub selected_piece_id: Option<PieceId>,
-    pub pmove_lines: &'a [VisiblePremoveLine],
-    pub ghost_pieces: &'a HashMap<PieceId, Piece>,
+    pub projection: &'a Projection,
     pub animated_positions: &'a HashMap<PieceId, Vec2>,
     pub camera_pos: Vec2,
     pub canvas_size: Vec2,
@@ -86,8 +78,7 @@ pub struct RenderParams<'a> {
     pub tile_size_px: f64,
     pub mode: Option<&'a GameModeClientConfig>,
     pub board_rotated_180: bool,
-    pub shop_configs: &'a HashMap<ShopId, ShopConfig>,
-    pub active_shop_highlight_pos: Option<common::types::BoardCoord>,
+    pub active_shop_highlight_pos: Option<BoardCoord>,
     pub disable_fog_of_war: bool,
     pub clock_offset_ms: i64,
 }

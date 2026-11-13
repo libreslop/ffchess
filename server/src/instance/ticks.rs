@@ -1,95 +1,58 @@
-//! Periodic tick processing for game instances.
+//! Periodic simulation step of a game instance.
 
-use super::GameInstance;
-use crate::time::now_ms;
-use common::protocol::ServerMessage;
-use common::types::DurationMs;
+use super::world::World;
+use common::types::{DurationMs, TimestampMs};
 
-impl GameInstance {
-    /// Runs a single server tick: updates timers, broadcasts state, and cleans up.
+/// Instances nobody has looked at for this long stop simulating.
+const IDLE_AFTER: DurationMs = DurationMs(5000);
+
+/// Housekeeping runs once every this many ticks (about a minute at 10 ticks per second).
+const HOUSEKEEPING_EVERY_TICKS: u64 = 600;
+
+impl World {
+    /// Runs one tick: actions, NPCs, board resizing, hooks, then a snapshot broadcast.
+    pub(super) fn tick(&mut self, now: TimestampMs) {
+        if !self.outbox.is_empty() {
+            self.clock.last_viewed_at = now;
+        }
+        if now - self.clock.last_viewed_at < IDLE_AFTER {
+            self.process_actions(now);
+            self.spawn_npcs(now);
+            self.tick_npcs(now);
+        }
+
+        if self.clock.ticks.is_multiple_of(HOUSEKEEPING_EVERY_TICKS) {
+            self.sessions.prune(now);
+            self.colors.cleanup(now);
+        }
+        self.clock.ticks += 1;
+        for player_id in self.outbox.player_ids() {
+            self.colors.update_activity(player_id, now);
+        }
+
+        self.shrink_board();
+        self.resolve_hooks(now);
+        let update = self.update_message();
+        self.outbox.broadcast(&update);
+    }
+
+    /// Shrinks the board to the mode's size for the current player count.
     ///
-    /// Returns nothing; this mutates game state and sends updates.
-    pub async fn handle_tick(&self) {
-        self.start_tick_hooks().await;
-        let now = now_ms();
-        let players_viewing = !self.player_channels.read().await.is_empty()
-            || !self.connection_channels.read().await.is_empty();
-
-        if players_viewing {
-            *self.last_viewed_at.write().await = now;
+    /// The board only shrinks once no player piece would end up outside it.
+    fn shrink_board(&mut self) {
+        let target = self.setup.mode.board_size_for(self.state.players.len());
+        if target >= self.state.board_size {
+            return;
         }
-
-        let last_viewed = *self.last_viewed_at.read().await;
-        if now - last_viewed < DurationMs::from_millis(5000) {
-            self.process_queued_moves().await;
-            self.spawn_npcs().await;
-            self.tick_npcs().await;
+        let strands_player_piece = self
+            .state
+            .pieces
+            .values()
+            .any(|piece| piece.is_player_owned() && !target.contains(piece.position));
+        if !strands_player_piece {
+            self.state.board_size = target;
+            let removed = self.state.prune_out_of_bounds();
+            self.cancel_actions_of(removed);
         }
-
-        // Periodic cleanup (approx. every minute)
-        static TICK_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-        let tick = TICK_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        if tick.is_multiple_of(600) {
-            // Cleanup death timestamps
-            let mut dt = self.death_timestamps.write().await;
-            dt.retain(|_, timestamp_ms| {
-                now - *timestamp_ms <= DurationMs::from_millis(10 * 60 * 1000)
-            });
-
-            // Cleanup session secrets (older than 5 minutes)
-            let mut ss = self.session_secrets.write().await;
-            ss.retain(|_, (_, last_use)| now - *last_use <= DurationMs::from_millis(5 * 60 * 1000));
-
-            let mut cm = self.color_manager.write().await;
-            cm.cleanup(now.as_i64() / 1000, 24 * 60 * 60);
-        }
-
-        {
-            let mut cm = self.color_manager.write().await;
-            let channels = self.player_channels.read().await;
-            for player_id in channels.keys() {
-                cm.update_activity(*player_id);
-            }
-        }
-
-        {
-            let mut game = self.game.write().await;
-            let target_size =
-                common::logic::calculate_board_size(&self.mode_config, game.players.len());
-            if target_size < game.board_size {
-                let any_player_pieces_outside = game.pieces.values().any(|p| {
-                    p.owner_id.is_some() && !common::logic::is_within_board(p.position, target_size)
-                });
-
-                if !any_player_pieces_outside {
-                    game.board_size = target_size;
-                    self.prune_out_of_bounds(&mut game).await;
-                }
-            }
-        }
-
-        self.resolve_tick_hooks().await;
-
-        let removed_pieces = {
-            let mut rp = self.removed_pieces.write().await;
-            std::mem::take(&mut *rp)
-        };
-        let removed_players = {
-            let mut rp = self.removed_players.write().await;
-            std::mem::take(&mut *rp)
-        };
-
-        let update_msg = {
-            let game = self.game.read().await;
-            ServerMessage::UpdateState {
-                players: game.players.values().cloned().collect(),
-                pieces: game.pieces.values().cloned().collect(),
-                shops: game.shops.clone(),
-                removed_pieces,
-                removed_players,
-                board_size: game.board_size,
-            }
-        };
-        self.broadcast(update_msg).await;
     }
 }

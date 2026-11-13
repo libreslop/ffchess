@@ -5,6 +5,7 @@ mod camera;
 mod canvas;
 mod components;
 mod math;
+mod premoves;
 mod reducer;
 mod ui_state;
 mod utils;

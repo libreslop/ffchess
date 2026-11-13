@@ -1,7 +1,7 @@
 use glam::IVec2;
 use serde::{Deserialize, Serialize};
 use std::fmt;
-use std::ops::Sub;
+use std::ops::{Add, Sub};
 
 /// Total board dimension in tiles (square board).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, PartialOrd, Ord)]
@@ -24,35 +24,39 @@ impl BoardSize {
         self.0 / 2
     }
 
-    /// Returns the inclusive coordinate limit for positive positions.
+    /// Returns the exclusive coordinate limit for positive positions.
     pub fn limit_pos(self) -> i32 {
         (self.0 + 1) / 2
+    }
+
+    /// Returns true when `pos` lies on this board.
+    ///
+    /// Boards are centred on the origin and span `-half..limit_pos` on both axes.
+    pub fn contains(self, pos: BoardCoord) -> bool {
+        let range = -self.half()..self.limit_pos();
+        range.contains(&pos.0.x) && range.contains(&pos.0.y)
     }
 }
 
 impl Default for BoardSize {
-    /// Provides the default board size.
     fn default() -> Self {
         Self(40)
     }
 }
 
 impl From<i32> for BoardSize {
-    /// Wraps a raw tile size as a board size.
     fn from(value: i32) -> Self {
         Self::new(value)
     }
 }
 
 impl From<BoardSize> for i32 {
-    /// Unwraps a board size into its raw tile dimension.
     fn from(value: BoardSize) -> Self {
         value.0
     }
 }
 
 impl fmt::Display for BoardSize {
-    /// Formats the board size as a decimal string.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
     }
@@ -73,25 +77,15 @@ impl BoardCoord {
     pub fn as_ivec2(self) -> IVec2 {
         self.0
     }
-}
 
-impl PartialEq<IVec2> for BoardCoord {
-    fn eq(&self, other: &IVec2) -> bool {
-        self.0 == *other
+    /// Returns the Chebyshev (king-move) distance between two coordinates.
+    pub fn chebyshev_distance(self, other: BoardCoord) -> i32 {
+        (self.0 - other.0).abs().max_element()
     }
-}
 
-impl PartialEq<BoardCoord> for IVec2 {
-    fn eq(&self, other: &BoardCoord) -> bool {
-        *self == other.0
-    }
-}
-
-impl Sub<IVec2> for BoardCoord {
-    type Output = IVec2;
-
-    fn sub(self, rhs: IVec2) -> Self::Output {
-        self.0 - rhs
+    /// Returns the squared Euclidean distance between two coordinates.
+    pub fn distance_squared(self, other: BoardCoord) -> i32 {
+        (self.0 - other.0).length_squared()
     }
 }
 
@@ -100,6 +94,14 @@ impl Sub<BoardCoord> for BoardCoord {
 
     fn sub(self, rhs: BoardCoord) -> Self::Output {
         self.0 - rhs.0
+    }
+}
+
+impl Add<IVec2> for BoardCoord {
+    type Output = BoardCoord;
+
+    fn add(self, rhs: IVec2) -> Self::Output {
+        BoardCoord(self.0 + rhs)
     }
 }
 

@@ -33,12 +33,14 @@ Examples:
 
 ### How Paths Are Interpreted
 
-The validator in `common/src/logic.rs` works like this:
+The validator `PieceConfig::check_move` in `common/src/rules/movement.rs` works like this:
 
 1. Pick `move_paths` for quiet moves or `capture_paths` for captures.
 2. Compute the displacement from the start square to the target square.
 3. For each path, compare the target displacement to every step in that path.
 4. If the target matches step `n`, every earlier step in that same path must be empty.
+   When several paths reach the target, one clear path is enough; when all are blocked the
+   move is rejected with `PathBlocked`.
 
 That means long sliding pieces are represented as one path per direction, not one path per final square.
 

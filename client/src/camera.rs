@@ -2,7 +2,6 @@
 
 use crate::math::Vec2;
 use crate::reducer::ClientPhase;
-use common::logic::evaluate_expression;
 use common::models::JoinCameraCenterConfig;
 use common::protocol::VictoryFocusTarget;
 use common::*;
@@ -184,17 +183,15 @@ pub fn update_camera(manager: &mut CameraManager, params: CameraUpdateParams<'_>
 
             // 4. Global Clamping (Respect camera_pan_limit)
             if let Some(m) = params.mode {
-                let mut vars = std::collections::HashMap::new();
-                vars.insert("player_piece_count".to_string(), params.piece_count as f64);
-
+                let mut vars =
+                    ExprVars::new().with("player_piece_count", params.piece_count as f64);
                 let fog_of_war_radius = m
                     .fog_of_war_radius
                     .as_ref()
-                    .map(|expr| evaluate_expression(expr, &vars))
-                    .unwrap_or(0.0);
-                vars.insert("fog_of_war_radius".to_string(), fog_of_war_radius);
+                    .map_or(0.0, |expr| expr.evaluate(&vars));
+                vars.set("fog_of_war_radius", fog_of_war_radius);
 
-                let limit_radius_tiles = evaluate_expression(&m.camera_pan_limit, &vars);
+                let limit_radius_tiles = m.camera_pan_limit.evaluate(&vars);
                 let limit_radius_px = limit_radius_tiles * tile_size;
 
                 let delta = manager.camera - king_pos;

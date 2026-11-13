@@ -1,99 +1,101 @@
 //! Callback builders for the root application component.
 
-use crate::reducer::{GameAction, GameStateReducer, MsgSender};
+use crate::app::ws::ReducerRef;
+use crate::reducer::{DisconnectNotice, GameAction, GameStateReducer, MsgSender};
 use crate::ui_state::{CooldownSeconds, JoinStep, RejoinFlow};
-use crate::utils::{
-    get_stored_id, get_stored_secret, is_mobile, request_fullscreen, set_stored_name,
-};
+use crate::utils::{SessionStore, is_mobile, request_fullscreen, store_name};
 use common::protocol::ClientMessage;
 use common::types::{KitId, ModeId};
 use std::cell::RefCell;
 use std::rc::Rc;
 use yew::prelude::*;
 
-/// Builds the callback used to rejoin after a match ends.
-pub fn build_on_rejoin(
-    rc_ref: Rc<RefCell<CooldownSeconds>>,
-    reducer: UseReducerHandle<GameStateReducer>,
-    join_step: UseStateHandle<JoinStep>,
-    has_interacted: UseStateHandle<bool>,
-    rejoin_flow: UseStateHandle<RejoinFlow>,
+/// Moves the join flow to kit selection, joining right away when only one kit exists.
+pub fn advance_to_kit_selection(
+    join_step: &UseStateHandle<JoinStep>,
     single_kit: Option<KitId>,
-    on_join: Callback<KitId>,
-) -> Callback<MouseEvent> {
+    on_join: &Callback<KitId>,
+) {
+    join_step.set(JoinStep::SelectKit);
+    if let Some(kit_id) = single_kit {
+        on_join.emit(kit_id);
+    }
+}
+
+/// Inputs of the rejoin callback.
+pub struct RejoinInputs {
+    pub rejoin_cooldown: Rc<RefCell<CooldownSeconds>>,
+    pub reducer: UseReducerHandle<GameStateReducer>,
+    pub join_step: UseStateHandle<JoinStep>,
+    pub has_interacted: UseStateHandle<bool>,
+    pub rejoin_flow: UseStateHandle<RejoinFlow>,
+    pub single_kit: Option<KitId>,
+    pub on_join: Callback<KitId>,
+}
+
+/// Builds the callback used to rejoin after a match ends.
+pub fn build_on_rejoin(inputs: RejoinInputs) -> Callback<MouseEvent> {
     Callback::from(move |_| {
-        if rc_ref.borrow().is_zero() {
-            has_interacted.set(true);
-            if reducer.disconnected {
-                return;
-            }
-            let rejoin_single_kit = single_kit.clone().or_else(|| {
-                reducer
-                    .mode
-                    .as_ref()
-                    .and_then(|mode| (mode.kits.len() == 1).then(|| mode.kits[0].name.clone()))
-            });
-            rejoin_flow.set(RejoinFlow::Active);
-            reducer.dispatch(GameAction::ResetForRejoin);
-            if let Some(kit_id) = rejoin_single_kit {
-                join_step.set(JoinStep::SelectKit);
-                on_join.emit(kit_id);
-            } else {
-                join_step.set(JoinStep::SelectKit);
-            }
+        if !inputs.rejoin_cooldown.borrow().is_zero() {
+            return;
         }
+        inputs.has_interacted.set(true);
+        if inputs.reducer.disconnected {
+            return;
+        }
+        let single_kit = inputs.single_kit.clone().or_else(|| {
+            inputs
+                .reducer
+                .mode
+                .as_ref()
+                .and_then(|mode| (mode.kits.len() == 1).then(|| mode.kits[0].name.clone()))
+        });
+        inputs.rejoin_flow.set(RejoinFlow::Active);
+        inputs.reducer.dispatch(GameAction::ResetForRejoin);
+        advance_to_kit_selection(&inputs.join_step, single_kit, &inputs.on_join);
     })
 }
 
+/// Inputs of the join callback.
+pub struct JoinInputs {
+    pub tx: UseStateHandle<Option<MsgSender>>,
+    pub player_name: UseStateHandle<String>,
+    pub reducer: ReducerRef,
+    pub is_joining: UseStateHandle<bool>,
+    pub has_interacted: UseStateHandle<bool>,
+    pub current_mode_id: UseStateHandle<ModeId>,
+}
+
 /// Builds the callback used to send join requests.
-pub fn build_on_join(
-    tx: UseStateHandle<Option<MsgSender>>,
-    player_name: UseStateHandle<String>,
-    reducer_ref: Rc<RefCell<UseReducerHandle<GameStateReducer>>>,
-    is_joining: UseStateHandle<bool>,
-    has_interacted: UseStateHandle<bool>,
-    current_mode_id: UseStateHandle<ModeId>,
-) -> Callback<KitId> {
+pub fn build_on_join(inputs: JoinInputs) -> Callback<KitId> {
     Callback::from(move |kit_name: KitId| {
-        let current_reducer = reducer_ref.borrow().clone();
-        if *is_joining || current_reducer.queue_status.is_some() {
+        let reducer = inputs.reducer.borrow().clone();
+        if *inputs.is_joining || reducer.queue_status.is_some() {
             return;
         }
-        if current_reducer.disconnected || current_reducer.fatal_error {
-            current_reducer.dispatch(GameAction::SetDisconnected {
-                disconnected: false,
-                is_fatal: false,
-                title: None,
-                msg: None,
-            });
+        if reducer.disconnected || reducer.fatal_error {
+            reducer.dispatch(GameAction::SetDisconnected(DisconnectNotice::none()));
         }
-        has_interacted.set(true);
+        inputs.has_interacted.set(true);
         if is_mobile() {
             request_fullscreen();
         }
-        let trimmed_name = (*player_name).trim().to_string();
+        let trimmed_name = inputs.player_name.trim();
         if !trimmed_name.is_empty() {
-            set_stored_name(&trimmed_name);
+            store_name(trimmed_name);
         }
-        if let Some(sender) = (*tx).as_ref() {
-            let mode_id = (*current_mode_id).clone();
-            let stored_id = get_stored_id(&mode_id);
-            let stored_secret = get_stored_secret(&mode_id);
-            let join_result = sender.0.try_send(ClientMessage::Join {
-                name: (*player_name).clone(),
-                kit_name,
-                player_id: stored_id,
-                session_secret: stored_secret,
-            });
-            if let Err(error) = &join_result {
-                web_sys::console::error_1(
-                    &format!("Join request could not be sent: {error}").into(),
-                );
-            }
-            is_joining.set(join_result.is_ok());
-        } else {
-            is_joining.set(false);
-        }
+        let Some(sender) = (*inputs.tx).as_ref() else {
+            inputs.is_joining.set(false);
+            return;
+        };
+        let (player_id, session_secret) = SessionStore::new(&inputs.current_mode_id).load();
+        let sent = sender.send(ClientMessage::Join {
+            name: (*inputs.player_name).clone(),
+            kit_name,
+            player_id,
+            session_secret,
+        });
+        inputs.is_joining.set(sent);
     })
 }
 
@@ -107,29 +109,30 @@ pub fn build_on_name_input(player_name: UseStateHandle<String>) -> Callback<Inpu
     })
 }
 
+/// Inputs of the name submission callback.
+pub struct NameSubmitInputs {
+    pub join_step: UseStateHandle<JoinStep>,
+    pub player_name: UseStateHandle<String>,
+    pub landing_cooldown: UseStateHandle<CooldownSeconds>,
+    pub reducer: UseReducerHandle<GameStateReducer>,
+    pub has_interacted: UseStateHandle<bool>,
+    pub single_kit: Option<KitId>,
+    pub on_join: Callback<KitId>,
+}
+
 /// Builds the callback used when submitting the name entry form.
-pub fn build_on_name_submit(
-    join_step: UseStateHandle<JoinStep>,
-    player_name: UseStateHandle<String>,
-    landing_cooldown: UseStateHandle<CooldownSeconds>,
-    reducer: UseReducerHandle<GameStateReducer>,
-    has_interacted: UseStateHandle<bool>,
-    single_kit: Option<KitId>,
-    on_join: Callback<KitId>,
-) -> Callback<SubmitEvent> {
+pub fn build_on_name_submit(inputs: NameSubmitInputs) -> Callback<SubmitEvent> {
     Callback::from(move |e: SubmitEvent| {
         e.prevent_default();
-        has_interacted.set(true);
-        if reducer.disconnected || landing_cooldown.is_active() {
+        inputs.has_interacted.set(true);
+        if inputs.reducer.disconnected || inputs.landing_cooldown.is_active() {
             return;
         }
-        let name = (*player_name).trim().to_string();
-        set_stored_name(&name);
-        if let Some(kit_id) = single_kit.clone() {
-            join_step.set(JoinStep::SelectKit);
-            on_join.emit(kit_id);
-        } else {
-            join_step.set(JoinStep::SelectKit);
-        }
+        store_name(inputs.player_name.trim());
+        advance_to_kit_selection(
+            &inputs.join_step,
+            inputs.single_kit.clone(),
+            &inputs.on_join,
+        );
     })
 }

@@ -66,8 +66,8 @@ If no legal move exists, the NPC does nothing that tick.
 ## Shared Validation
 
 NPCs do not have special movement rules.
-Every candidate move is checked with the same `common::logic::is_valid_move()` function used by
-player pieces.
+Every candidate move comes from `PieceConfig::legal_moves()` and is applied through the same
+`Simulation` (`common/src/rules/simulation.rs`) used for player pieces.
 
 ## NPC Diagram
 

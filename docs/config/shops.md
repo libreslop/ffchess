@@ -39,7 +39,7 @@ The filename stem becomes the runtime `ShopConfig.id`.
 
 ## Group Selection Rules
 
-The shared helper `common::logic::select_shop_group` applies these rules:
+The shared helper `ShopConfig::group_for` (in `common/src/models/config.rs`) applies these rules:
 
 1. If a piece is on the shop, scan `groups` in order and pick the first group whose `applies_to`
    contains that piece type.

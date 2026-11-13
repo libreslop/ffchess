@@ -69,6 +69,16 @@ The server prefers:
 If a private preview target becomes empty, the server waits `preview_switch_delay_ms` before
 switching away from it. That keeps the preview stable across abrupt match endings.
 
+### Default-Only Watchers
+
+The client sends `SetPreviewDefault { enabled }` while it shows kit selection or the queue screen,
+pinning the connection to the empty public board. Enabling it also takes the connection out of a
+match it has finished (lost or won), so a finished private match can be cleaned up.
+
+The request is ignored while the connection still competes in a match. A client sends it right
+after its `Join`, and that join may already have started a match; acting on it would pull the new
+player straight back out of the match.
+
 ## Queue Layout
 
 If a queue mode defines `queue_layout`, private matches spawn players from exact preset slots instead
@@ -96,7 +106,11 @@ The server tracks three layers of association:
 
 - passive preview/lobby connection channel,
 - active player channel,
-- connection-to-player binding in `ServerState`.
+- connection-to-player binding in the lobby.
+
+All of these live in one `Lobby` (`server/src/state/lobby.rs`) behind a single lock, so a join, a
+match start, and the following preview update can never interleave with another connection's
+requests.
 
 ### Join Flow
 
@@ -114,7 +128,9 @@ For a queue mode:
 - leaving a private match removes the bound player from that instance,
 - leaving a queue removes the queue entry and rebroadcasts queue positions,
 - disconnecting from preview mode removes the preview watcher,
-- empty private matches are cleaned up from the hidden instance registry.
+- disconnecting while queued drops the queue entry; the client clears its queue status as soon as
+  a new connection delivers its first message, since that connection is not queued,
+- private matches nobody plays in or watches are removed every tick.
 
 ## Matchmaking Diagram
 

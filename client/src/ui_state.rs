@@ -1,5 +1,7 @@
 //! Strongly typed UI flow state for overlays and cooldowns.
 
+use common::types::DurationMs;
+
 /// Join overlay step in the pre-game flow.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum JoinStep {
@@ -50,9 +52,9 @@ impl CooldownSeconds {
         Self(0)
     }
 
-    /// Creates a cooldown from whole seconds.
-    pub const fn from_seconds(seconds: u32) -> Self {
-        Self(seconds)
+    /// Converts a duration to whole seconds, rounding down and clamping negatives to zero.
+    pub fn from_duration(duration: DurationMs) -> Self {
+        Self((duration.as_u64() / 1000) as u32)
     }
 
     /// Returns the cooldown in whole seconds.

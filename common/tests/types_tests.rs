@@ -1,6 +1,6 @@
 //! Tests for typed domain primitives.
 
-use common::types::{BoardSize, DurationMs, Score, TimestampMs};
+use common::types::{BoardCoord, BoardSize, DurationMs, Score, TimestampMs};
 
 #[test]
 /// Verifies score subtraction saturates at zero.
@@ -31,6 +31,17 @@ fn board_size_helpers_handle_odd_sizes() {
 fn board_size_clamps_to_minimum() {
     let size = BoardSize::from(0);
     assert_eq!(size.as_i32(), 1);
+}
+
+#[test]
+/// Verifies board containment for an even board centred on the origin.
+fn board_size_contains_matches_bounds() {
+    let size = BoardSize::from(100);
+    assert!(size.contains(BoardCoord::new(0, 0)));
+    assert!(size.contains(BoardCoord::new(-50, -50)));
+    assert!(size.contains(BoardCoord::new(49, 49)));
+    assert!(!size.contains(BoardCoord::new(-51, 0)));
+    assert!(!size.contains(BoardCoord::new(50, 50)));
 }
 
 #[test]

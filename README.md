@@ -12,11 +12,12 @@ up isolated private matches from shared public lobbies.
 - Room-scoped chat for both public mode lobbies and private queue matches.
 - Public sandbox modes plus queue-based private match modes.
 - A WebSocket server, a Yew/WebAssembly client, and a shared `common` crate.
-- Client-side premove prediction backed by server-side queued move execution.
+- Client-side premove prediction backed by server-side per-piece action queues with explicit acknowledgements.
 
 ## Workspace Layout
 
-- `common/`: shared domain models, protocol types, strong primitive wrappers, and rule helpers.
+- `common/`: shared domain models, protocol types, strong primitive wrappers, and the rules engine
+  (move validation and the action simulation used by both server and client).
 - `server/`: Axum server, live game instances, matchmaking, previews, hooks, NPCs, and config loading.
 - `client/`: Yew application, canvas renderer, camera/input logic, and UI overlays.
 - `config/`: JSONC content that defines runtime behavior.
@@ -68,8 +69,11 @@ Detailed field-by-field reference lives in [docs/README.md](docs/README.md).
 
 ## Architecture Notes
 
-- The server owns the authoritative `GameState` for each `GameInstance`.
-- The client renders a predicted view by applying local premoves on top of the latest server snapshot.
+- The server owns the authoritative `GameState` for each `GameInstance`. All mutable instance
+  state sits behind one lock, and the lobby (queues, previews, bindings) behind another, so
+  requests and ticks are atomic.
+- Moves and shop purchases are queued per piece on the server and acknowledged one by one; the
+  client predicts them with the same `common::rules::Simulation` the server executes.
 - Queue modes keep a public preview board alive while private match instances are created on demand.
 - Queue matches can publish a pre-move countdown so players see the full starting position before moves unlock.
 - Chat follows the currently viewed room, with mode-room chat in lobbies and game-room chat inside private matches.

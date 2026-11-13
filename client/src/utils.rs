@@ -4,166 +4,134 @@ use common::types::{DurationMs, ModeId, PlayerId, SessionSecret, TimestampMs};
 use js_sys::{Function, Reflect};
 use uuid::Uuid;
 use wasm_bindgen::{JsCast, JsValue};
+use web_sys::Storage;
 
-/// Reads the stored player name from local storage.
-///
-/// Returns the stored name or an empty string if missing.
-pub fn get_stored_name() -> String {
-    let window = web_sys::window().unwrap();
-    if let Ok(Some(storage)) = window.local_storage() {
-        return storage
-            .get_item("ffchess_name")
-            .unwrap_or_default()
-            .unwrap_or_default();
-    }
-    String::new()
+/// Storage key of the last entered player name.
+const NAME_KEY: &str = "ffchess_name";
+
+/// Respawn cooldown assumed when none was stored.
+const DEFAULT_RESPAWN_COOLDOWN: DurationMs = DurationMs(5000);
+
+/// Returns the browser's local storage, if available.
+fn local_storage() -> Option<Storage> {
+    web_sys::window()?.local_storage().ok().flatten()
 }
 
-/// Stores the player name in local storage.
-///
-/// `name` is the display name to persist. Returns nothing.
-pub fn set_stored_name(name: &str) {
-    let window = web_sys::window().unwrap();
-    if let Ok(Some(storage)) = window.local_storage() {
-        let _ = storage.set_item("ffchess_name", name);
-    }
+/// Reads one local storage entry.
+fn read(key: &str) -> Option<String> {
+    local_storage()?.get_item(key).ok().flatten()
 }
 
-/// Builds a namespaced local storage key for a mode.
-///
-/// `base` is the key prefix and `mode_id` is the mode identifier.
-/// Returns the composed storage key string.
-fn storage_key(base: &str, mode_id: &ModeId) -> String {
-    format!("{base}_{}", mode_id.as_ref())
-}
-
-/// Reads a stored player id for the given mode.
-///
-/// `mode_id` selects the mode. Returns the stored `PlayerId` if present.
-pub fn get_stored_id(mode_id: &ModeId) -> Option<PlayerId> {
-    let window = web_sys::window().unwrap();
-    if let Ok(Some(storage)) = window.local_storage() {
-        let key = storage_key("ffchess_player_id", mode_id);
-        return storage
-            .get_item(&key)
-            .unwrap_or_else(|_| storage.get_item("ffchess_player_id").ok().flatten())
-            .and_then(|s| Uuid::parse_str(&s).ok())
-            .map(PlayerId::from);
-    }
-    None
-}
-
-/// Stores a player id for the given mode.
-///
-/// `mode_id` selects the mode and `id` is the player id to persist.
-/// Returns nothing.
-pub fn set_stored_id(mode_id: &ModeId, id: PlayerId) {
-    let window = web_sys::window().unwrap();
-    if let Ok(Some(storage)) = window.local_storage() {
-        let key = storage_key("ffchess_player_id", mode_id);
-        let _ = storage.set_item(&key, &id.to_string());
-        let _ = storage.remove_item("ffchess_player_id");
+/// Writes one local storage entry, ignoring storage failures.
+fn write(key: &str, value: &str) {
+    if let Some(storage) = local_storage() {
+        let _ = storage.set_item(key, value);
     }
 }
 
-/// Reads a stored session secret for the given mode.
-///
-/// `mode_id` selects the mode. Returns the stored secret if present.
-pub fn get_stored_secret(mode_id: &ModeId) -> Option<SessionSecret> {
-    let window = web_sys::window().unwrap();
-    if let Ok(Some(storage)) = window.local_storage() {
-        let key = storage_key("ffchess_session_secret", mode_id);
-        return storage
-            .get_item(&key)
-            .unwrap_or_else(|_| storage.get_item("ffchess_session_secret").ok().flatten())
-            .and_then(|s| Uuid::parse_str(&s).ok())
-            .map(SessionSecret::from);
-    }
-    None
-}
-
-/// Stores a session secret for the given mode.
-///
-/// `mode_id` selects the mode and `secret` is the session token to persist.
-/// Returns nothing.
-pub fn set_stored_secret(mode_id: &ModeId, secret: SessionSecret) {
-    let window = web_sys::window().unwrap();
-    if let Ok(Some(storage)) = window.local_storage() {
-        let key = storage_key("ffchess_session_secret", mode_id);
-        let _ = storage.set_item(&key, &secret.to_string());
-        let _ = storage.remove_item("ffchess_session_secret");
+/// Removes one local storage entry, ignoring storage failures.
+fn remove(key: &str) {
+    if let Some(storage) = local_storage() {
+        let _ = storage.remove_item(key);
     }
 }
 
-/// Clears stored player id and session secret for the given mode.
-///
-/// `mode_id` selects the mode. Returns nothing.
-pub fn clear_stored_session(mode_id: &ModeId) {
-    if let Ok(Some(storage)) = web_sys::window()
-        .expect("no global `window` exists")
-        .local_storage()
-    {
-        let _ = storage.remove_item(&storage_key("ffchess_player_id", mode_id));
-        let _ = storage.remove_item(&storage_key("ffchess_session_secret", mode_id));
+/// Returns the last entered player name, or an empty string.
+pub fn stored_name() -> String {
+    read(NAME_KEY).unwrap_or_default()
+}
+
+/// Remembers the entered player name.
+pub fn store_name(name: &str) {
+    write(NAME_KEY, name);
+}
+
+/// When the player last died in a mode and how long respawning was blocked.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DeathRecord {
+    pub died_at: TimestampMs,
+    pub cooldown: DurationMs,
+}
+
+impl DeathRecord {
+    /// Returns how long respawning is still blocked at `now`.
+    pub fn remaining(&self, now: TimestampMs) -> DurationMs {
+        (self.cooldown - (now - self.died_at)).max(DurationMs::zero())
     }
 }
 
-/// Reads the last death timestamp and cooldown for a mode.
-///
-/// `mode_id` selects the mode. Returns a tuple of `(TimestampMs, DurationMs)`.
-pub fn get_death_info(mode_id: &ModeId) -> (TimestampMs, DurationMs) {
-    let window = web_sys::window().unwrap();
-    if let Ok(Some(storage)) = window.local_storage() {
-        let ts = storage
-            .get_item(&storage_key("ffchess_death_ts", mode_id))
-            .unwrap_or_default()
-            .and_then(|s| s.parse::<i64>().ok())
-            .unwrap_or(0);
-        let cd = storage
-            .get_item(&storage_key("ffchess_death_cd", mode_id))
-            .unwrap_or_default()
-            .and_then(|s| s.parse::<i64>().ok())
-            .unwrap_or(5000);
-        return (TimestampMs::from_millis(ts), DurationMs::from_millis(cd));
-    }
-    (TimestampMs::from_millis(0), DurationMs::from_millis(5000))
+/// Per-mode persisted session: player id, rejoin secret, and last death.
+pub struct SessionStore {
+    suffix: String,
 }
 
-/// Stores the latest death timestamp and respawn cooldown.
-///
-/// `mode_id` selects the mode, `ts` is the death time, `cooldown_ms` is the cooldown.
-/// Returns nothing.
-pub fn set_death_timestamp(mode_id: &ModeId, ts: TimestampMs, cooldown_ms: DurationMs) {
-    let window = web_sys::window().unwrap();
-    if let Ok(Some(storage)) = window.local_storage() {
-        let _ = storage.set_item(
-            &storage_key("ffchess_death_ts", mode_id),
-            &ts.as_i64().to_string(),
-        );
-        let _ = storage.set_item(
-            &storage_key("ffchess_death_cd", mode_id),
-            &cooldown_ms.as_i64().to_string(),
-        );
+impl SessionStore {
+    /// Opens the stored session of a mode.
+    pub fn new(mode_id: &ModeId) -> Self {
+        Self {
+            suffix: mode_id.as_ref().to_string(),
+        }
     }
+
+    /// Builds the storage key of one session field.
+    fn key(&self, field: &str) -> String {
+        format!("ffchess_{field}_{}", self.suffix)
+    }
+
+    /// Returns the stored player id and rejoin secret.
+    pub fn load(&self) -> (Option<PlayerId>, Option<SessionSecret>) {
+        let uuid = |field| read(&self.key(field)).and_then(|s| Uuid::parse_str(&s).ok());
+        (
+            uuid("player_id").map(PlayerId::from),
+            uuid("session_secret").map(SessionSecret::from),
+        )
+    }
+
+    /// Stores the player id and rejoin secret.
+    pub fn save(&self, player_id: PlayerId, secret: SessionSecret) {
+        write(&self.key("player_id"), &player_id.to_string());
+        write(&self.key("session_secret"), &secret.to_string());
+    }
+
+    /// Forgets the player id and rejoin secret.
+    pub fn clear(&self) {
+        remove(&self.key("player_id"));
+        remove(&self.key("session_secret"));
+    }
+
+    /// Returns the last recorded death.
+    pub fn death(&self) -> DeathRecord {
+        let millis = |field| read(&self.key(field)).and_then(|s| s.parse::<i64>().ok());
+        DeathRecord {
+            died_at: TimestampMs::from_millis(millis("death_ts").unwrap_or(0)),
+            cooldown: millis("death_cd").map_or(DEFAULT_RESPAWN_COOLDOWN, DurationMs::from_millis),
+        }
+    }
+
+    /// Records a death and the respawn cooldown that follows it.
+    pub fn record_death(&self, record: DeathRecord) {
+        write(&self.key("death_ts"), &record.died_at.as_i64().to_string());
+        write(&self.key("death_cd"), &record.cooldown.as_i64().to_string());
+    }
+}
+
+/// Returns the current local wall-clock time.
+pub fn local_now() -> TimestampMs {
+    TimestampMs::from_millis(js_sys::Date::now() as i64)
 }
 
 /// Detects whether the current user agent is a mobile device.
-///
-/// Returns `true` for mobile-like user agents.
 pub fn is_mobile() -> bool {
-    let window = web_sys::window().expect("no global `window` exists");
-    let navigator = window.navigator();
-    let user_agent = navigator.user_agent().unwrap_or_default().to_lowercase();
-
-    user_agent.contains("mobi")
-        || user_agent.contains("android")
-        || user_agent.contains("iphone")
-        || user_agent.contains("ipad")
+    let user_agent = web_sys::window()
+        .and_then(|window| window.navigator().user_agent().ok())
+        .unwrap_or_default()
+        .to_lowercase();
+    ["mobi", "android", "iphone", "ipad"]
+        .iter()
+        .any(|marker| user_agent.contains(marker))
 }
 
 /// Requests the document to enter fullscreen mode if supported.
-///
-/// Returns nothing.
 pub fn request_fullscreen() {
     let Some(window) = web_sys::window() else {
         return;
@@ -177,40 +145,37 @@ pub fn request_fullscreen() {
     let Some(root) = document.document_element() else {
         return;
     };
-    if root.request_fullscreen().is_ok() {
+    if root.request_fullscreen().is_ok() || try_prefixed_fullscreen(&root) {
         return;
     }
-
-    // iOS Safari may expose only prefixed fullscreen APIs.
-    if try_prefixed_fullscreen(&root) {
+    // iOS Safari may expose only prefixed fullscreen APIs, sometimes only on the body.
+    if let Some(body) = document.body()
+        && try_prefixed_fullscreen(&body.into())
+    {
         return;
     }
-    if let Some(body) = document.body() {
-        let body_element: web_sys::Element = body.into();
-        if try_prefixed_fullscreen(&body_element) {
-            return;
-        }
-    }
-
-    // Fallback for iOS when Fullscreen API is unavailable: collapse browser chrome.
+    // Fallback for iOS when the Fullscreen API is unavailable: collapse browser chrome.
     window.scroll_to_with_x_and_y(0.0, 1.0);
 }
 
+/// Tries the vendor-prefixed fullscreen methods on `element`.
 fn try_prefixed_fullscreen(element: &web_sys::Element) -> bool {
-    for method in ["webkitRequestFullscreen", "webkitEnterFullscreen"] {
-        if call_method_no_args(element.as_ref(), method) {
-            return true;
-        }
-    }
-    false
+    ["webkitRequestFullscreen", "webkitEnterFullscreen"]
+        .iter()
+        .any(|method| call_method_no_args(element.as_ref(), method))
 }
 
+/// Calls a zero-argument JS method by name, returning whether the call succeeded.
 fn call_method_no_args(target: &JsValue, method_name: &str) -> bool {
-    let Ok(method) = Reflect::get(target, &JsValue::from_str(method_name)) else {
-        return false;
-    };
-    let Some(function) = method.dyn_ref::<Function>() else {
-        return false;
-    };
-    function.call0(target).is_ok()
+    Reflect::get(target, &JsValue::from_str(method_name))
+        .ok()
+        .and_then(|method| method.dyn_into::<Function>().ok())
+        .is_some_and(|function| function.call0(target).is_ok())
+}
+
+/// Returns the current time in milliseconds from the high-resolution performance clock.
+pub fn performance_now() -> f64 {
+    web_sys::window()
+        .and_then(|window| window.performance())
+        .map_or(0.0, |performance| performance.now())
 }

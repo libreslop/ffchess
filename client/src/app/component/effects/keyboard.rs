@@ -1,7 +1,8 @@
 //! Effects related to keyboard-driven join and rejoin flows.
 
+use crate::app::component::callbacks::advance_to_kit_selection;
 use crate::ui_state::{CooldownSeconds, JoinStep};
-use crate::utils::set_stored_name;
+use crate::utils::store_name;
 use common::models::KitSummary;
 use common::types::KitId;
 use gloo_events::EventListener;
@@ -50,14 +51,6 @@ pub fn use_keyboard_shortcuts_effect(inputs: KeyboardShortcutEffectInputs) {
         on_rejoin,
         rc_ref,
     } = inputs;
-    let join_step = join_step.clone();
-    let player_name = player_name.clone();
-    let landing_cooldown = landing_cooldown.clone();
-    let has_interacted = has_interacted.clone();
-    let on_join = on_join.clone();
-    let on_cycle_mode = on_cycle_mode.clone();
-    let on_rejoin = on_rejoin.clone();
-    let rc_ref = rc_ref.clone();
 
     use_effect_with(
         (
@@ -95,8 +88,11 @@ pub fn use_keyboard_shortcuts_effect(inputs: KeyboardShortcutEffectInputs) {
             let kits = kits.clone();
             let single_kit = single_kit.clone();
 
-            let listener = EventListener::new(&web_sys::window().unwrap(), "keydown", move |e| {
-                let e = e.dyn_ref::<web_sys::KeyboardEvent>().unwrap();
+            let window = web_sys::window().expect("window available");
+            let listener = EventListener::new(&window, "keydown", move |e| {
+                let Some(e) = e.dyn_ref::<web_sys::KeyboardEvent>() else {
+                    return;
+                };
                 if event_targets_text_input(e) {
                     return;
                 }
@@ -126,7 +122,9 @@ pub fn use_keyboard_shortcuts_effect(inputs: KeyboardShortcutEffectInputs) {
                             has_interacted: &has_interacted,
                         });
                     } else if (dead || victory) && rc_ref.borrow().is_zero() && !disc {
-                        on_rejoin.emit(MouseEvent::new("click").unwrap());
+                        if let Ok(click) = MouseEvent::new("click") {
+                            on_rejoin.emit(click);
+                        }
                         has_interacted.set(true);
                     }
                 } else {
@@ -149,6 +147,7 @@ pub fn use_keyboard_shortcuts_effect(inputs: KeyboardShortcutEffectInputs) {
     );
 }
 
+/// Returns true when the key event targets a text field, where shortcuts must not fire.
 fn event_targets_text_input(event: &web_sys::KeyboardEvent) -> bool {
     let Some(target) = event.target() else {
         return false;
@@ -163,23 +162,23 @@ fn event_targets_text_input(event: &web_sys::KeyboardEvent) -> bool {
         .is_some()
 }
 
+/// Submits the entered name with Enter, like the Play button.
 fn try_submit_join(context: JoinShortcutContext<'_>) {
     if !context.step.is_enter_name() || !context.landing_cooldown.is_zero() || context.disconnected
     {
         return;
     }
 
-    let name = (**context.player_name).trim().to_string();
-    set_stored_name(&name);
-    if let Some(kit_id) = context.single_kit.clone() {
-        context.join_step.set(JoinStep::SelectKit);
-        context.on_join.emit(kit_id);
-    } else {
-        context.join_step.set(JoinStep::SelectKit);
-    }
+    store_name(context.player_name.trim());
+    advance_to_kit_selection(
+        context.join_step,
+        context.single_kit.clone(),
+        context.on_join,
+    );
     context.has_interacted.set(true);
 }
 
+/// Joins with the kit bound to a number key.
 fn try_submit_kit_hotkey(context: KitHotkeyContext<'_>) {
     if context.joined
         || context.dead
