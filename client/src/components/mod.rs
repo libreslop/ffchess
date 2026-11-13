@@ -7,6 +7,7 @@ pub mod fatal_notification;
 pub mod game_view;
 pub mod join_screen;
 pub mod leaderboard;
+pub mod leave_button;
 pub mod shop_ui;
 
 pub use disconnected_screen::DisconnectedScreen;
@@ -16,3 +17,4 @@ pub use fatal_notification::FatalNotification;
 pub use game_view::GameView;
 pub use join_screen::JoinScreen;
 pub use leaderboard::Leaderboard;
+pub use leave_button::LeaveButton;

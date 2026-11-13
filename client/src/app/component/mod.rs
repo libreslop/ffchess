@@ -10,8 +10,8 @@ use crate::reducer::{ClientPhase, GameStateReducer, MsgSender};
 use crate::ui_state::{CooldownSeconds, JoinStep, RejoinFlow};
 use crate::utils::{SessionStore, local_now, stored_name};
 use callbacks::{
-    JoinInputs, NameSubmitInputs, RejoinInputs, build_on_join, build_on_name_input,
-    build_on_name_submit, build_on_rejoin,
+    JoinInputs, LeaveInputs, NameSubmitInputs, RejoinInputs, build_on_join, build_on_leave,
+    build_on_name_input, build_on_name_submit, build_on_rejoin,
 };
 use common::models::{GameModeClientConfig, ModeSummary};
 use common::types::ModeId;
@@ -67,12 +67,15 @@ pub fn app() -> Html {
     let tx_ref = use_mut_ref(|| (*tx).clone());
     *tx_ref.borrow_mut() = (*tx).clone();
 
+    let leave_inputs = LeaveInputs {
+        join_step: join_step.clone(),
+        rejoin_flow: rejoin_flow.clone(),
+    };
     use_mode_url_navigation_effect(
         current_mode_id.clone(),
         initial_mode_id.clone(),
         reducer_ref.clone(),
-        join_step.clone(),
-        rejoin_flow.clone(),
+        leave_inputs.clone(),
         tx_ref,
     );
 
@@ -85,8 +88,6 @@ pub fn app() -> Html {
             CooldownSeconds::from_duration(remaining)
         })
     };
-    let lc_ref = use_mut_ref(|| *landing_cooldown);
-    use_landing_cooldown_effect(landing_cooldown.clone(), lc_ref);
 
     use_ws_connection_effect(
         current_mode_id.clone(),
@@ -128,6 +129,14 @@ pub fn app() -> Html {
     let has_match_result = reducer.has_match_result();
     let is_joined = reducer.phase == ClientPhase::Alive || has_match_result;
     let is_queueing = reducer.queue_status.is_some();
+
+    let lc_ref = use_mut_ref(|| *landing_cooldown);
+    use_landing_cooldown_effect(
+        landing_cooldown.clone(),
+        lc_ref,
+        (*current_mode_id).clone(),
+        is_joined,
+    );
 
     use_player_name_sync_effect(player_name.clone(), reducer.clone());
     use_disconnected_overlay_effect(
@@ -221,6 +230,7 @@ pub fn app() -> Html {
         on_cycle_mode,
         on_rejoin,
         rejoin_cooldown: *rejoin_cooldown,
+        on_leave: build_on_leave(leave_inputs, reducer.clone(), (*tx).clone()),
     })
 }
 

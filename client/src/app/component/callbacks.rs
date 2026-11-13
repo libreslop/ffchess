@@ -3,7 +3,9 @@
 use crate::app::ws::ReducerRef;
 use crate::reducer::{DisconnectNotice, GameAction, GameStateReducer, MsgSender};
 use crate::ui_state::{CooldownSeconds, JoinStep, RejoinFlow};
-use crate::utils::{SessionStore, is_mobile, request_fullscreen, store_name};
+use crate::utils::{
+    DeathRecord, SessionStore, is_mobile, local_now, request_fullscreen, store_name,
+};
 use common::protocol::ClientMessage;
 use common::types::{KitId, ModeId};
 use std::cell::RefCell;
@@ -20,6 +22,47 @@ pub fn advance_to_kit_selection(
     if let Some(kit_id) = single_kit {
         on_join.emit(kit_id);
     }
+}
+
+/// Handles needed to leave the current session and return to the landing screen.
+#[derive(Clone)]
+pub struct LeaveInputs {
+    pub join_step: UseStateHandle<JoinStep>,
+    pub rejoin_flow: UseStateHandle<RejoinFlow>,
+}
+
+impl LeaveInputs {
+    /// Leaves the current match or queue and shows the landing screen.
+    ///
+    /// The server makes players who leave the board wait out the respawn cooldown, so the
+    /// leave is recorded as a death for the landing screen to count down.
+    pub fn leave(&self, reducer: &UseReducerHandle<GameStateReducer>, tx: Option<&MsgSender>) {
+        if reducer.has_session()
+            && let Some(sender) = tx
+        {
+            sender.send(ClientMessage::Leave);
+        }
+        if reducer.is_on_board()
+            && let Some(mode) = reducer.mode.as_ref()
+        {
+            SessionStore::new(&mode.id).record_death(DeathRecord {
+                died_at: local_now(),
+                cooldown: reducer.respawn_cooldown(),
+            });
+        }
+        self.rejoin_flow.set(RejoinFlow::Inactive);
+        reducer.dispatch(GameAction::Reset);
+        self.join_step.set(JoinStep::EnterName);
+    }
+}
+
+/// Builds the callback of the in-game leave button.
+pub fn build_on_leave(
+    inputs: LeaveInputs,
+    reducer: UseReducerHandle<GameStateReducer>,
+    tx: Option<MsgSender>,
+) -> Callback<MouseEvent> {
+    Callback::from(move |_| inputs.leave(&reducer, tx.as_ref()))
 }
 
 /// Inputs of the rejoin callback.

@@ -1,6 +1,7 @@
 //! Room chat overlay for the game view.
 
-use crate::reducer::{ClientPhase, GameAction, GameStateReducer, MsgSender};
+use crate::reducer::{GameAction, GameStateReducer, MsgSender};
+use crate::ui_state::Backdrop;
 use common::protocol::{ChatLine, ClientMessage};
 use common::types::TimestampMs;
 use gloo_events::EventListener;
@@ -22,55 +23,32 @@ pub struct GameChatProps {
     pub player_name: String,
 }
 
-/// Visual surface behind the chat UI.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum ChatSurface {
-    LightBoard,
-    DarkOverlay,
-}
-
-impl ChatSurface {
-    /// Returns the stacking layer that keeps the chat beneath every other UI element.
-    ///
-    /// In game the chat sits below the HUD (shop, stats and leaderboard start at 50). Over a
-    /// menu or end screen it sits between the dimming backdrop (90) and the overlay content
-    /// (100), so it stays readable and usable without covering any buttons.
-    const fn z_index(self) -> u32 {
-        match self {
-            Self::LightBoard => 40,
-            Self::DarkOverlay => 95,
-        }
-    }
-}
-
-/// Chat color palette chosen for the current UI surface.
+/// Chat color palette and stacking layer chosen for the current backdrop.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct ChatTheme {
     message_color: &'static str,
     message_shadow: &'static str,
-    input_color: &'static str,
-    input_shadow: &'static str,
     link_color: &'static str,
+    /// Stacking layer that keeps the chat beneath every other UI element.
+    ///
+    /// In game the chat sits below the HUD (shop, stats and leaderboard start at 50). Over a
+    /// menu or end screen it sits between the dimming backdrop (90) and the overlay content
+    /// (100), so it stays readable and usable without covering any buttons.
+    z_index: u32,
 }
 
 impl ChatTheme {
-    /// Returns the chat palette for one surface type.
-    fn for_surface(surface: ChatSurface) -> Self {
-        match surface {
-            ChatSurface::LightBoard => Self {
-                message_color: "#6b7280",
-                message_shadow: "#374151",
-                input_color: "#6b7280",
-                input_shadow: "#374151",
-                link_color: "#1d4ed8",
-            },
-            ChatSurface::DarkOverlay => Self {
-                message_color: "#d1d5db",
-                message_shadow: "#374151",
-                input_color: "#d1d5db",
-                input_shadow: "#374151",
-                link_color: "#93c5fd",
-            },
+    /// Returns the chat theme for one backdrop.
+    fn for_backdrop(backdrop: Backdrop) -> Self {
+        let (link_color, z_index) = match backdrop {
+            Backdrop::LightBoard => ("#1d4ed8", 40),
+            Backdrop::DarkOverlay => ("#93c5fd", 95),
+        };
+        Self {
+            message_color: backdrop.foreground(),
+            message_shadow: backdrop.foreground_shadow(),
+            link_color,
+            z_index,
         }
     }
 
@@ -225,8 +203,8 @@ pub fn game_chat(props: &GameChatProps) -> Html {
         );
     }
 
-    let surface = chat_surface(&props.reducer);
-    let theme = ChatTheme::for_surface(surface);
+    let backdrop = Backdrop::of(&props.reducer);
+    let theme = ChatTheme::for_backdrop(backdrop);
     let chat_char_count = (*chat_text).chars().count() as u32;
     let chat_max_chars = props.globals.chat_message_max_chars.max(1);
     let chat_warning_chars = props.globals.chat_warning_chars.min(chat_max_chars);
@@ -290,14 +268,14 @@ pub fn game_chat(props: &GameChatProps) -> Html {
             data-chat-ui="true"
             style={format!(
                 "position: absolute; left: 12px; bottom: 12px; width: min(460px, calc(100vw - 24px)); max-height: 38vh; display: flex; flex-direction: column; gap: 0; z-index: {};",
-                surface.z_index()
+                theme.z_index
             )}
         >
             <style>
                 {format!(
                     ".ff-chat-input::placeholder {{ color: {}; text-shadow: 1px 1px 0 {}; opacity: 1; }}",
-                    theme.input_color,
-                    theme.input_shadow
+                    theme.message_color,
+                    theme.message_shadow
                 )}
             </style>
             <div
@@ -311,7 +289,7 @@ pub fn game_chat(props: &GameChatProps) -> Html {
                             let key = ChatLineKey::for_line(line);
                             let is_expired = expired_line_keys.contains(&key);
                             let sender_color =
-                                display_sender_color(line.sender_color.as_ref(), surface);
+                                display_sender_color(line.sender_color.as_ref(), backdrop);
                             let sender_shadow = theme.sender_shadow(sender_color);
                             let link_shadow = theme.link_shadow();
                             let system_color = "#facc15";
@@ -371,9 +349,9 @@ pub fn game_chat(props: &GameChatProps) -> Html {
                         placeholder="Write a message"
                         style={format!(
                             "width: 100%; border: 0; background: transparent; color: {}; text-shadow: 1px 1px 0 {}; caret-color: {}; font-size: 12px; line-height: 1.6; min-height: 1.6em; padding: 0; padding-right: 68px; outline: none;",
-                            theme.input_color,
-                            theme.input_shadow,
-                            theme.input_color
+                            theme.message_color,
+                            theme.message_shadow,
+                            theme.message_color
                         )}
                         autocomplete="off"
                     />
@@ -384,8 +362,8 @@ pub fn game_chat(props: &GameChatProps) -> Html {
                                     data-chat-ui="true"
                                     style={format!(
                                         "position: absolute; right: 0; top: 0; font-size: 12px; line-height: 1.6; color: {}; text-shadow: 1px 1px 0 {}; pointer-events: none;",
-                                        theme.input_color,
-                                        theme.input_shadow
+                                        theme.message_color,
+                                        theme.message_shadow
                                     )}
                                 >
                                     {format!("{}/{}", chat_char_count, chat_max_chars)}
@@ -401,8 +379,8 @@ pub fn game_chat(props: &GameChatProps) -> Html {
     }
 }
 
-fn display_sender_color(sender_color: &str, surface: ChatSurface) -> &str {
-    if surface == ChatSurface::DarkOverlay && sender_color.eq_ignore_ascii_case("#555555") {
+fn display_sender_color(sender_color: &str, backdrop: Backdrop) -> &str {
+    if backdrop == Backdrop::DarkOverlay && sender_color.eq_ignore_ascii_case("#555555") {
         "#9ca3af"
     } else {
         sender_color
@@ -411,14 +389,6 @@ fn display_sender_color(sender_color: &str, surface: ChatSurface) -> &str {
 
 fn current_chat_line_keys(lines: &[ChatLine]) -> HashSet<ChatLineKey> {
     lines.iter().map(ChatLineKey::for_line).collect()
-}
-
-fn chat_surface(reducer: &GameStateReducer) -> ChatSurface {
-    if reducer.phase == ClientPhase::Alive && !reducer.has_match_result() {
-        ChatSurface::LightBoard
-    } else {
-        ChatSurface::DarkOverlay
-    }
 }
 
 fn next_prune_delay_ms(lines: &[ChatLine], ttl_ms: u32, clock_offset_ms: i64) -> Option<i64> {

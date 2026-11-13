@@ -1,10 +1,13 @@
 //! Reducer state types used by the client UI.
 
 use crate::premoves::PremoveQueue;
+use crate::utils::DEFAULT_RESPAWN_COOLDOWN;
 use common::models::{GameModeClientConfig, GameState, Player};
 use common::protocol::{ChatLine, ClientMessage, GameError, VictoryFocusTarget};
 use common::rules::Catalog;
-use common::types::{PlayerCount, PlayerId, QueuePosition, Score, SessionSecret, TimestampMs};
+use common::types::{
+    DurationMs, PlayerCount, PlayerId, QueuePosition, Score, SessionSecret, TimestampMs,
+};
 use std::rc::Rc;
 
 /// High-level client session phase used for UI and camera behavior.
@@ -126,6 +129,26 @@ impl GameStateReducer {
     /// Returns true while an end-of-match result is shown.
     pub fn has_match_result(&self) -> bool {
         self.is_dead || self.is_victory()
+    }
+
+    /// Returns true while the client plays or queues, so moving elsewhere must tell the server.
+    pub fn has_session(&self) -> bool {
+        self.phase == ClientPhase::Alive
+            || self.queue_status.is_some()
+            || self.active_player_id().is_some()
+    }
+
+    /// Returns true while the local player still has a place on the board, winners included.
+    pub fn is_on_board(&self) -> bool {
+        self.active_player_id()
+            .is_some_and(|player_id| self.state.players.contains_key(&player_id))
+    }
+
+    /// Returns how long the mode makes players wait before joining again.
+    pub fn respawn_cooldown(&self) -> DurationMs {
+        self.mode
+            .as_ref()
+            .map_or(DEFAULT_RESPAWN_COOLDOWN, |mode| mode.respawn_cooldown_ms)
     }
 
     /// Returns true when the board should be viewed rotated by 180 degrees.

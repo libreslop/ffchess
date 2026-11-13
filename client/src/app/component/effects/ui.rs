@@ -4,7 +4,7 @@ use crate::reducer::{ClientPhase, DisconnectNotice, GameAction, GameStateReducer
 use crate::ui_state::{CooldownSeconds, JoinStep, RejoinFlow};
 use crate::utils::{DeathRecord, SessionStore, local_now, store_name};
 use common::protocol::ClientMessage;
-use common::types::{DurationMs, ModeId};
+use common::types::ModeId;
 use gloo_timers::callback::{Interval, Timeout};
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -13,9 +13,6 @@ use yew::prelude::*;
 
 /// How long an error notice stays visible, matching the toast animation.
 const ERROR_VISIBLE_MS: u32 = 3000;
-
-/// Respawn cooldown assumed when the mode config is not known yet.
-const DEFAULT_RESPAWN_COOLDOWN: DurationMs = DurationMs(5000);
 
 /// Clears the joining spinner when join-related state updates.
 #[hook]
@@ -110,15 +107,27 @@ fn start_countdown(
     })
 }
 
-/// Counts the landing cooldown down from its initial value.
+/// Counts the landing cooldown down from the last recorded death of the selected mode.
+///
+/// Restarts whenever the landing screen comes back, e.g. after leaving a match.
 #[hook]
 pub fn use_landing_cooldown_effect(
     landing_cooldown: UseStateHandle<CooldownSeconds>,
     lc_ref: Rc<RefCell<CooldownSeconds>>,
+    current_mode_id: ModeId,
+    is_joined: bool,
 ) {
-    let initial = *use_memo((), |_| *landing_cooldown);
-    use_effect_with((), move |_| {
-        let interval = start_countdown(landing_cooldown, lc_ref, initial);
+    use_effect_with((current_mode_id, is_joined), move |(mode_id, is_joined)| {
+        let interval = (!is_joined)
+            .then(|| {
+                let remaining = SessionStore::new(mode_id).death().remaining(local_now());
+                start_countdown(
+                    landing_cooldown,
+                    lc_ref,
+                    CooldownSeconds::from_duration(remaining),
+                )
+            })
+            .flatten();
         move || drop(interval)
     });
 }
@@ -249,10 +258,7 @@ pub fn use_rejoin_cooldown_effect(
     use_effect_with(reducer.has_match_result(), move |&has_match_result| {
         let interval = has_match_result
             .then(|| {
-                let cooldown = reducer
-                    .mode
-                    .as_ref()
-                    .map_or(DEFAULT_RESPAWN_COOLDOWN, |mode| mode.respawn_cooldown_ms);
+                let cooldown = reducer.respawn_cooldown();
                 SessionStore::new(&current_mode_id).record_death(DeathRecord {
                     died_at: local_now(),
                     cooldown,

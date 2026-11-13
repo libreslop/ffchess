@@ -1,10 +1,10 @@
 //! Effects related to mode selection, navigation, and websocket connectivity.
 
+use super::super::callbacks::LeaveInputs;
 use crate::app::GlobalClientConfig;
 use crate::app::config::order_modes;
 use crate::app::ws::{ReducerRef, SocketSenderRef, connect_ws, report_connection_lost};
-use crate::reducer::{ClientPhase, GameAction, GameStateReducer, MsgSender};
-use crate::ui_state::{JoinStep, RejoinFlow};
+use crate::reducer::{GameAction, MsgSender};
 use common::models::ModeSummary;
 use common::protocol::ClientMessage;
 use common::types::ModeId;
@@ -64,21 +64,13 @@ pub fn use_mode_url_navigation_effect(
     current_mode_id: UseStateHandle<ModeId>,
     fallback_mode_id: ModeId,
     reducer_ref: ReducerRef,
-    join_step: UseStateHandle<JoinStep>,
-    rejoin_flow: UseStateHandle<RejoinFlow>,
+    leave_inputs: LeaveInputs,
     tx_ref: Rc<RefCell<Option<MsgSender>>>,
 ) {
     use_effect_with((), move |_| {
         let apply_navigation = Rc::new(move || {
             let reducer = reducer_ref.borrow().clone();
-            if should_leave_current_session(&reducer)
-                && let Some(sender) = tx_ref.borrow().as_ref()
-            {
-                sender.send(ClientMessage::Leave);
-            }
-            rejoin_flow.set(RejoinFlow::Inactive);
-            reducer.dispatch(GameAction::Reset);
-            join_step.set(JoinStep::EnterName);
+            leave_inputs.leave(&reducer, tx_ref.borrow().as_ref());
             current_mode_id.set(current_mode_id_from_location(&fallback_mode_id));
         });
 
@@ -131,13 +123,6 @@ pub fn use_ws_connection_effect(
             abort_handle.abort();
         }
     });
-}
-
-/// Returns true when navigating away must tell the server the player is leaving.
-fn should_leave_current_session(reducer: &GameStateReducer) -> bool {
-    reducer.phase == ClientPhase::Alive
-        || reducer.queue_status.is_some()
-        || reducer.active_player_id().is_some()
 }
 
 /// Reads the selected mode from the URL hash.

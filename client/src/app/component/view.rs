@@ -3,10 +3,10 @@
 use crate::app::GlobalClientConfig;
 use crate::components::{
     DisconnectedScreen, EndScreen, EndScreenKind, ErrorToast, FatalNotification, GameView,
-    JoinScreen, Leaderboard,
+    JoinScreen, Leaderboard, LeaveButton,
 };
 use crate::reducer::{GameStateReducer, MsgSender};
-use crate::ui_state::{CooldownSeconds, JoinStep};
+use crate::ui_state::{Backdrop, CooldownSeconds, JoinStep};
 use common::models::ModeSummary;
 use common::types::{KitId, ModeId};
 use yew::prelude::*;
@@ -33,6 +33,7 @@ pub struct AppViewProps {
     pub on_cycle_mode: Callback<i32>,
     pub on_rejoin: Callback<MouseEvent>,
     pub rejoin_cooldown: CooldownSeconds,
+    pub on_leave: Callback<MouseEvent>,
 }
 
 /// Renders the root application UI.
@@ -51,6 +52,8 @@ pub fn render_app(props: AppViewProps) -> Html {
         .as_ref()
         .is_none_or(|mode| mode.show_scoreboard);
     let victory = reducer.victory.clone();
+    // Every screen past the name entry form can be left.
+    let on_main_menu = !is_joined && queue_status.is_none() && props.join_step.is_enter_name();
 
     html! {
         <div style="margin: 0; padding: 0; width: 100vw; height: 100vh; overflow: hidden; position: relative; background: #f0f2f5;">
@@ -149,6 +152,10 @@ pub fn render_app(props: AppViewProps) -> Html {
                     on_select_mode={props.on_select_mode.clone()}
                     on_cycle_mode={props.on_cycle_mode.clone()}
                 />
+            }
+
+            if tx.is_some() && !on_main_menu {
+                <LeaveButton on_leave={props.on_leave.clone()} backdrop={Backdrop::of(&reducer)} />
             }
 
             if let Some(notice) = &reducer.error {

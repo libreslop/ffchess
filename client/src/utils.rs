@@ -9,8 +9,8 @@ use web_sys::Storage;
 /// Storage key of the last entered player name.
 const NAME_KEY: &str = "ffchess_name";
 
-/// Respawn cooldown assumed when none was stored.
-const DEFAULT_RESPAWN_COOLDOWN: DurationMs = DurationMs(5000);
+/// Respawn cooldown assumed when none is known.
+pub const DEFAULT_RESPAWN_COOLDOWN: DurationMs = DurationMs(5000);
 
 /// Returns the browser's local storage, if available.
 fn local_storage() -> Option<Storage> {

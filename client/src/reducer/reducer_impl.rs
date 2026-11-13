@@ -86,6 +86,8 @@ impl Reducible for GameStateReducer {
                     focus_target,
                 });
             }
+            // A session the client already left has no end screen to show.
+            GameAction::GameOver(_) if next.active_player_id().is_none() => {}
             GameAction::GameOver(stats) => {
                 next.stats = MatchStats {
                     score: stats.final_score,

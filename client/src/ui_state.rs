@@ -1,5 +1,6 @@
 //! Strongly typed UI flow state for overlays and cooldowns.
 
+use crate::reducer::{ClientPhase, GameStateReducer};
 use common::types::DurationMs;
 
 /// Join overlay step in the pre-game flow.
@@ -75,5 +76,38 @@ impl CooldownSeconds {
     /// Returns the cooldown decremented by one second, saturating at zero.
     pub const fn decrement(self) -> Self {
         Self(self.0.saturating_sub(1))
+    }
+}
+
+/// What sits behind floating UI such as the chat and the leave button.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Backdrop {
+    /// The bright board, seen while playing.
+    LightBoard,
+    /// The dimming overlay of menus, queues and end screens.
+    DarkOverlay,
+}
+
+impl Backdrop {
+    /// Returns the backdrop of the screen the client currently shows.
+    pub fn of(reducer: &GameStateReducer) -> Self {
+        if reducer.phase == ClientPhase::Alive && !reducer.has_match_result() {
+            Self::LightBoard
+        } else {
+            Self::DarkOverlay
+        }
+    }
+
+    /// Returns the color of text and icons drawn over this backdrop.
+    pub const fn foreground(self) -> &'static str {
+        match self {
+            Self::LightBoard => "#6b7280",
+            Self::DarkOverlay => "#d1d5db",
+        }
+    }
+
+    /// Returns the drop-shadow color of text and icons drawn over this backdrop.
+    pub const fn foreground_shadow(self) -> &'static str {
+        "#374151"
     }
 }
