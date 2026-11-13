@@ -15,12 +15,19 @@ use yew::prelude::*;
 /// How long an error notice stays visible, matching the toast animation.
 const ERROR_VISIBLE_MS: u32 = 3000;
 
-/// Clears the joining spinner when join-related state updates.
+/// Clears the joining spinner once the server answers a join.
+///
+/// Rejoining clears the player id while the join is in flight, so a changed player id alone
+/// is not an answer; clearing the spinner then would let the menu think the join had ended.
 #[hook]
 pub fn use_joining_reset_effect(
     is_joining: UseStateHandle<bool>,
     reducer: UseReducerHandle<GameStateReducer>,
 ) {
+    let answered = reducer.active_player_id().is_some()
+        || reducer.error.is_some()
+        || reducer.queue_status.is_some()
+        || reducer.disconnected;
     use_effect_with(
         (
             reducer.player_id,
@@ -28,7 +35,11 @@ pub fn use_joining_reset_effect(
             reducer.queue_status.clone(),
             reducer.disconnected,
         ),
-        move |_| is_joining.set(false),
+        move |_| {
+            if answered {
+                is_joining.set(false);
+            }
+        },
     );
 }
 

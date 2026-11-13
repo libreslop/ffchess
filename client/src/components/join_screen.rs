@@ -13,14 +13,14 @@ use wasm_bindgen_futures::spawn_local;
 use yew::prelude::*;
 
 /// Height kept clear at the top and bottom of the menu: the chat's bottom offset plus its
-/// input row and three most recent lines (12px text at line-height 1.6).
+/// input row and three most recent lines (12px text at line-height 1).
 ///
 /// The chat renders beneath the menu, so when the window is too short the menu first gives up
 /// the space above it, then the mode list scrolls, instead of the menu covering the chat.
-const CHAT_CLEARANCE: &str = "12px + 4 * 1.6 * 12px";
+const CHAT_CLEARANCE: &str = "12px + 4 * 12px";
 
 /// Fixed height of one mode list row, divider included, so the visible row count is exact.
-const MODE_ROW_HEIGHT_PX: f64 = 38.0;
+const MODE_ROW_HEIGHT_PX: f64 = 28.0;
 
 /// Number of mode rows the list keeps visible however short the window gets.
 ///
@@ -94,10 +94,10 @@ pub fn join_screen(props: &JoinScreenProps) -> Html {
                         modes={props.mode_options.clone()}
                         selected={selected_mode}
                         on_select={props.on_select_mode.clone()}
-                        style={format!("flex: 0 1 auto; min-height: {mode_list_min_height}px; margin-bottom: 16px; max-height: 220px; overflow-y: auto; border: 2px solid #cbd5e1; background: transparent;")}
+                        style={format!("flex: 0 1 auto; min-height: {mode_list_min_height}px; margin-bottom: 12px; max-height: 220px; overflow-y: auto; border: 2px solid #cbd5e1; background: transparent;")}
                     />
                     <form style="flex-shrink: 0;" onsubmit={props.on_name_submit.clone()}>
-                        <div style="display: flex; flex-direction: column; gap: 15px; align-items: center;">
+                        <div style="display: flex; flex-direction: column; gap: 12px; align-items: center;">
                             <input type="text" name="player_name" value={props.player_name.clone()} oninput={props.on_name_input.clone()} placeholder="This is a tale of..." autofocus=true
                                 autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
                                 onkeydown={{
@@ -112,9 +112,9 @@ pub fn join_screen(props: &JoinScreenProps) -> Html {
                                         }
                                     })
                                 }}
-                                style="padding: 12px 20px; border-radius: 0; border: 2px solid #cbd5e1; width: 100%; box-sizing: border-box; font-size: 1.2em; outline: none; background: #fff; text-align: center;"/>
+                                style="padding: 8px 20px; border-radius: 0; border: 2px solid #cbd5e1; width: 100%; box-sizing: border-box; font-size: 1.2em; outline: none; background: #fff; text-align: center;"/>
                             <button type="submit" disabled={props.landing_cooldown.is_active() || props.is_loading}
-                                style={format!("padding: 10px 40px; background: {}; color: #fff; border: 3px solid {}; border-radius: 0; font-weight: 900; cursor: {}; font-size: 1.2em; width: auto; text-transform: uppercase; letter-spacing: 1px;",
+                                style={format!("padding: 6px 40px; background: {}; color: #fff; border: 3px solid {}; border-radius: 0; font-weight: 900; cursor: {}; font-size: 1.2em; width: auto; text-transform: uppercase; letter-spacing: 1px;",
                                     if props.landing_cooldown.is_active() || props.is_loading { "#94a3b8" } else { "#3b82f6" },
                                     if props.landing_cooldown.is_active() || props.is_loading { "#64748b" } else { "#1e3a8a" },
                                     if props.landing_cooldown.is_active() || props.is_loading { "not-allowed" } else { "pointer" })}>
@@ -129,21 +129,25 @@ pub fn join_screen(props: &JoinScreenProps) -> Html {
                 } else {
                     <div style="animation: fadeIn 0.3s ease-out; display: flex; flex-direction: column; align-items: center;">
                         if props.queue_status.is_none() {
-                            <h3 style="color: #fff; margin-bottom: 25px; text-transform: uppercase; letter-spacing: 2px; text-shadow: 2px 2px 0 rgba(0,0,0,0.5);">{"CHOOSE YOUR ARMY"}</h3>
+                            <h3 style="color: #fff; margin: 0 0 16px; text-transform: uppercase; letter-spacing: 2px; text-shadow: 2px 2px 0 rgba(0,0,0,0.5);">{"CHOOSE YOUR ARMY"}</h3>
                         }
 
                         if let Some(error) = &props.error {
-                            <div style="margin-bottom: 20px; color: #ef4444; background: rgba(255,255,255,0.9); padding: 10px 20px; border-radius: 4px; font-weight: bold;">
+                            <div style="margin-bottom: 16px; color: #ef4444; background: rgba(255,255,255,0.9); padding: 6px 16px; border-radius: 4px; font-weight: bold;">
                                 { error.to_string() }
                             </div>
                         }
 
                         if let Some(queue) = &props.queue_status {
-                            <div style="color: #cbd5e1; font-size: 1.1em; font-weight: 700;">
+                            // The quick-play list hangs below the message out of flow, so the
+                            // message alone is what gets centred on screen.
+                            <div style="position: relative; width: 100%;">
+                            // 20px is the font's native size, where its pixels land on whole screen pixels.
+                            <div style="color: #e2e8f0; font-size: 20px; text-shadow: 2px 2px 0 rgba(0,0,0,0.5);">
                                 { queue_waiting_message(queue) }
                             </div>
                             if !props.quick_play_modes.is_empty() {
-                                <div data-testid="quick-play-list" style="width: 100%; margin-top: 24px;">
+                                <div data-testid="quick-play-list" style="position: absolute; top: 100%; left: 0; right: 0; margin-top: 56px;">
                                     <div style="color: rgba(255,255,255,0.8); font-size: 0.85em; font-weight: 700; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 8px;">
                                         {"Quick play"}
                                     </div>
@@ -155,6 +159,7 @@ pub fn join_screen(props: &JoinScreenProps) -> Html {
                                     />
                                 </div>
                             }
+                            </div>
                         } else {
                             <div style="display: flex; gap: 12px; width: 100%; justify-content: center; flex-wrap: wrap;">
                                 if let Some(mode) = &props.mode {
@@ -166,7 +171,7 @@ pub fn join_screen(props: &JoinScreenProps) -> Html {
                                                 disabled={is_disabled}
                                                 onclick={on_click}
                                                 style={format!(
-                                                    "width: 150px; height: 150px; position: relative; padding: 12px; cursor: {}; border-radius: 0; border: 2px solid rgba(255,255,255,0.5); background: rgba(255,255,255,0.1); color: #fff; transition: all 0.2s; opacity: {}; display: flex; flex-direction: column; align-items: center; justify-content: center;",
+                                                    "width: 120px; height: 120px; position: relative; padding: 10px; cursor: {}; border-radius: 0; border: 2px solid rgba(255,255,255,0.5); background: rgba(255,255,255,0.1); color: #fff; transition: all 0.2s; opacity: {}; display: flex; flex-direction: column; align-items: center; justify-content: center;",
                                                     if is_disabled { "not-allowed" } else { "pointer" },
                                                     if is_disabled { "0.5" } else { "1.0" }
                                                 )}
@@ -264,7 +269,7 @@ fn title(props: &TitleProps) -> Html {
         format!("display: block; image-rendering: pixelated; filter: {TITLE_SHADOW};");
     let icon_side = PIECE_ICON_SIZE * px;
     html! {
-        <h1 style={format!("flex-shrink: 0; margin: 0 0 {}px; display: flex; align-items: center; justify-content: center; gap: {}px;", 8 * px, px)}>
+        <h1 style={format!("flex-shrink: 0; margin: 0 0 {}px; display: flex; align-items: center; justify-content: center; gap: {}px;", 6 * px, px)}>
             // The icon's space is held while it loads, so the title does not jump sideways.
             if piece.is_some() {
                 <div style={format!("width: {icon_side}px; height: {icon_side}px; flex-shrink: 0;")}>
@@ -427,7 +432,7 @@ fn mode_row(mode: &ModeSummary, selected: bool, on_select: &Callback<ModeId>) ->
             onclick={on_click}
             tabindex="-1"
             style={format!(
-                "display: flex; width: 100%; justify-content: space-between; align-items: center; text-align: left; box-sizing: border-box; height: {}px; padding: 10px 12px; line-height: 17px; border: none; border-bottom: 1px solid rgba(255,255,255,0.08); background: {}; color: #fff; font-weight: 500; cursor: pointer;",
+                "display: flex; width: 100%; justify-content: space-between; align-items: center; text-align: left; box-sizing: border-box; height: {}px; padding: 0 12px; border: none; border-bottom: 1px solid rgba(255,255,255,0.08); background: {}; color: #fff; font-weight: 500; cursor: pointer;",
                 MODE_ROW_HEIGHT_PX,
                 if selected { "rgba(255,255,255,0.08)" } else { "transparent" },
             )}

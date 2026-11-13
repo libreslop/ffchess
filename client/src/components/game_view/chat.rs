@@ -302,7 +302,7 @@ pub fn game_chat(props: &GameChatProps) -> Html {
                                 <div
                                     key={key.0.clone()}
                                     style={format!(
-                                        "font-size: 12px; line-height: 1.6; min-height: 1.6em; overflow-wrap: anywhere; opacity: {}; transition: opacity {}ms linear; will-change: opacity;",
+                                        "font-size: 12px; line-height: 1; min-height: 1em; overflow-wrap: anywhere; opacity: {}; transition: opacity {}ms linear; will-change: opacity;",
                                         if is_expired { "0" } else { "1" },
                                         CHAT_FADE_OUT_MS
                                     )}
@@ -334,7 +334,7 @@ pub fn game_chat(props: &GameChatProps) -> Html {
                 }
             </div>
             <form data-chat-ui="true" onsubmit={on_chat_submit}>
-                <div data-chat-ui="true" style="position: relative; min-height: 1.6em;">
+                <div data-chat-ui="true" style="position: relative; min-height: 1em;">
                     <input
                         ref={chat_input_ref}
                         class="ff-chat-input"
@@ -348,7 +348,7 @@ pub fn game_chat(props: &GameChatProps) -> Html {
                         maxlength={chat_max_chars.to_string()}
                         placeholder="Write a message"
                         style={format!(
-                            "width: 100%; border: 0; background: transparent; color: {}; text-shadow: 1px 1px 0 {}; caret-color: {}; font-size: 12px; line-height: 1.6; min-height: 1.6em; padding: 0; padding-right: 68px; outline: none;",
+                            "width: 100%; border: 0; background: transparent; color: {}; text-shadow: 1px 1px 0 {}; caret-color: {}; font-size: 12px; line-height: 1; min-height: 1em; padding: 0; padding-right: 68px; outline: none;",
                             theme.message_color,
                             theme.message_shadow,
                             theme.message_color
@@ -361,7 +361,7 @@ pub fn game_chat(props: &GameChatProps) -> Html {
                                 <span
                                     data-chat-ui="true"
                                     style={format!(
-                                        "position: absolute; right: 0; top: 0; font-size: 12px; line-height: 1.6; color: {}; text-shadow: 1px 1px 0 {}; pointer-events: none;",
+                                        "position: absolute; right: 0; top: 0; font-size: 12px; line-height: 1; color: {}; text-shadow: 1px 1px 0 {}; pointer-events: none;",
                                         theme.message_color,
                                         theme.message_shadow
                                     )}

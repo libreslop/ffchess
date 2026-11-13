@@ -15,6 +15,10 @@ const STOP_ICON_PX: u32 = 14;
 /// Color of the stop queuing icon.
 const STOP_ICON_COLOR: &str = "#ef4444";
 
+/// Trims a text box to the glyphs, which fill only the bottom of the font's line box, so
+/// centering the box centers the visible text at any font size.
+const TRIM_TO_GLYPHS: &str = "text-box: trim-both cap alphabetic;";
+
 /// Every decimal digit, for clock positions that can show any of them.
 const ANY_DIGIT: &[char] = &['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
 
@@ -50,11 +54,11 @@ pub fn queue_banner(props: &QueueBannerProps) -> Html {
             data-ui-exempt="true"
             style="position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 120; display: flex; gap: 10px; align-items: center; padding: 6px 12px; background: rgba(15,23,42,0.85); border: 2px solid #cbd5e1; color: #fff; font-size: 0.9em; white-space: nowrap; animation: simpleFadeIn 0.2s ease-out;"
         >
-            <span>{"Queuing in "}<strong>{ &props.mode_name }</strong></span>
-            <span style="font-variant-numeric: tabular-nums; color: #cbd5e1;">
+            <span style={TRIM_TO_GLYPHS}>{"Queuing in "}<strong>{ &props.mode_name }</strong></span>
+            <span style={format!("{TRIM_TO_GLYPHS} font-variant-numeric: tabular-nums; color: #cbd5e1;")}>
                 { queue_count(status) }
             </span>
-            <span style="font-variant-numeric: tabular-nums; color: #cbd5e1; font-size: 0.8em;">
+            <span style={format!("{TRIM_TO_GLYPHS} font-variant-numeric: tabular-nums; color: #cbd5e1; font-size: 0.8em;")}>
                 { clock(status.waited(*now)) }
             </span>
             <button

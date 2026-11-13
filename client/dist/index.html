@@ -14,12 +14,16 @@
         <meta name="twitter:card" content="summary_large_image">
         <meta name="theme-color" content="#2563eb">
 
-        <link rel="preconnect" href="https://fonts.googleapis.com">
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-        <link href="https://fonts.googleapis.com/css2?family=Arbutus&display=swap" rel="stylesheet">
+        <link rel="preload" href="/assets/static/fonts/upheavtt.ttf" as="font" type="font/ttf" crossorigin>
         <script id="initial-modes" type="application/json">__MODES_JSON__</script>
         <script id="initial-global" type="application/json">__GLOBAL_JSON__</script>
         <style>
+            /* Upheaval by Brian Kent, freeware; see assets/static/fonts/upheaval.txt. */
+            @font-face {
+                font-family: 'Upheaval';
+                src: url('/assets/static/fonts/upheavtt.ttf') format('truetype');
+                font-display: block;
+            }
             html, body { 
                 margin: 0; 
                 padding: 0; 
@@ -29,7 +33,7 @@
                 overscroll-behavior: none;
                 touch-action: none;
                 background-color: #f0f2f5; 
-                font-family: 'Arbutus', serif;
+                font-family: 'Upheaval', sans-serif;
             }
             * {
                 -webkit-touch-callout: none;
@@ -53,11 +57,11 @@
                 }
             }, { passive: false });
         </script>
-    <link rel="modulepreload" href="/client-9c5e8ab7e26fec62.js" crossorigin="anonymous" integrity="sha384-Wb1aw6CpsvEKs/621JktgouggoWmLUwhnZpJxjggkmHTKXdz5RXLhjc7oUQEgVy1"><link rel="preload" href="/client-9c5e8ab7e26fec62_bg.wasm" crossorigin="anonymous" integrity="sha384-CciWpvDV4gvhAwL6LfQj0wigyG0uYngHhDIRPMRzf20DxiQbbJWtOGND0ZXOze8V" as="fetch" type="application/wasm"></head>
+    <link rel="modulepreload" href="/client-c701605058578181.js" crossorigin="anonymous" integrity="sha384-P/WDDNpgv4OLsHjAMYLUQYRWGe9ejkYqStayyH+l1b09Lx/UwYQpkiPNqTxn9BmB"><link rel="preload" href="/client-c701605058578181_bg.wasm" crossorigin="anonymous" integrity="sha384-sbZAT0dcsLj+Ja+P+FxzCQi9O8Ke5KC6tk2dGiXD4h3QDHNnroagD11DXndw6JYu" as="fetch" type="application/wasm"></head>
     <body>
 <script type="module">
-import init, * as bindings from '/client-9c5e8ab7e26fec62.js';
-const wasm = await init({ module_or_path: '/client-9c5e8ab7e26fec62_bg.wasm' });
+import init, * as bindings from '/client-c701605058578181.js';
+const wasm = await init({ module_or_path: '/client-c701605058578181_bg.wasm' });
 
 
 window.wasmBindings = bindings;

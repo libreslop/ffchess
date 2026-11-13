@@ -1,9 +1,9 @@
 {
     "game_order": [
-        "ffa",
-        "arena",
         "blitz",
-        "rapid"
+        "rapid",
+        "ffa",
+        "arena"
     ],
     "quick_play_modes": [
         "ffa",

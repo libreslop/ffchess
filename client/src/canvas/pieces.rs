@@ -76,7 +76,7 @@ impl Renderer {
         self.ctx
             .set_fill_style_str(&format!("rgba(255, 255, 255, {})", params.alpha));
         self.ctx
-            .set_font(&format!("bold {}px Arbutus", 16.0 * zoom));
+            .set_font(&format!("bold {}px Upheaval", 16.0 * zoom));
         let _ = self
             .ctx
             .fill_text("?", center.x - 5.0 * zoom, center.y + 6.0 * zoom);
@@ -219,7 +219,7 @@ impl Renderer {
             _ => &player.name,
         };
         let (tile, zoom) = (params.tile_size, params.zoom);
-        self.ctx.set_font(&format!("{}px Arbutus", 12.0 * zoom));
+        self.ctx.set_font(&format!("{}px Upheaval", 12.0 * zoom));
         let Ok(metrics) = self.ctx.measure_text(name) else {
             return;
         };
