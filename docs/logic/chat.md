@@ -64,6 +64,12 @@ It handles:
 - adaptive contrast:
   - in-game on the light board, message text uses darker greys and darker shadows
   - out-game on dark overlays, message text uses lighter greys and lighter shadows
+- layering beneath every other UI element so it never blocks buttons:
+  - in-game it sits below the HUD (shop, stats, leaderboard)
+  - on menus and end screens it sits above the dimming backdrop but below the overlay content
+  - the join menu keeps the chat input and its three latest lines clear; on short windows the
+    game mode list shrinks (to no less than 2.5 rows, the half row hinting at the hidden
+    scrollbar) and scrolls instead
 - client-side URL linkification for `http://`, `https://`, and `www.` prefixes
 - a live `current/max` counter once the draft length crosses `chat_warning_chars`
 - focus retention on send, and blur only when the user clicks outside the input

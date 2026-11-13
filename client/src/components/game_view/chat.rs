@@ -29,6 +29,20 @@ enum ChatSurface {
     DarkOverlay,
 }
 
+impl ChatSurface {
+    /// Returns the stacking layer that keeps the chat beneath every other UI element.
+    ///
+    /// In game the chat sits below the HUD (shop, stats and leaderboard start at 50). Over a
+    /// menu or end screen it sits between the dimming backdrop (90) and the overlay content
+    /// (100), so it stays readable and usable without covering any buttons.
+    const fn z_index(self) -> u32 {
+        match self {
+            Self::LightBoard => 40,
+            Self::DarkOverlay => 95,
+        }
+    }
+}
+
 /// Chat color palette chosen for the current UI surface.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct ChatTheme {
@@ -274,7 +288,10 @@ pub fn game_chat(props: &GameChatProps) -> Html {
         <div
             data-ui-exempt="true"
             data-chat-ui="true"
-            style="position: absolute; left: 12px; bottom: 12px; width: min(460px, calc(100vw - 24px)); max-height: 38vh; display: flex; flex-direction: column; gap: 0; z-index: 160;"
+            style={format!(
+                "position: absolute; left: 12px; bottom: 12px; width: min(460px, calc(100vw - 24px)); max-height: 38vh; display: flex; flex-direction: column; gap: 0; z-index: {};",
+                surface.z_index()
+            )}
         >
             <style>
                 {format!(

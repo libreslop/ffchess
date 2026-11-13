@@ -6,6 +6,25 @@ use common::models::{GameModeClientConfig, ModeSummary};
 use common::types::{KitId, ModeId};
 use yew::prelude::*;
 
+/// Height kept clear at the top and bottom of the menu: the chat's bottom offset plus its
+/// input row and three most recent lines (12px text at line-height 1.6).
+///
+/// The chat renders beneath the menu, so when the window is too short the mode list scrolls
+/// instead of the menu covering the chat.
+const CHAT_CLEARANCE: &str = "12px + 4 * 1.6 * 12px";
+
+/// Fixed height of one mode list row, divider included, so the visible row count is exact.
+const MODE_ROW_HEIGHT_PX: f64 = 38.0;
+
+/// Number of mode rows the list keeps visible however short the window gets.
+///
+/// The half row hints that the list scrolls, since its scrollbar is hidden.
+const MIN_VISIBLE_MODE_ROWS: f64 = 2.5;
+
+/// Hides the mode list scrollbar; the list still scrolls by wheel, touch, and keyboard.
+const MODE_LIST_STYLE: &str =
+    ".ff-mode-list { scrollbar-width: none; } .ff-mode-list::-webkit-scrollbar { display: none; }";
+
 /// Properties for the join screen inputs.
 #[derive(Properties, PartialEq)]
 pub struct JoinScreenProps {
@@ -32,14 +51,21 @@ pub struct JoinScreenProps {
 pub fn join_screen(props: &JoinScreenProps) -> Html {
     let mobile = is_mobile();
     let is_disabled = props.is_loading || props.queue_status.is_some();
+    let vertical_padding = if mobile { "20px" } else { "30px" };
+    let mode_list_min_height =
+        (props.mode_options.len() as f64).min(MIN_VISIBLE_MODE_ROWS) * MODE_ROW_HEIGHT_PX;
 
     html! {
         <>
+            <style>{MODE_LIST_STYLE}</style>
             <div style="position: absolute; inset: 0; background: rgba(0,0,0,0.6); z-index: 90;"></div>
-            <div style={format!("position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 100; text-align: center; width: 90%; max-width: 400px; padding: {};", if mobile { "20px 10px" } else { "30px" })}>
+            <div style={format!(
+                "position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 100; text-align: center; width: 90%; max-width: 400px; padding: {} {}; max-height: calc(100% - 2 * ({CHAT_CLEARANCE} + {})); display: flex; flex-direction: column;",
+                vertical_padding, if mobile { "10px" } else { "30px" }, vertical_padding
+            )}>
                 if props.join_step.is_enter_name() {
-                    <h1 style={format!("margin-top: 0; color: #fff; font-size: {}; letter-spacing: 4px; text-shadow: 3px 3px 0 rgba(0,0,0,0.6);", if mobile { "3em" } else { "4em" })}>{"FFCHESS"}</h1>
-                    <div style="margin-bottom: 16px; max-height: 220px; overflow-y: auto; border: 2px solid #cbd5e1; background: transparent;">
+                    <h1 style={format!("flex-shrink: 0; margin-top: 0; color: #fff; font-size: {}; letter-spacing: 4px; text-shadow: 3px 3px 0 rgba(0,0,0,0.6);", if mobile { "3em" } else { "4em" })}>{"FFCHESS"}</h1>
+                    <div class="ff-mode-list" style={format!("flex: 0 1 auto; min-height: {mode_list_min_height}px; margin-bottom: 16px; max-height: 220px; overflow-y: auto; border: 2px solid #cbd5e1; background: transparent;")}>
                         { for props.mode_options.iter().map(|m| {
                             let on_select = props.on_select_mode.clone();
                             let id = m.id.clone();
@@ -48,7 +74,8 @@ pub fn join_screen(props: &JoinScreenProps) -> Html {
                                 <button
                                     onclick={Callback::from(move |_| on_select.emit(id.clone()))}
                                     style={format!(
-                                        "display: flex; width: 100%; justify-content: space-between; align-items: center; text-align: left; padding: 10px 12px; border: none; border-bottom: 1px solid rgba(255,255,255,0.08); background: {}; color: #fff; font-weight: 500; cursor: pointer;",
+                                        "display: flex; width: 100%; justify-content: space-between; align-items: center; text-align: left; box-sizing: border-box; height: {}px; padding: 10px 12px; line-height: 17px; border: none; border-bottom: 1px solid rgba(255,255,255,0.08); background: {}; color: #fff; font-weight: 500; cursor: pointer;",
+                                        MODE_ROW_HEIGHT_PX,
                                         if selected { "rgba(255,255,255,0.08)" } else { "transparent" },
                                     )}
                                 >
@@ -63,7 +90,7 @@ pub fn join_screen(props: &JoinScreenProps) -> Html {
                             }
                         })}
                     </div>
-                    <form onsubmit={props.on_name_submit.clone()}>
+                    <form style="flex-shrink: 0;" onsubmit={props.on_name_submit.clone()}>
                         <div style="display: flex; flex-direction: column; gap: 15px; align-items: center;">
                             <input type="text" name="player_name" value={props.player_name.clone()} oninput={props.on_name_input.clone()} placeholder="This is a tale of..." autofocus=true
                                 autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
