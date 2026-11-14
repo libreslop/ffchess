@@ -1,4 +1,4 @@
-//! Leaderboard overlay component, with the board's spectators listed beneath it.
+//! Leaderboard overlay component, with the board's spectators listed at the middle right.
 
 use common::models::Player;
 use common::types::PlayerId;
@@ -18,7 +18,8 @@ pub struct LeaderboardProps {
 }
 
 #[function_component(Leaderboard)]
-/// Renders the leaderboard with the top player scores, and the spectators below it.
+/// Renders the leaderboard with the top player scores at the top right, and the spectators
+/// at the middle right.
 ///
 /// `props` provides the player list and current player id. Returns rendered HTML.
 pub fn leaderboard(props: &LeaderboardProps) -> Html {
@@ -30,9 +31,9 @@ pub fn leaderboard(props: &LeaderboardProps) -> Html {
     });
 
     html! {
-        <div style="position: absolute; top: 10px; right: 10px; background: transparent; padding: 5px; width: 200px; z-index: 60; pointer-events: none; display: flex; flex-direction: column; gap: 12px;">
+        <>
             if props.show_scores {
-                <div style="display: flex; flex-direction: column; gap: 5px;">
+                <div style="position: absolute; top: 10px; right: 10px; background: transparent; padding: 5px; width: 200px; z-index: 60; pointer-events: none; display: flex; flex-direction: column; gap: 5px;">
                     {
                         players.into_iter().take(MAX_LISTED).map(|p| {
                             let is_self = props.self_id == p.id;
@@ -48,7 +49,7 @@ pub fn leaderboard(props: &LeaderboardProps) -> Html {
                 </div>
             }
             <SpectatorList names={props.spectators.clone()} />
-        </div>
+        </>
     }
 }
 
@@ -66,9 +67,9 @@ fn spectator_list(props: &SpectatorListProps) -> Html {
     }
     let hidden = props.names.len().saturating_sub(MAX_LISTED);
     html! {
-        <div data-testid="spectator-list" style="display: flex; flex-direction: column; gap: 3px; font-size: 0.8em; color: #6b7280;">
+        <div data-testid="spectator-list" style="position: absolute; top: 50%; right: 10px; transform: translateY(-50%); padding: 5px; width: 200px; z-index: 60; pointer-events: none; display: flex; flex-direction: column; gap: 3px; font-size: 0.8em; color: #6b7280; text-align: right;">
             <span style="font-weight: bold; text-transform: uppercase; letter-spacing: 1px; font-size: 0.85em;">
-                {format!("Spectators ({})", props.names.len())}
+                {"Spectators"}
             </span>
             { for props.names.iter().take(MAX_LISTED).map(|name| html! {
                 <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{name}</span>
