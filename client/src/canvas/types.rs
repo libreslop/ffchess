@@ -78,7 +78,7 @@ pub struct DraggedPiece {
 pub struct FailedTrail {
     /// The lines of the trail as last drawn.
     pub lines: Vec<PremoveLine>,
-    /// The moves that failed, whose target squares flash with the trail.
+    /// The moves that failed, whose culprit squares flash with the trail.
     pub failed_moves: Vec<FailedMove>,
     /// True while the flash is black rather than the trail's color.
     pub dark: bool,

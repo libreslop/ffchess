@@ -42,15 +42,19 @@ impl Reducible for GameStateReducer {
                 let request = next.premoves.enqueue(piece_id, action);
                 if !tx.send(ClientMessage::QueueAction(request)) {
                     next.premoves
-                        .resolve(request.id, Err(GameError::ActionCancelled));
+                        .resolve(request.id, Err(GameError::ActionCancelled), Vec::new());
                 }
             }
             GameAction::ClearActions { piece_id, tx } => {
                 next.premoves.clear_piece(piece_id);
                 tx.send(ClientMessage::ClearActions { piece_id });
             }
-            GameAction::ActionResult { id, result } => {
-                if let Some(error) = next.premoves.resolve(id, result) {
+            GameAction::ActionResult {
+                id,
+                result,
+                culprits,
+            } => {
+                if let Some(error) = next.premoves.resolve(id, result, culprits) {
                     next.show_error(error);
                 }
             }

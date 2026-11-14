@@ -6,7 +6,9 @@ use common::models::{
 };
 use common::protocol::{ChatLine, GameError, GameOverStats, VictoryFocusTarget};
 use common::rules::Catalog;
-use common::types::{ActionId, BoardSize, PieceId, PlayerId, SessionSecret, TimestampMs};
+use common::types::{
+    ActionId, BoardCoord, BoardSize, PieceId, PlayerId, SessionSecret, TimestampMs,
+};
 
 /// Initial game snapshot payload delivered on connect.
 pub struct InitPayload {
@@ -90,6 +92,7 @@ pub enum GameAction {
     ActionResult {
         id: ActionId,
         result: Result<(), GameError>,
+        culprits: Vec<BoardCoord>,
     },
     PushChatLine(ChatLine),
     PruneExpiredChat {

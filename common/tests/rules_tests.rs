@@ -1,7 +1,7 @@
 //! Tests for shared movement, shop, and simulation rules.
 
 use common::models::{
-    GameState, MoveTiming, Piece, PieceAction, PieceConfig, Player, Shop, ShopConfig,
+    DestinationRequirement, GameState, MoveTiming, Piece, PieceAction, PieceConfig, Player, Shop, ShopConfig,
     ShopGroupConfig, ShopItemConfig, ShopItemIndex,
 };
 use common::protocol::GameError;
@@ -236,6 +236,57 @@ fn sliding_path_blocking() {
     assert_eq!(
         check(&config, &state, start, BoardCoord::new(0, 1), None),
         Ok(MoveKind::Capture)
+    );
+}
+
+#[test]
+/// Verifies a blocked move blames the pieces in its way and a legal move blames nothing.
+fn blocked_path_culprits_are_the_blockers() {
+    let mut state = empty_state();
+    add_piece(&mut state, Some(PlayerId::new()), "pawn", [0, 1]);
+    let catalog = catalog(vec![rook_config(), pawn_config()], vec![]);
+    let mover = Piece::new(None, PieceTypeId::from("rook"), BoardCoord::new(0, 0));
+
+    let culprits = |end| catalog.move_culprits(&state, &mover, end, MoveTiming::Now);
+    assert_eq!(culprits(BoardCoord::new(0, 3)), vec![BoardCoord::new(0, 1)]);
+    assert_eq!(culprits(BoardCoord::new(0, 1)), vec![]);
+}
+
+#[test]
+/// Verifies a move onto a friendly piece blames that piece's square.
+fn friendly_target_culprit_is_the_target() {
+    let mut state = empty_state();
+    let me = add_player(&mut state, 0);
+    add_piece(&mut state, Some(me), "pawn", [0, 1]);
+    let catalog = catalog(vec![rook_config(), pawn_config()], vec![]);
+    let mover = Piece::new(Some(me), PieceTypeId::from("rook"), BoardCoord::new(0, 0));
+
+    assert_eq!(
+        catalog.move_culprits(&state, &mover, BoardCoord::new(0, 1), MoveTiming::Now),
+        vec![BoardCoord::new(0, 1)]
+    );
+}
+
+#[test]
+/// Verifies a move onto a targeted square that must not be blames the attackers.
+fn targeted_destination_culprits_are_the_attackers() {
+    let mut state = empty_state();
+    let me = add_player(&mut state, 0);
+    add_piece(&mut state, Some(PlayerId::new()), "pawn", [2, 1]);
+    let king = PieceConfig {
+        destination_requirements: vec![DestinationRequirement {
+            condition: ExprString::from("!square_targeted"),
+            ignore_for_premove: false,
+        }],
+        ..piece_config("king", &[[1, 0]], &[[1, 0]])
+    };
+    let catalog = catalog(vec![king, pawn_config()], vec![]);
+    let king_id = add_piece(&mut state, Some(me), "king", [0, 0]);
+    let mover = &state.pieces[&king_id];
+
+    assert_eq!(
+        catalog.move_culprits(&state, mover, BoardCoord::new(1, 0), MoveTiming::Now),
+        vec![BoardCoord::new(2, 1)]
     );
 }
 

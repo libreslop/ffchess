@@ -197,16 +197,67 @@ impl PieceConfig {
         if requirements.peek().is_none() {
             return true;
         }
-        let after = plan.outcome(state);
-        let Some(landed) = after.pieces.get(&mover.id) else {
+        let Some((_, _, vars)) = self.destination_context(catalog, state, mover, plan) else {
             return false;
         };
+        requirements.all(|requirement| requirement.condition.holds(&vars))
+    }
+
+    /// Returns the squares to blame for `plan` breaking destination requirements that apply
+    /// to `timing`.
+    ///
+    /// A requirement that only fails because the landing square is targeted blames the
+    /// attackers; any other failing requirement blames the landing square itself.
+    fn destination_culprits(
+        &self,
+        catalog: &Catalog,
+        state: &GameState,
+        mover: &Piece,
+        plan: &MovePlan,
+        timing: MoveTiming,
+    ) -> Vec<BoardCoord> {
+        let Some((after, landed, vars)) = self.destination_context(catalog, state, mover, plan)
+        else {
+            return Vec::new();
+        };
+        let untargeted = vars.clone().with("square_targeted", false);
+        let mut culprits = Vec::new();
+        for requirement in self
+            .destination_requirements
+            .iter()
+            .filter(|requirement| requirement.applies_to(timing))
+            .filter(|requirement| !requirement.condition.holds(&vars))
+        {
+            if requirement.condition.holds(&untargeted) {
+                culprits.extend(
+                    catalog
+                        .attackers(&after, landed, mover.owner_id)
+                        .map(|attacker| attacker.position),
+                );
+            } else {
+                culprits.push(landed);
+            }
+        }
+        culprits
+    }
+
+    /// Returns the board after `plan`, where the mover lands, and the variables its
+    /// destination requirements see, or `None` when the plan removes the mover.
+    fn destination_context(
+        &self,
+        catalog: &Catalog,
+        state: &GameState,
+        mover: &Piece,
+        plan: &MovePlan,
+    ) -> Option<(GameState, BoardCoord, ExprVars)> {
+        let after = plan.outcome(state);
+        let landed = after.pieces.get(&mover.id)?.position;
         let vars = Self::destination_vars(
             mover.moves_made,
             plan.kind() == MoveKind::Capture,
-            catalog.is_targeted(&after, landed.position, landed.owner_id),
+            catalog.is_targeted(&after, landed, mover.owner_id),
         );
-        requirements.all(|requirement| requirement.condition.holds(&vars))
+        Some((after, landed, vars))
     }
 
     /// Lists the squares a piece of this type on `start` might move to, before any checks.
@@ -259,6 +310,53 @@ impl PieceConfig {
         } else {
             Err(GameError::PathBlocked)
         }
+    }
+
+    /// Returns the first occupied square before `end` on each `kind` path from `start` that
+    /// reaches `end`.
+    fn blockers(
+        &self,
+        state: &GameState,
+        start: BoardCoord,
+        end: BoardCoord,
+        kind: MoveKind,
+    ) -> Vec<BoardCoord> {
+        let displacement = end - start;
+        let mut blockers: Vec<BoardCoord> = self
+            .paths(kind)
+            .iter()
+            .filter_map(|path| {
+                let approach = &path[..path.iter().position(|step| *step == displacement)?];
+                approach
+                    .iter()
+                    .map(|step| start + *step)
+                    .find(|square| state.piece_at(*square).is_some())
+            })
+            .collect();
+        blockers.sort_by_key(|square| (square.0.x, square.0.y));
+        blockers.dedup();
+        blockers
+    }
+
+    /// Returns the squares to blame for a path move of `mover` to `end` failing with `error`.
+    ///
+    /// A blocked path blames the pieces in the way; any other failure blames `end`.
+    fn path_culprits(
+        &self,
+        state: &GameState,
+        mover: &Piece,
+        end: BoardCoord,
+        error: &GameError,
+    ) -> Vec<BoardCoord> {
+        if *error != GameError::PathBlocked {
+            return vec![end];
+        }
+        let kind = if state.piece_at(end).is_some() {
+            MoveKind::Capture
+        } else {
+            MoveKind::Quiet
+        };
+        self.blockers(state, mover.position, end, kind)
     }
 
     /// Plans a move along `move_paths` or `capture_paths`.
@@ -369,6 +467,47 @@ impl Catalog {
         }
     }
 
+    /// Returns the squares to blame when `mover` may not move to `end` with `timing`: the
+    /// pieces in the way, the friendly piece on `end`, the attackers of a square the move may
+    /// not be targeted on, the missing partner of a special move, and so on.
+    ///
+    /// Follows the same steps as [`Self::plan_move`]. Failures no other square explains blame
+    /// `end`; a legal move blames nothing.
+    pub fn move_culprits(
+        &self,
+        state: &GameState,
+        mover: &Piece,
+        end: BoardCoord,
+        timing: MoveTiming,
+    ) -> Vec<BoardCoord> {
+        let Ok(config) = self.piece(&mover.piece_type) else {
+            return vec![end];
+        };
+        let plan = match config.plan_path_move(state, mover, end) {
+            Ok(plan) => plan,
+            Err(error) => {
+                let special = config
+                    .special_moves
+                    .iter()
+                    .find_map(|special| special.plan(self, state, mover, end, timing));
+                match special {
+                    Some(plan) => plan,
+                    // A special move aiming at `end` explains the failure better than the
+                    // missing path does.
+                    None => {
+                        return config
+                            .special_moves
+                            .iter()
+                            .filter(|_| error == GameError::InvalidMove)
+                            .find_map(|special| special.culprits(self, state, mover, end, timing))
+                            .unwrap_or_else(|| config.path_culprits(state, mover, end, &error));
+                    }
+                }
+            }
+        };
+        config.destination_culprits(self, state, mover, &plan, timing)
+    }
+
     /// Returns true when a piece of another owner than `owner` could capture onto `square`.
     ///
     /// Only `capture_paths` count, and only over the current board: cooldowns are ignored and
@@ -379,11 +518,22 @@ impl Catalog {
         square: BoardCoord,
         owner: Option<PlayerId>,
     ) -> bool {
+        self.attackers(state, square, owner).next().is_some()
+    }
+
+    /// Returns the pieces that make `square` targeted for `owner`, as in
+    /// [`Self::is_targeted`].
+    pub(crate) fn attackers<'a>(
+        &'a self,
+        state: &'a GameState,
+        square: BoardCoord,
+        owner: Option<PlayerId>,
+    ) -> impl Iterator<Item = &'a Piece> {
         state
             .pieces
             .values()
-            .filter(|attacker| attacker.owner_id != owner && attacker.position != square)
-            .any(|attacker| {
+            .filter(move |attacker| attacker.owner_id != owner && attacker.position != square)
+            .filter(move |attacker| {
                 self.piece(&attacker.piece_type).is_ok_and(|config| {
                     config
                         .reaches(state, attacker.position, square, MoveKind::Capture)

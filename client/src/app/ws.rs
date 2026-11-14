@@ -139,7 +139,15 @@ fn to_action(message: ServerMessage, mode_id: &ModeId) -> GameAction {
             board_size,
             spectators,
         })),
-        ServerMessage::ActionResult { id, result } => GameAction::ActionResult { id, result },
+        ServerMessage::ActionResult {
+            id,
+            result,
+            culprits,
+        } => GameAction::ActionResult {
+            id,
+            result,
+            culprits,
+        },
         ServerMessage::QueueState {
             position_in_queue,
             queued_players,

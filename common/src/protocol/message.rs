@@ -124,6 +124,8 @@ pub enum ServerMessage {
     ActionResult {
         id: ActionId,
         result: Result<(), GameError>,
+        /// Squares to blame for a failed move, such as the pieces in its way.
+        culprits: Vec<BoardCoord>,
     },
     Error(GameError),
     Victory {

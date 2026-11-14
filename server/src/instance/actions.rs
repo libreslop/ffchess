@@ -6,10 +6,10 @@
 //! cancelled, and so is any later request that names a failed action as its predecessor.
 
 use super::world::World;
-use common::models::PieceAction;
+use common::models::{MoveTiming, PieceAction};
 use common::protocol::{ActionRequest, GameError, ServerMessage};
 use common::rules::Simulation;
-use common::types::{ActionId, PieceId, PlayerId, TimestampMs};
+use common::types::{ActionId, BoardCoord, PieceId, PlayerId, TimestampMs};
 use std::collections::{HashMap, HashSet, VecDeque};
 
 /// Maximum number of actions waiting on one piece.
@@ -140,8 +140,7 @@ impl World {
         if !self.actions.is_busy(request.piece_id)
             && self.is_action_ready(request.piece_id, request.action, now)
         {
-            let result = self.execute_action(request.piece_id, queued, now);
-            self.finish_action(queued, result);
+            self.run_action(request.piece_id, queued, now);
         } else if let Err(rejected) = self.actions.push(request.piece_id, queued) {
             let error = GameError::Internal("Too many queued actions".to_string());
             self.finish_action(rejected, Err(error));
@@ -163,10 +162,7 @@ impl World {
                     break;
                 }
                 self.actions.pop_front(piece_id);
-                let result = self.execute_action(piece_id, next, now);
-                let failed = result.is_err();
-                self.finish_action(next, result);
-                if failed {
+                if !self.run_action(piece_id, next, now) {
                     self.cancel_queue(piece_id);
                     break;
                 }
@@ -203,6 +199,17 @@ impl World {
 
     /// Records the outcome of an action and reports it to its player.
     fn finish_action(&mut self, queued: QueuedAction, result: Result<(), GameError>) {
+        self.report_action(queued, result, Vec::new());
+    }
+
+    /// Records the outcome of an action and reports it to its player, together with the
+    /// squares to blame when it failed.
+    fn report_action(
+        &mut self,
+        queued: QueuedAction,
+        result: Result<(), GameError>,
+        culprits: Vec<BoardCoord>,
+    ) {
         if result.is_err() {
             self.actions.cancelled.insert(queued.player_id, queued.id);
         }
@@ -211,6 +218,7 @@ impl World {
             ServerMessage::ActionResult {
                 id: queued.id,
                 result,
+                culprits,
             },
         );
     }
@@ -242,6 +250,24 @@ impl World {
         } else {
             Err(GameError::NotYourPiece)
         }
+    }
+
+    /// Applies one action to the live board and reports its outcome.
+    ///
+    /// Returns true when the action succeeded.
+    fn run_action(&mut self, piece_id: PieceId, queued: QueuedAction, now: TimestampMs) -> bool {
+        let result = self.execute_action(piece_id, queued, now);
+        // A failed action leaves the board untouched, so the move is explained as it stands.
+        let culprits = match (&result, queued.action, self.state.pieces.get(&piece_id)) {
+            (Err(_), PieceAction::Move { target }, Some(piece)) => self
+                .setup
+                .catalog
+                .move_culprits(&self.state, piece, target, MoveTiming::Now),
+            _ => Vec::new(),
+        };
+        let succeeded = result.is_ok();
+        self.report_action(queued, result, culprits);
+        succeeded
     }
 
     /// Applies one action to the live board.

@@ -45,7 +45,7 @@ fn action_results(rx: &mut Inbox) -> Vec<(ActionId, Result<(), GameError>)> {
     drain(rx)
         .into_iter()
         .filter_map(|message| match message {
-            ServerMessage::ActionResult { id, result } => Some((id, result)),
+            ServerMessage::ActionResult { id, result, .. } => Some((id, result)),
             _ => None,
         })
         .collect()

@@ -112,7 +112,7 @@ fn castling_cancels_partner_queue() {
 
     let results: Vec<_> = std::iter::from_fn(|| rx.try_next_event())
         .filter_map(|message| match message {
-            ServerMessage::ActionResult { id, result } => Some((id, result)),
+            ServerMessage::ActionResult { id, result, .. } => Some((id, result)),
             _ => None,
         })
         .collect();

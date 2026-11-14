@@ -112,7 +112,7 @@ fn shop_purchase_deducts_score_and_adds_piece() {
     );
 
     let result = std::iter::from_fn(|| rx.try_next_event()).find_map(|message| match message {
-        ServerMessage::ActionResult { id, result } => Some((id, result)),
+        ServerMessage::ActionResult { id, result, .. } => Some((id, result)),
         _ => None,
     });
     assert_eq!(result, Some((ActionId(1), Ok(()))));

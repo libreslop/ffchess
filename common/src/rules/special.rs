@@ -38,6 +38,23 @@ impl SpecialMove {
             Self::PartneredMove(partnered) => partnered.plan(catalog, state, mover, end, timing),
         }
     }
+
+    /// Returns the squares to blame for this special move of `mover` onto `end`, made with
+    /// `timing`, not being legal, or `None` when it does not aim at `end`.
+    pub(crate) fn culprits(
+        &self,
+        catalog: &Catalog,
+        state: &GameState,
+        mover: &Piece,
+        end: BoardCoord,
+        timing: MoveTiming,
+    ) -> Option<Vec<BoardCoord>> {
+        match self {
+            Self::PartneredMove(partnered) => {
+                partnered.culprits(catalog, state, mover, end, timing)
+            }
+        }
+    }
 }
 
 impl PartneredMove {
@@ -135,6 +152,95 @@ impl PartneredMove {
             steps: self.steps(mover, end, &partners),
         };
         plan.fits(state, timing).then_some(plan)
+    }
+
+    /// Returns the squares to blame for the move onto `end` not being legal, following the
+    /// checks of [`Self::plan`], or `None` when the move does not aim at `end`.
+    ///
+    /// A condition that only fails because a square is targeted blames the attackers of that
+    /// square. Otherwise a failing mover condition blames the mover, a failing square
+    /// requirement its square, and a missing partner the square it should stand on.
+    fn culprits(
+        &self,
+        catalog: &Catalog,
+        state: &GameState,
+        mover: &Piece,
+        end: BoardCoord,
+        timing: MoveTiming,
+    ) -> Option<Vec<BoardCoord>> {
+        let start = mover.position;
+        if start + self.target != end {
+            return None;
+        }
+        let attackers = |square: BoardCoord, owner| {
+            catalog
+                .attackers(state, square, owner)
+                .map(|attacker| attacker.position)
+                .collect::<Vec<_>>()
+        };
+        let vars = Self::vars(
+            mover.moves_made,
+            catalog.is_targeted(state, start, mover.owner_id),
+        );
+        let mut culprits = Vec::new();
+        if !ExprString::holds_if_set(self.condition.as_ref(), &vars) {
+            let untargeted = vars.clone().with("self_targeted", false);
+            if ExprString::holds_if_set(self.condition.as_ref(), &untargeted) {
+                culprits.extend(attackers(start, mover.owner_id));
+            } else {
+                culprits.push(start);
+            }
+        }
+        for requirement in self
+            .requirements
+            .iter()
+            .filter(|requirement| requirement.applies_to(timing))
+            .filter(|requirement| !requirement.holds(catalog, state, mover, &vars))
+        {
+            let square = start + requirement.at;
+            let untargeted =
+                SquareRequirement::vars(&vars, state.piece_at(square).is_none(), false);
+            if requirement.condition.holds(&untargeted) {
+                culprits.extend(attackers(square, mover.owner_id));
+            } else {
+                culprits.push(square);
+            }
+        }
+        if !culprits.is_empty() {
+            return Some(culprits);
+        }
+
+        let mut partners = Vec::new();
+        for partner in &self.partners {
+            match partner.find(catalog, state, mover, &vars) {
+                Some(piece) => partners.push((partner, piece)),
+                None => culprits.push(start + partner.at),
+            }
+        }
+        if !culprits.is_empty() {
+            return Some(culprits);
+        }
+
+        // The pieces fit nowhere: blame the squares they cannot land on.
+        let steps = self.steps(mover, end, &partners);
+        let leaving: HashSet<_> = steps
+            .iter()
+            .filter(|step| !matches!(step, MoveStep::Retype { .. }))
+            .map(MoveStep::piece_id)
+            .collect();
+        culprits.extend(steps.iter().filter_map(|step| {
+            match step {
+                MoveStep::Relocate { to, .. } => state
+                    .piece_at(*to)
+                    .filter(|occupant| !leaving.contains(&occupant.id))
+                    .map(|_| *to),
+                MoveStep::Capture(_) | MoveStep::Retype { .. } => None,
+            }
+        }));
+        if culprits.is_empty() {
+            culprits.push(end);
+        }
+        Some(culprits)
     }
 
     /// Builds the plan steps: captures, then relocations, then type changes.

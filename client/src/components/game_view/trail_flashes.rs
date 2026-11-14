@@ -3,7 +3,7 @@
 use crate::canvas::FailedTrail;
 use crate::premoves::{FailedMove, PremoveLine, Projection};
 
-/// One failed trail, and the squares its failed moves tried to move into, flashing since
+/// One failed trail, and the squares to blame for its failed moves, flashing since
 /// `started_at`.
 struct Flash {
     lines: Vec<PremoveLine>,
@@ -33,8 +33,8 @@ impl TrailFlashes {
     }
 
     /// Starts flashing the lines drawn for the previous projection that `projection` no
-    /// longer draws because their actions failed, along with the targets of the actions that
-    /// failed themselves.
+    /// longer draws because their actions failed, along with the squares to blame for the
+    /// actions that failed themselves.
     ///
     /// Lines that vanish because their actions ran, were cleared, or are hidden while their
     /// piece is dragged do not flash, and neither do lines of pieces that left the board;
@@ -62,7 +62,7 @@ impl TrailFlashes {
             let mut failed_moves: Vec<FailedMove> = Vec::new();
             for failed_move in failed
                 .iter()
-                .filter_map(|line| projection.failed.get(&line.action).copied().flatten())
+                .filter_map(|line| projection.failed.get(&line.action).cloned().flatten())
             {
                 if !failed_moves.contains(&failed_move) {
                     failed_moves.push(failed_move);

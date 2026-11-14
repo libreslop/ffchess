@@ -554,3 +554,34 @@ fn castling_premove_ignores_marked_square_requirements() {
             .is_err()
     );
 }
+
+impl CastlingBoard {
+    /// Returns the squares to blame for a king move to `target` made at once.
+    fn king_culprits(&self, target: [i32; 2]) -> Vec<BoardCoord> {
+        let catalog = catalog(vec![castling_king(), rook(), lance()]);
+        let mover = &self.state.pieces[&self.king];
+        catalog.move_culprits(&self.state, mover, coord(target), MoveTiming::Now)
+    }
+}
+
+#[test]
+/// Verifies failed castling blames the piece in the way, the attackers of squares that must
+/// be safe, and the square of a missing partner.
+fn castling_culprits() {
+    let mut board = CastlingBoard::new();
+    add_piece(&mut board.state, None, "rook", [5, 0]);
+    assert_eq!(board.king_culprits([6, 0]), vec![coord([5, 0])]);
+
+    let mut board = CastlingBoard::new();
+    add_piece(&mut board.state, Some(PlayerId::new()), "lance", [5, 3]);
+    assert_eq!(board.king_culprits([6, 0]), vec![coord([5, 3])]);
+    assert_eq!(board.king_culprits([2, 0]), vec![]);
+
+    let mut board = CastlingBoard::new();
+    add_piece(&mut board.state, Some(PlayerId::new()), "lance", [4, 3]);
+    assert_eq!(board.king_culprits([6, 0]), vec![coord([4, 3])]);
+
+    let mut board = CastlingBoard::new();
+    board.state.pieces.remove(&board.short_rook);
+    assert_eq!(board.king_culprits([6, 0]), vec![coord([7, 0])]);
+}

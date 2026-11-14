@@ -168,8 +168,8 @@ fn piece_arrows(lines: &[PremoveLine], geometry: &FrameGeometry) -> Vec<(PieceId
 
 impl Renderer {
     /// Draws one pixelated arrow per piece through all its predicted moves, each piece in a
-    /// color of its own, then the flashes of failed trails and the squares their moves failed
-    /// to move into.
+    /// color of its own, then the flashes of failed trails and the squares to blame for their
+    /// failed moves.
     ///
     /// Each arrow is filled as non-overlapping runs, so its translucent color does not stack.
     pub(super) fn draw_premove_arrows(&self, params: &RenderParams<'_>, geometry: &FrameGeometry) {
@@ -190,10 +190,12 @@ impl Renderer {
             };
             for failed in &trail.failed_moves {
                 self.ctx.set_fill_style_str(&color(failed.piece_id));
-                self.fill_art_rect(
-                    ArtRect::square(geometry.square_art_origin(failed.target)),
-                    geometry,
-                );
+                for culprit in &failed.culprits {
+                    self.fill_art_rect(
+                        ArtRect::square(geometry.square_art_origin(*culprit)),
+                        geometry,
+                    );
+                }
             }
             for (piece_id, arrow) in piece_arrows(&trail.lines, geometry) {
                 self.fill_arrow(&arrow, &color(piece_id), geometry);

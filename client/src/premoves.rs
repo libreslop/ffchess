@@ -56,20 +56,25 @@ impl PremoveLine {
     }
 }
 
-/// A queued move that failed: `piece_id` could not move into `target`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// A queued move of `piece_id` that failed, and the squares to blame for it.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FailedMove {
     pub piece_id: PieceId,
-    pub target: BoardCoord,
+    pub culprits: Vec<BoardCoord>,
 }
 
 impl FailedMove {
-    /// Returns the failed move of `premove`, or `None` when it is not a move.
-    fn of(premove: &Premove) -> Option<Self> {
+    /// Returns the failed move of `premove` blamed on `culprits`, or on its target when the
+    /// server named none; `None` when it is not a move.
+    fn of(premove: &Premove, culprits: Vec<BoardCoord>) -> Option<Self> {
         match premove.action {
             PieceAction::Move { target } => Some(Self {
                 piece_id: premove.piece_id,
-                target,
+                culprits: if culprits.is_empty() {
+                    vec![target]
+                } else {
+                    culprits
+                },
             }),
             PieceAction::Buy { .. } => None,
         }
@@ -131,10 +136,15 @@ impl PremoveQueue {
         request
     }
 
-    /// Applies the server's result for an action.
+    /// Applies the server's result for an action, with the squares to blame when it failed.
     ///
     /// Returns the error to show the player when a known action failed.
-    pub fn resolve(&mut self, id: ActionId, result: Result<(), GameError>) -> Option<GameError> {
+    pub fn resolve(
+        &mut self,
+        id: ActionId,
+        result: Result<(), GameError>,
+        culprits: Vec<BoardCoord>,
+    ) -> Option<GameError> {
         let index = self.items.iter().position(|premove| premove.id == id)?;
         match result {
             Ok(()) => {
@@ -146,12 +156,14 @@ impl PremoveQueue {
                 // The piece left the board, so its trail vanishes without flashing.
                 let piece_gone = error == GameError::PieceNotFound;
                 let mut position = 0;
+                let mut culprits = Some(culprits);
                 let mut dropped = Vec::new();
                 self.items.retain(|premove| {
                     let keep = position < index || premove.piece_id != piece_id;
                     position += 1;
                     if !keep && !piece_gone {
-                        let failed_move = (premove.id == id).then(|| FailedMove::of(premove));
+                        let failed_move = (premove.id == id)
+                            .then(|| FailedMove::of(premove, culprits.take().unwrap_or_default()));
                         dropped.push((premove.id, failed_move.flatten()));
                     }
                     keep
@@ -236,7 +248,7 @@ impl PremoveQueue {
             state: projected,
             lines,
             queued,
-            failed: self.failed.iter().copied().collect(),
+            failed: self.failed.iter().cloned().collect(),
         }
     }
 
