@@ -29,6 +29,7 @@
     "zoom_lerp": 0.15,
     "inertia_decay": 0.94,
     "velocity_cutoff": 0.1,
+    "pan_idle_ms": 100.0,
     "pan_lerp_alive": 0.15,
     "pan_lerp_dead": 0.08,
     "tile_size_px": 40.0,

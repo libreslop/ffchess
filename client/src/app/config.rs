@@ -45,6 +45,9 @@ pub struct GlobalClientConfig {
     pub inertia_decay: f64,
     #[educe(Default = 0.1)]
     pub velocity_cutoff: f64,
+    /// How long a pan can hold still before releasing it no longer carries momentum.
+    #[educe(Default = 50.0)]
+    pub pan_idle_ms: f64,
     #[educe(Default = 0.15)]
     pub pan_lerp_alive: f64,
     #[educe(Default = 0.08)]

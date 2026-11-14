@@ -82,6 +82,7 @@ This file is injected into the landing page and deserialized by the Yew client a
 | `zoom_lerp` | float | No | `0.15` | Smoothing factor used when interpolating toward `target_zoom`. |
 | `inertia_decay` | float | No | `0.94` | Per-frame decay applied to camera velocity after panning stops. |
 | `velocity_cutoff` | float | No | `0.1` | Velocity threshold below which inertial camera panning stops. |
+| `pan_idle_ms` | float | No | `50.0` | How long, in milliseconds, a pan can hold still before releasing it no longer carries momentum. |
 | `pan_lerp_alive` | float | No | `0.15` | Camera interpolation speed while the local player is alive. |
 | `pan_lerp_dead` | float | No | `0.08` | Camera interpolation speed in menu/dead/victory states. |
 | `tile_size_px` | float | No | `40.0` | Base world-tile size before zoom is applied. |
@@ -115,6 +116,7 @@ This file is injected into the landing page and deserialized by the Yew client a
   "zoom_lerp": 0.15,
   "inertia_decay": 0.94,
   "velocity_cutoff": 0.1,
+  "pan_idle_ms": 50.0,
   "pan_lerp_alive": 0.15,
   "pan_lerp_dead": 0.08,
   "tile_size_px": 40.0,

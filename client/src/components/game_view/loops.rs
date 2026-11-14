@@ -91,6 +91,7 @@ pub(super) fn use_camera_loop(inputs: CameraLoopInputs) {
                     zoom_lerp: globals.zoom_lerp,
                     inertia_decay: globals.inertia_decay,
                     velocity_cutoff: globals.velocity_cutoff,
+                    pan_idle_ms: globals.pan_idle_ms,
                     pan_lerp_alive: globals.pan_lerp_alive,
                     pan_lerp_dead: globals.pan_lerp_dead,
                     tile_size_px: globals.tile_size_px,

@@ -8,6 +8,7 @@ use super::types::{
 use crate::math::Vec2;
 use crate::premoves::Projection;
 use crate::reducer::{GameAction, GameStateReducer, MsgSender};
+use crate::utils::performance_now;
 use common::models::PieceAction;
 use common::types::{BoardCoord, PieceId};
 use std::rc::Rc;
@@ -184,6 +185,7 @@ impl PointerContext {
         };
         camera.camera += movement;
         camera.velocity = movement;
+        camera.last_pan_ms = performance_now();
         let is_alive = self
             .reducer
             .active_player_id()

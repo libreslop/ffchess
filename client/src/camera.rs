@@ -2,6 +2,7 @@
 
 use crate::math::Vec2;
 use crate::reducer::ClientPhase;
+use crate::utils::performance_now;
 use common::models::JoinCameraCenterConfig;
 use common::protocol::VictoryFocusTarget;
 use common::*;
@@ -15,6 +16,8 @@ pub struct CameraManager {
     pub target_zoom: f64,
     pub mouse_pos: Vec2,
     pub velocity: Vec2,
+    /// `performance.now()` of the last pan movement, used to drop stale momentum.
+    pub last_pan_ms: f64,
     pub input_locked: bool,
     pub was_alive: bool,
     pub last_tracked_king_id: Option<PieceId>,
@@ -34,6 +37,7 @@ impl CameraManager {
             target_zoom: 1.0,
             mouse_pos: Vec2::ZERO,
             velocity: Vec2::ZERO,
+            last_pan_ms: 0.0,
             input_locked: false,
             was_alive: false,
             last_tracked_king_id: None,
@@ -61,6 +65,8 @@ pub struct CameraUpdateParams<'a> {
     pub zoom_lerp: f64,
     pub inertia_decay: f64,
     pub velocity_cutoff: f64,
+    /// Milliseconds a pan can hold still before its release stops carrying momentum.
+    pub pan_idle_ms: f64,
     pub pan_lerp_alive: f64,
     pub pan_lerp_dead: f64,
     pub tile_size_px: f64,
@@ -137,6 +143,10 @@ pub fn update_camera(manager: &mut CameraManager, params: CameraUpdateParams<'_>
             manager.velocity = Vec2::ZERO;
         }
     } else {
+        // A pan held still gives no momentum on release.
+        if performance_now() - manager.last_pan_ms > params.pan_idle_ms {
+            manager.velocity = Vec2::ZERO;
+        }
         manager.target_camera = manager.camera;
     }
 
