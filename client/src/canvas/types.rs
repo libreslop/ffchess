@@ -66,12 +66,21 @@ pub(crate) struct PieceNameDrawParams<'a> {
     pub pos: Vec2,
 }
 
+/// A piece being dragged, drawn centered under the pointer.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DraggedPiece {
+    pub piece_id: PieceId,
+    /// Pointer position in canvas pixels.
+    pub canvas_pos: Vec2,
+}
+
 /// Parameters for a single render pass.
 #[derive(Clone, Copy)]
 pub struct RenderParams<'a> {
     pub state: &'a GameState,
     pub player_id: PlayerId,
     pub selected_piece_id: Option<PieceId>,
+    pub dragged_piece: Option<DraggedPiece>,
     pub projection: &'a Projection,
     pub animated_positions: &'a HashMap<PieceId, Vec2>,
     pub camera_pos: Vec2,

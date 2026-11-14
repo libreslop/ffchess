@@ -53,6 +53,8 @@ pub struct JoinScreenProps {
     /// Modes that can be played while waiting in the queue.
     pub quick_play_modes: Vec<ModeSummary>,
     pub on_quick_play: Callback<ModeId>,
+    /// Delay before the quick-play list floats in once the queue waiting screen appears.
+    pub quick_play_reveal_ms: u32,
     /// Piece icons, by file stem under `assets/pieces`, that may sit beside the title.
     pub title_pieces: Vec<String>,
 }
@@ -141,7 +143,11 @@ pub fn join_screen(props: &JoinScreenProps) -> Html {
                         }
 
                         if let Some(queue) = &props.queue_status {
-                            { queue_waiting(queue, props, quick_play_highlight) }
+                            // Set at the font's native size, where its pixels land on whole
+                            // screen pixels.
+                            <div style={format!("color: #e2e8f0; font-size: {NATIVE_PX}px; text-shadow: 2px 2px 0 rgba(0,0,0,0.5);")}>
+                                { queue_waiting_message(queue) }
+                            </div>
                         } else {
                             <div style="display: flex; gap: 12px; width: 100%; justify-content: center; flex-wrap: wrap;">
                                 if let Some(mode) = &props.mode {
@@ -174,7 +180,11 @@ pub fn join_screen(props: &JoinScreenProps) -> Html {
                     </div>
                 }
             </div>
-            <div style={format!("flex: 1 1000 calc({CHAT_CLEARANCE}); min-height: calc({CHAT_CLEARANCE});")}></div>
+            if quick_play_active {
+                { quick_play_list(props, quick_play_highlight, mobile) }
+            } else {
+                <div style={format!("flex: 1 1000 calc({CHAT_CLEARANCE}); min-height: calc({CHAT_CLEARANCE});")}></div>
+            }
             </div>
             if props.join_step.is_enter_name() {
                 <a href="https://github.com/libreslop/ffchess" target="_blank" rel="noopener noreferrer"
@@ -439,31 +449,34 @@ fn mode_population_label(mode: &ModeSummary) -> String {
     }
 }
 
-/// Renders the queue waiting message, with the quick-play modes to pass the wait with below it.
+/// Renders the quick-play modes to pass the queue wait with, pinned to the bottom of the
+/// screen just above the chat.
 ///
-/// `highlight` is the index of the quick-play row the arrow keys point at.
-fn queue_waiting(queue: &QueueStatus, props: &JoinScreenProps, highlight: Option<usize>) -> Html {
-    // The message is set at the font's native size, where its pixels land on whole screen
-    // pixels. The quick-play list hangs below it out of flow, so the message alone is what
-    // gets centred on screen.
+/// It takes the place of the bottom spacer: it grows like the top one, so the waiting message
+/// stays centred, and it never shrinks below the list, so on a short window the message is
+/// pushed up instead of being covered. It floats in from the bottom once the configured delay
+/// has passed. `highlight` is the index of the quick-play row the arrow keys point at.
+fn quick_play_list(props: &JoinScreenProps, highlight: Option<usize>, mobile: bool) -> Html {
     html! {
-        <div style="position: relative; width: 100%;">
-            <div style={format!("color: #e2e8f0; font-size: {NATIVE_PX}px; text-shadow: 2px 2px 0 rgba(0,0,0,0.5);")}>
-                { queue_waiting_message(queue) }
-            </div>
-            if !props.quick_play_modes.is_empty() {
-                <div data-testid="quick-play-list" style="position: absolute; top: 100%; left: 0; right: 0; margin-top: 56px;">
-                    <div style="color: rgba(255,255,255,0.8); font-size: 0.85em; font-weight: 700; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 8px;">
-                        {"Quick play"}
-                    </div>
-                    <ModeList
-                        modes={props.quick_play_modes.clone()}
-                        selected={highlight}
-                        on_select={props.on_quick_play.clone()}
-                        style="max-height: 220px; overflow-y: auto; border: 2px solid #cbd5e1;"
-                    />
+        <div data-testid="quick-play-list" style={format!(
+            "flex: 1 1000 0; display: flex; flex-direction: column; justify-content: flex-end; padding: 0 {} calc({CHAT_CLEARANCE}); width: 90%; max-width: 400px; text-align: center;",
+            if mobile { "10px" } else { "30px" }
+        )}>
+            // The backwards fill keeps the list hidden through the delay.
+            <div style={format!(
+                "pointer-events: auto; animation: floatInFromBottom 0.4s cubic-bezier(0.16, 1, 0.3, 1) {}ms both;",
+                props.quick_play_reveal_ms
+            )}>
+                <div style="color: rgba(255,255,255,0.8); font-size: 0.85em; font-weight: 700; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 8px;">
+                    {"Quick play"}
                 </div>
-            }
+                <ModeList
+                    modes={props.quick_play_modes.clone()}
+                    selected={highlight}
+                    on_select={props.on_quick_play.clone()}
+                    style="max-height: 220px; overflow-y: auto; border: 2px solid #cbd5e1;"
+                />
+            </div>
         </div>
     }
 }

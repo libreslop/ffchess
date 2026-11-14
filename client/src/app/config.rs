@@ -16,6 +16,9 @@ pub struct GlobalClientConfig {
     /// Modes offered to play while waiting in a matchmaking queue, in display order.
     #[educe(Default = vec![])]
     pub quick_play_modes: Vec<ModeId>,
+    /// Delay before the quick-play list floats in on the queue waiting screen.
+    #[educe(Default = 500)]
+    pub quick_play_reveal_ms: u32,
     /// Piece icons, by file stem under `assets/pieces`, one of which is picked at random to
     /// sit beside the title.
     #[educe(Default = vec![])]

@@ -27,6 +27,13 @@ pub(super) const ART_PIXELS_PER_TILE: f64 = 16.0;
 /// Opacity of predicted piece positions.
 const GHOST_ALPHA: f64 = 0.4;
 
+/// Size of a piece being dragged relative to pieces on the board.
+const DRAGGED_SCALE: f64 = 1.2;
+/// Color of the hard drop shadow under a piece being dragged.
+const DRAGGED_SHADOW_COLOR: &str = "rgba(15, 23, 42, 0.3)";
+/// Offset of the drop shadow down and right of a dragged piece, in art pixels.
+const DRAGGED_SHADOW_ART_PIXELS: f64 = 1.5;
+
 /// Things this many squares beyond the view radius are still drawn so they fade into the fog.
 const VIEW_MARGIN_SQUARES: i32 = 2;
 
@@ -60,6 +67,12 @@ impl FrameGeometry {
     /// Maps a grid line coordinate, flipping the board when rotated.
     fn map_line(&self, line: i32) -> i32 {
         if self.rotated { -line } else { line }
+    }
+
+    /// Returns the fractional square position, already mapped for drawing, of a square
+    /// centered on `pixel`.
+    fn pixel_pos(&self, pixel: Vec2) -> Vec2 {
+        (pixel - self.offset) / self.tile - 0.5
     }
 
     /// Returns the top-left pixel of a fractional square position.
@@ -191,6 +204,7 @@ impl Renderer {
         self.draw_capture_hints(&hints, &geometry);
         self.draw_king_names(&params, &geometry, &visibility);
         self.draw_fog(&params, &geometry, &visibility);
+        self.draw_dragged_piece(&params, &geometry);
     }
 
     /// Works out what the local player sees: everything, or a fogged circle around their king.
@@ -361,6 +375,36 @@ impl Renderer {
                 self.draw_piece(self.piece_params(params, geometry, &shown, 1.0, false, animated));
             }
         }
+    }
+
+    /// Draws a lifted copy of the dragged piece, as predicted, under the pointer: slightly
+    /// enlarged and casting a hard, unblurred drop shadow offset by whole screen pixels to
+    /// match the pixel art.
+    fn draw_dragged_piece(&self, params: &RenderParams<'_>, geometry: &FrameGeometry) {
+        let Some(dragged) = params.dragged_piece else {
+            return;
+        };
+        let Some(piece) = params.projection.state.pieces.get(&dragged.piece_id) else {
+            return;
+        };
+        let lifted = FrameGeometry {
+            tile: geometry.tile * DRAGGED_SCALE,
+            zoom: geometry.zoom * DRAGGED_SCALE,
+            ..*geometry
+        };
+        self.ctx.save();
+        let shadow_offset = (DRAGGED_SHADOW_ART_PIXELS * lifted.tile / ART_PIXELS_PER_TILE)
+            .round()
+            .max(1.0);
+        self.ctx.set_shadow_color(DRAGGED_SHADOW_COLOR);
+        self.ctx.set_shadow_blur(0.0);
+        self.ctx.set_shadow_offset_x(shadow_offset);
+        self.ctx.set_shadow_offset_y(shadow_offset);
+        self.draw_piece(PieceDrawParams {
+            pos: lifted.pixel_pos(dragged.canvas_pos),
+            ..self.piece_params(params, &lifted, piece, 1.0, true, None)
+        });
+        self.ctx.restore();
     }
 
     /// Builds the draw parameters of one piece.

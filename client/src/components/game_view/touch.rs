@@ -1,4 +1,4 @@
-//! Touch input: single-finger taps and pans, two-finger pinch zoom, and double-tap fullscreen.
+//! Touch input: single-finger taps, pans, and piece drags, two-finger pinch zoom, and double-tap fullscreen.
 
 use super::geometry::is_ui_exempt_target;
 use super::input::PointerHandlers;
@@ -90,6 +90,7 @@ impl TouchContext {
                 camera.velocity = Vec2::ZERO;
             }
             self.handles.drag_start.set(None);
+            self.handles.cancel_hold();
             self.handles.mark_not_dragging();
         } else if let Some(touch) = event.touches().get(0) {
             *self.handles.touch_gesture_active.borrow_mut() = false;
@@ -147,7 +148,7 @@ impl TouchContext {
             return;
         };
         let pos = touch_pos(&touch);
-        if fingers_left == 0 && self.is_double_tap(pos) {
+        if fingers_left == 0 && !self.handles.is_dragging_piece() && self.is_double_tap(pos) {
             request_fullscreen();
             return;
         }

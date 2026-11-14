@@ -4,21 +4,13 @@ use crate::app::GlobalClientConfig;
 use crate::app::focus::Slot;
 use crate::components::{
     DisconnectedScreen, EndScreen, EndScreenKind, ErrorToast, FatalNotification, GameView,
-    JoinScreen, Leaderboard, LeaveButton, QueueBanner,
+    JoinScreen, Leaderboard, LeaveButton, NestedQueue, QueueBanner,
 };
-use crate::reducer::{GameStateReducer, MsgSender, QueueStatus};
+use crate::reducer::{GameStateReducer, MsgSender};
 use crate::ui_state::{Backdrop, CooldownSeconds, JoinStep};
 use common::models::ModeSummary;
 use common::types::{KitId, ModeId};
 use yew::prelude::*;
-
-/// The queue a quick-play game is nested in, shown in a banner over the game.
-pub struct NestedQueue {
-    /// Display name of the queued mode.
-    pub mode_name: String,
-    pub status: QueueStatus,
-    pub on_stop: Callback<MouseEvent>,
-}
 
 /// Render inputs for the root application view.
 pub struct AppViewProps {
@@ -75,6 +67,9 @@ pub fn render_app(props: AppViewProps) -> Html {
                 @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
                 @keyframes simpleFadeIn { from { opacity: 0; } to { opacity: 1; } }
                 @keyframes fadeInOut { 0% { opacity: 0; transform: translateY(20px); } 15% { opacity: 1; transform: translateY(0); } 85% { opacity: 1; transform: translateY(0); } 100% { opacity: 0; transform: translateY(-20px); } }
+                @keyframes floatInFromTop { from { opacity: 0; transform: translateY(-20px); } to { opacity: 1; transform: translateY(0); } }
+                @keyframes floatOutToTop { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(-20px); } }
+                @keyframes floatInFromBottom { from { opacity: 0; transform: translateY(40px); } to { opacity: 1; transform: translateY(0); } }
                 @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
             "}</style>
 
@@ -160,6 +155,7 @@ pub fn render_app(props: AppViewProps) -> Html {
                     on_select_mode={props.on_select_mode.clone()}
                     on_cycle_mode={props.on_cycle_mode.clone()}
                     quick_play_modes={props.quick_play_modes.clone()}
+                    quick_play_reveal_ms={global_cfg.quick_play_reveal_ms}
                     title_pieces={global_cfg.title_pieces.clone()}
                     on_quick_play={props.on_quick_play.clone()}
                 />
@@ -172,9 +168,7 @@ pub fn render_app(props: AppViewProps) -> Html {
             // Stacks the top banners so errors sit below the queue banner. The column has no
             // z-index or transform, so each banner keeps its own place in the stacking order.
             <div style="position: absolute; top: 12px; left: 0; right: 0; display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: none;">
-                if let Some(queue) = props.nested_queue {
-                    <QueueBanner mode_name={queue.mode_name} status={queue.status} on_stop={queue.on_stop} />
-                }
+                <QueueBanner queue={props.nested_queue} />
 
                 <FatalNotification
                     show={reducer.fatal_error}

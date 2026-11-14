@@ -54,12 +54,10 @@ impl TapContext<'_> {
         }
 
         let predicted = &self.projection.state;
-        let own_piece_at_target = predicted
-            .piece_at(target)
-            .filter(|piece| piece.owner_id == Some(self.player_id));
+        let own_piece_at_target = self.own_piece_at(target);
         let Some(selected) = self.selected else {
-            return own_piece_at_target.map_or(TapOutcome::Ignore, |piece| {
-                TapOutcome::Select(Some(piece.id))
+            return own_piece_at_target.map_or(TapOutcome::Ignore, |piece_id| {
+                TapOutcome::Select(Some(piece_id))
             });
         };
         let Some(selected_piece) = predicted.pieces.get(&selected) else {
@@ -73,8 +71,8 @@ impl TapContext<'_> {
                 piece_id: selected,
                 target: move_target,
             }
-        } else if let Some(piece) = own_piece_at_target {
-            TapOutcome::Select(Some(piece.id))
+        } else if let Some(piece_id) = own_piece_at_target {
+            TapOutcome::Select(Some(piece_id))
         } else if predicted.piece_at(target).is_none() {
             TapOutcome::Select(None)
         } else {
@@ -82,13 +80,33 @@ impl TapContext<'_> {
         }
     }
 
+    /// Resolves dropping the dragged `piece_id` on `target`: the move tapping `target` would
+    /// queue with the piece selected, or nothing when it selects no legal move.
+    pub(super) fn resolve_drop(&self, piece_id: PieceId, target: BoardCoord) -> TapOutcome {
+        self.move_target(piece_id, target)
+            .map_or(TapOutcome::Ignore, |target| TapOutcome::Move { piece_id, target })
+    }
+
+    /// Returns the local player's piece predicted to stand on `target`, which a press there
+    /// picks up.
+    pub(super) fn own_piece_at(&self, target: BoardCoord) -> Option<PieceId> {
+        self.projection
+            .state
+            .piece_at(target)
+            .filter(|piece| piece.owner_id == Some(self.player_id))
+            .map(|piece| piece.id)
+    }
+
     /// Returns true when tapping `target` should not start panning the camera.
     pub(super) fn is_interactive(&self, target: BoardCoord) -> bool {
         self.projection.state.board_size.contains(target)
-            && (self.projection.state.piece_at(target).is_some()
-                || self
-                    .selected
-                    .is_some_and(|selected| self.move_target(selected, target).is_some()))
+            && (self.projection.state.piece_at(target).is_some() || self.is_move_target(target))
+    }
+
+    /// Returns true when tapping `target` selects a legal move of the selected piece.
+    pub(super) fn is_move_target(&self, target: BoardCoord) -> bool {
+        self.selected
+            .is_some_and(|selected| self.move_target(selected, target).is_some())
     }
 
     /// Returns where `piece_id` lands when tapping `tapped` selects one of its legal moves

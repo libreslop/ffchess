@@ -9,6 +9,7 @@
         "ffa",
         "arena"
     ],
+    "quick_play_reveal_ms": 500,
     "title_pieces": [
         "king",
         "queen",

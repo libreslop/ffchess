@@ -60,6 +60,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
         latest: latest.clone(),
         touch_gesture_active: use_mut_ref(|| false),
         last_tap: use_mut_ref(|| None),
+        held: use_mut_ref(|| None),
     };
     let window_size = use_window_size();
     use_animation_frame();
@@ -113,20 +114,22 @@ pub fn game_view(props: &GameViewProps) -> Html {
         anims,
         active_shop: active_shop.clone(),
         selected: *selected,
+        dragged: handles.dragged_piece(),
         camera,
         zoom: *handles.zoom_state,
         canvas_size: window_size,
         tile_size_px: globals.tile_size_px,
     });
 
-    let pointer = PointerContext {
+    let pointer_context = PointerContext {
         handles: handles.clone(),
         reducer: reducer.clone(),
         tx: props.tx.clone(),
         projection,
         tile_size_px: globals.tile_size_px,
-    }
-    .handlers();
+    };
+    let cursor = pointer_context.cursor();
+    let pointer = pointer_context.handlers();
     let touch = TouchContext {
         handles: handles.clone(),
         reducer: reducer.clone(),
@@ -209,6 +212,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
                 width={window_size.x.to_string()}
                 height={window_size.y.to_string()}
                 class="block w-full h-full"
+                style={format!("cursor: {cursor};")}
             />
 
             if let Some(remaining_secs) = countdown_secs {

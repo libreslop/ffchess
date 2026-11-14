@@ -8,6 +8,7 @@ mod view;
 use crate::app::browser::PageMetadata;
 use crate::app::config::{GlobalClientConfig, load_global_config, order_modes, quick_play_modes};
 use crate::app::focus::{ModeFocus, PerSlot, Slot};
+use crate::components::NestedQueue;
 use crate::reducer::{ClientPhase, GameStateReducer, MsgSender};
 use crate::ui_state::{CooldownSeconds, JoinStep, RejoinFlow};
 use crate::utils::{SessionStore, local_now, stored_name};
@@ -29,7 +30,7 @@ use gloo_utils::document;
 use quick_play::{
     QuickPlayInputs, build_on_quick_play, build_on_stop_queuing, use_nested_queue_effect,
 };
-use view::{AppViewProps, NestedQueue, render_app};
+use view::{AppViewProps, render_app};
 use yew::prelude::*;
 
 /// Renders the application shell and routes UI state to child components.

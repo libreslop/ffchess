@@ -3,7 +3,7 @@
 use crate::math::{Vec2, vec2};
 use common::types::BoardCoord;
 use wasm_bindgen::JsCast;
-use web_sys::{DomRect, Element, EventTarget, HtmlCanvasElement};
+use web_sys::{Element, EventTarget, HtmlCanvasElement};
 
 /// Reads the current browser window size in CSS pixels.
 pub(super) fn read_window_size() -> Vec2 {
@@ -20,16 +20,21 @@ pub(super) fn read_window_size() -> Vec2 {
     )
 }
 
-/// Converts a screen-space pointer position into a grid coordinate.
+/// Converts a client-space pointer position into canvas pixels.
+pub(super) fn client_to_canvas(pos: Vec2, canvas: &HtmlCanvasElement) -> Vec2 {
+    let rect = canvas.get_bounding_client_rect();
+    pos - vec2(rect.left(), rect.top())
+}
+
+/// Converts a client-space pointer position into a grid coordinate.
 pub(super) fn screen_to_grid(
     pos: Vec2,
-    rect: &DomRect,
     canvas: &HtmlCanvasElement,
     camera: Vec2,
     tile_size: f64,
     board_rotated_180: bool,
 ) -> BoardCoord {
-    let screen_pos = pos - vec2(rect.left(), rect.top());
+    let screen_pos = client_to_canvas(pos, canvas);
     let canvas_center = vec2(canvas.width() as f64 / 2.0, canvas.height() as f64 / 2.0);
     let world_pos = if board_rotated_180 {
         camera + canvas_center - screen_pos

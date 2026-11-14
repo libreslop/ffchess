@@ -2,7 +2,7 @@
 
 use super::anims::PieceAnimations;
 use super::shop_context::ActiveShop;
-use crate::canvas::{RenderParams, Renderer};
+use crate::canvas::{DraggedPiece, RenderParams, Renderer};
 use crate::math::Vec2;
 use crate::premoves::Projection;
 use crate::reducer::GameStateReducer;
@@ -21,6 +21,7 @@ pub(super) struct BoardFrame {
     pub(super) anims: Rc<RefCell<PieceAnimations>>,
     pub(super) active_shop: Option<ActiveShop>,
     pub(super) selected: Option<PieceId>,
+    pub(super) dragged: Option<DraggedPiece>,
     pub(super) camera: Vec2,
     pub(super) zoom: f64,
     pub(super) canvas_size: Vec2,
@@ -62,6 +63,7 @@ impl BoardFrame {
             state: &reducer.state,
             player_id: reducer.viewer_id(),
             selected_piece_id: self.selected.filter(|_| !has_match_result),
+            dragged_piece: self.dragged.filter(|_| !has_match_result),
             projection: &self.projection,
             animated_positions: &animated_positions,
             camera_pos: self.camera,

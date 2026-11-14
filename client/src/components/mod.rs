@@ -20,4 +20,4 @@ pub use game_view::GameView;
 pub use join_screen::JoinScreen;
 pub use leaderboard::Leaderboard;
 pub use leave_button::LeaveButton;
-pub use queue_banner::QueueBanner;
+pub use queue_banner::{NestedQueue, QueueBanner};

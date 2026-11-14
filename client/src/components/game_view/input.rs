@@ -1,19 +1,18 @@
-//! Mouse and single-pointer input: panning the camera and tapping squares.
+//! Mouse and single-pointer input: panning the camera, tapping squares, and dragging pieces.
 
 use super::geometry::screen_to_grid;
 use super::tap::{TapContext, TapOutcome};
-use super::types::{DragStart, InputEnd, InputMove, InputStart, ViewHandles};
+use super::types::{
+    DragStart, HeldPiece, InputEnd, InputMove, InputStart, TAP_SLOP_PX, ViewHandles,
+};
 use crate::math::Vec2;
 use crate::premoves::Projection;
 use crate::reducer::{GameAction, GameStateReducer, MsgSender};
 use common::models::PieceAction;
-use common::types::BoardCoord;
+use common::types::{BoardCoord, PieceId};
 use std::rc::Rc;
 use web_sys::HtmlCanvasElement;
 use yew::prelude::*;
-
-/// Pointer travel, in pixels, after which a press on panning ground counts as a drag.
-const TAP_SLOP_PX: f64 = 10.0;
 
 /// Everything pointer handlers need from the current render.
 #[derive(Clone)]
@@ -45,6 +44,35 @@ impl PointerContext {
         }
     }
 
+    /// Returns the CSS cursor for the board: grabbing while holding a piece, all-scroll while
+    /// panning, pointer over squares a tap moves the selected piece to, and grab over your
+    /// pieces.
+    pub(super) fn cursor(&self) -> &'static str {
+        if self.is_blocked() {
+            return "default";
+        }
+        if self.handles.held.borrow().is_some() {
+            return "grabbing";
+        }
+        let is_panning = self.handles.drag_start.is_some_and(|start| start.allow_panning)
+            && *self.handles.did_pan.borrow();
+        if is_panning {
+            return "all-scroll";
+        }
+        let hovered = self.handles.camera.borrow().mouse_pos;
+        let Some(square) = self.square_at(hovered) else {
+            return "default";
+        };
+        let context = self.tap_context(*self.handles.selected);
+        if context.is_move_target(square) {
+            "pointer"
+        } else if context.own_piece_at(square).is_some() {
+            "grab"
+        } else {
+            "default"
+        }
+    }
+
     /// Returns true while input must be ignored: after the match or during a scripted pan.
     fn is_blocked(&self) -> bool {
         self.reducer.has_match_result() || self.handles.camera.borrow().input_locked
@@ -56,7 +84,6 @@ impl PointerContext {
         let camera = self.handles.camera.borrow();
         Some(screen_to_grid(
             pos,
-            &canvas.get_bounding_client_rect(),
             &canvas,
             camera.camera,
             self.tile_size_px * camera.zoom,
@@ -64,28 +91,40 @@ impl PointerContext {
         ))
     }
 
-    /// Builds the tap interpreter for the current state.
-    fn tap_context(&self) -> TapContext<'_> {
+    /// Builds the tap interpreter for the current state, with `selected` selected.
+    fn tap_context(&self, selected: Option<PieceId>) -> TapContext<'_> {
         TapContext {
             state: &self.reducer.state,
             projection: &self.projection,
             premoves: &self.reducer.premoves,
             catalog: &self.reducer.catalog,
             player_id: self.reducer.viewer_id(),
-            selected: *self.handles.selected,
+            selected,
         }
     }
 
     /// Starts a press; presses on pieces or move targets never pan the camera.
+    ///
+    /// A press on one of your pieces (or on where queued actions will move it) picks it up
+    /// and selects it, showing its move hints.
     fn on_start(&self, input: InputStart) {
         if self.is_blocked() {
             return;
         }
         *self.handles.did_pan.borrow_mut() = false;
-        let is_interactive = !input.is_right_click
-            && self
-                .square_at(input.pos)
-                .is_some_and(|square| self.tap_context().is_interactive(square));
+        let selected = *self.handles.selected;
+        let context = self.tap_context(selected);
+        let square = self
+            .square_at(input.pos)
+            .filter(|_| !input.is_right_click);
+        let is_interactive = square.is_some_and(|square| context.is_interactive(square));
+        let held = square
+            .and_then(|square| context.own_piece_at(square))
+            .map(|piece_id| HeldPiece::new(piece_id, input.pos, selected));
+        if let Some(held) = held {
+            self.handles.selected.set(Some(held.piece_id));
+        }
+        *self.handles.held.borrow_mut() = held;
         self.handles.drag_start.set(Some(DragStart {
             pos: input.pos,
             allow_panning: !is_interactive && !self.reducer.camera_movement_disabled(),
@@ -97,6 +136,9 @@ impl PointerContext {
     fn on_move(&self, input: InputMove) {
         if self.is_blocked() {
             return;
+        }
+        if let Some(held) = self.handles.held.borrow_mut().as_mut() {
+            held.follow(input.pos);
         }
         let mut camera = self.handles.camera.borrow_mut();
         camera.mouse_pos = input.pos;
@@ -137,8 +179,9 @@ impl PointerContext {
         }));
     }
 
-    /// Ends a press, treating it as a tap when it did not pan.
+    /// Ends a press: drops a dragged piece, or treats the press as a tap when it did not pan.
     fn on_end(&self, input: InputEnd) {
+        let held = self.handles.held.borrow_mut().take();
         if self.is_blocked() {
             self.handles.cancel_drag();
             return;
@@ -159,6 +202,10 @@ impl PointerContext {
                 true
             }
         };
+        if let Some(held) = held.filter(|held| held.dragged) {
+            self.drop_piece(held, input.pos);
+            return;
+        }
         if !is_tap {
             return;
         }
@@ -166,8 +213,27 @@ impl PointerContext {
             self.handles.selected.set(None);
             return;
         }
+        // A tap on a held piece is resolved against the selection from before the press.
+        let selected = match held {
+            Some(held) => {
+                self.handles.selected.set(held.previous_selected);
+                held.previous_selected
+            }
+            None => *self.handles.selected,
+        };
         if let Some(square) = self.square_at(input.pos) {
-            let outcome = self.tap_context().resolve(square);
+            let outcome = self.tap_context(selected).resolve(square);
+            self.apply_tap(outcome);
+        }
+    }
+
+    /// Drops a dragged piece at `pos`, moving it there as if that square was tapped with the
+    /// piece selected; drops on squares it cannot move to leave it selected in place.
+    fn drop_piece(&self, held: HeldPiece, pos: Vec2) {
+        if let Some(square) = self.square_at(pos) {
+            let outcome = self
+                .tap_context(Some(held.piece_id))
+                .resolve_drop(held.piece_id, square);
             self.apply_tap(outcome);
         }
     }
@@ -201,6 +267,7 @@ impl PointerContext {
 pub(super) fn mouse_leave_handler(handles: ViewHandles) -> Callback<MouseEvent> {
     Callback::from(move |_| {
         let previous = *handles.drag_start;
+        handles.cancel_hold();
         handles.drag_start.set(None);
         *handles.did_pan.borrow_mut() = false;
         if previous.is_some_and(|drag| drag.allow_panning) {
