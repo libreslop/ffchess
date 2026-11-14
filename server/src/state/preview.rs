@@ -8,8 +8,8 @@
 use super::connection::Connection;
 use super::lobby::Lobby;
 use crate::instance::GameInstance;
-use crate::time::now_ms;
 use crate::outbound::ClientTx;
+use crate::time::now_ms;
 use crate::types::ConnectionId;
 use common::types::{ModeId, PlayerCount, TimestampMs};
 use std::collections::{HashMap, HashSet};
@@ -87,12 +87,16 @@ impl Lobby {
 
     /// Pins a watcher to the public board, or releases it to follow running matches.
     ///
-    /// Ignored while the connection still competes in a match: clients request previews as
-    /// soon as they start joining, which can arrive after the join already started a match.
-    /// Pinning takes the connection out of a match it has finished (lost or won).
+    /// Only queue modes preview, and spectators keep their board. Ignored while the connection
+    /// still competes in a match: clients request previews as soon as they start joining, which
+    /// can arrive after the join already started a match. Pinning takes the connection out of a
+    /// match it has finished (lost or won).
     pub(super) fn set_preview_default(&mut self, conn: &Connection, enabled: bool) {
+        if !conn.is_queue_mode || self.is_spectating(conn) {
+            return;
+        }
         if let Some(binding) = conn.binding.get() {
-            if binding.instance.is_competing(binding.player_id) {
+            if binding.is_competing() {
                 return;
             }
             if enabled {

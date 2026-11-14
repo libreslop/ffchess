@@ -1,8 +1,8 @@
 //! Player join and departure handling.
 
 use super::world::World;
-use crate::spawning::{find_random_nearby_free_pos, find_spawn_pos};
 use crate::outbound::ClientTx;
+use crate::spawning::{find_random_nearby_free_pos, find_spawn_pos};
 use common::models::{KitConfig, Piece, Player, QueuePresetPlayerConfig};
 use common::protocol::{GameError, GameOverStats, ServerMessage};
 use common::types::{

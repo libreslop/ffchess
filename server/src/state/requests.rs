@@ -3,11 +3,11 @@
 use super::connection::Connection;
 use super::lobby::Lobby;
 use crate::instance::{GameInstance, JoinRequest};
+use crate::outbound::ClientTx;
 use crate::text::UserText;
 use crate::time::now_ms;
-use crate::outbound::ClientTx;
 use crate::types::ConnectionId;
-use common::protocol::{ChatLine, ClientMessage, GameError};
+use common::protocol::{ChatLine, GameError};
 use common::types::{ColorHex, KitId, ModeId, PlayerId, SessionSecret};
 use rand::seq::SliceRandom;
 use std::sync::Arc;
@@ -15,18 +15,18 @@ use std::sync::Arc;
 /// Longest accepted player name, in bytes.
 const MAX_NAME_LEN: usize = 32;
 
-/// Longest chat sender name used for guests, in characters.
+/// Longest name of guests and spectators, in characters.
 pub(super) const MAX_GUEST_NAME_CHARS: usize = 32;
 
 /// Chat color of players who are not in a match.
 const GUEST_CHAT_COLOR: &str = "#555555";
 
 /// A join request as received from a client.
-struct JoinForm {
-    name: String,
-    kit_name: KitId,
-    player_id: Option<PlayerId>,
-    session_secret: Option<SessionSecret>,
+pub(super) struct JoinForm {
+    pub(super) name: String,
+    pub(super) kit_name: KitId,
+    pub(super) player_id: Option<PlayerId>,
+    pub(super) session_secret: Option<SessionSecret>,
 }
 
 impl Lobby {
@@ -48,43 +48,6 @@ impl Lobby {
         Some(conn)
     }
 
-    /// Dispatches one client message that needs the lobby.
-    pub(super) fn handle_message(&mut self, conn: &Connection, message: ClientMessage) {
-        match message {
-            ClientMessage::Join {
-                name,
-                kit_name,
-                player_id,
-                session_secret,
-            } => self.join(
-                conn,
-                JoinForm {
-                    name,
-                    kit_name,
-                    player_id,
-                    session_secret,
-                },
-            ),
-            ClientMessage::Leave => self.leave(conn),
-            ClientMessage::ListMatches => self.send_match_list(conn),
-            ClientMessage::Spectate {
-                name,
-                target,
-                player_id,
-            } => self.spectate(conn, name, target, player_id),
-            ClientMessage::SetPreviewDefault { enabled } => {
-                if conn.is_queue_mode && !self.is_spectating(conn) {
-                    self.set_preview_default(conn, enabled);
-                }
-            }
-            ClientMessage::Chat { name_hint, message } => self.chat(conn, name_hint, message),
-            // Handled by `ServerState` without taking the lobby lock.
-            ClientMessage::QueueAction(_)
-            | ClientMessage::ClearActions { .. }
-            | ClientMessage::Ping(_) => {}
-        }
-    }
-
     /// Releases everything a closed connection held.
     pub(super) fn close_connection(&mut self, conn: &Connection) {
         self.stop_spectating(conn);
@@ -101,7 +64,7 @@ impl Lobby {
     }
 
     /// Joins the public world, or the queue of a queue mode.
-    fn join(&mut self, conn: &Connection, form: JoinForm) {
+    pub(super) fn join(&mut self, conn: &Connection, form: JoinForm) {
         let name = match self.validate_name(form.name) {
             Ok(name) => name,
             Err(error) => return conn.send_error(error),
@@ -165,7 +128,7 @@ impl Lobby {
     }
 
     /// Posts a chat message to the room the connection is looking at.
-    fn chat(&self, conn: &Connection, name_hint: String, message: String) {
+    pub(super) fn chat(&self, conn: &Connection, name_hint: String, message: String) {
         let message: String = message
             .clean_message()
             .chars()
@@ -223,14 +186,8 @@ impl Lobby {
             .spectated_instance(conn)
             .and_then(|instance| instance.spectator_name(conn.id))
             .or_else(|| self.queued_name(&conn.mode_id, conn.id))
-            .unwrap_or_else(|| {
-                let cleaned = name_hint.clean_name();
-                if cleaned.is_empty() {
-                    "Guest".to_string()
-                } else {
-                    cleaned.chars().take(MAX_GUEST_NAME_CHARS).collect()
-                }
-            });
+            .or_else(|| name_hint.short_name(MAX_GUEST_NAME_CHARS))
+            .unwrap_or_else(|| "Guest".to_string());
         (name, ColorHex::from(GUEST_CHAT_COLOR))
     }
 

@@ -7,6 +7,9 @@ use common::protocol::{ActionRequest, GameError, ServerMessage};
 use common::types::{ModeId, PieceId};
 
 /// A websocket connection opened for one public mode.
+///
+/// Clones are handles to the same connection.
+#[derive(Clone)]
 pub struct Connection {
     pub(super) id: ConnectionId,
     pub(super) mode_id: ModeId,

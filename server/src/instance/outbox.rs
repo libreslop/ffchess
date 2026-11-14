@@ -82,6 +82,9 @@ impl Outbox {
     fn for_each_open(&mut self, f: impl Fn(&ClientTx)) {
         self.players.retain(|_, tx| !tx.is_closed());
         self.viewers.retain(|_, tx| !tx.is_closed());
-        self.players.values().chain(self.viewers.values()).for_each(f);
+        self.players
+            .values()
+            .chain(self.viewers.values())
+            .for_each(f);
     }
 }

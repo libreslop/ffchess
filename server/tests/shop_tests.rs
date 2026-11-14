@@ -12,8 +12,8 @@ use common::types::{
 };
 use glam::IVec2;
 use server::instance::{GameInstance, JoinRequest};
-use std::sync::Arc;
 use server::outbound::ClientTx;
+use std::sync::Arc;
 
 /// Builds a minimal piece config for testing.
 fn make_piece_config(id: &str, score: u64) -> PieceConfig {

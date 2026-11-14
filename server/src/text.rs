@@ -2,12 +2,22 @@
 
 use std::ops::RangeInclusive;
 
+/// A set of characters given as ranges.
+struct CharSet(&'static [RangeInclusive<char>]);
+
+impl CharSet {
+    /// Returns true when `c` is in the set.
+    fn contains(&self, c: char) -> bool {
+        self.0.iter().any(|range| range.contains(&c))
+    }
+}
+
 /// Characters that render as nothing, or as blank space that is not whitespace.
 ///
 /// Covers soft hyphens, zero-width spaces and joiners, direction marks, embeddings, overrides
 /// and isolates, invisible operators, blank fillers (Hangul and Braille), variation selectors,
 /// and tag characters. Names made of these could look identical to another player's name.
-const INVISIBLE: &[RangeInclusive<char>] = &[
+const INVISIBLE: CharSet = CharSet(&[
     '\u{00AD}'..='\u{00AD}',
     '\u{034F}'..='\u{034F}',
     '\u{061C}'..='\u{061C}',
@@ -26,30 +36,18 @@ const INVISIBLE: &[RangeInclusive<char>] = &[
     '\u{1BCA0}'..='\u{1BCA3}',
     '\u{1D173}'..='\u{1D17A}',
     '\u{E0000}'..='\u{E0FFF}',
-];
+]);
 
 /// Bidirectional controls: direction marks, embeddings, overrides, and isolates.
 ///
 /// They can flip the order of the text around them, such as the name and the message of a
 /// chat line.
-const BIDI_CONTROLS: &[RangeInclusive<char>] = &[
+const BIDI_CONTROLS: CharSet = CharSet(&[
     '\u{061C}'..='\u{061C}',
     '\u{200E}'..='\u{200F}',
     '\u{202A}'..='\u{202E}',
     '\u{2066}'..='\u{2069}',
-];
-
-/// Classification of characters that should not reach other players.
-trait CharClass {
-    /// Returns true when the character is in one of `ranges`.
-    fn within(self, ranges: &[RangeInclusive<char>]) -> bool;
-}
-
-impl CharClass for char {
-    fn within(self, ranges: &[RangeInclusive<char>]) -> bool {
-        ranges.iter().any(|range| range.contains(&self))
-    }
-}
+]);
 
 /// Cleanup applied to text before it is shown to other players.
 pub trait UserText {
@@ -59,6 +57,12 @@ pub trait UserText {
     /// space, so a name cannot pass for another name or for a different layout. The result is
     /// trimmed and may be empty.
     fn clean_name(&self) -> String;
+
+    /// Cleans a name and cuts it to `max_chars`, returning `None` when nothing visible is left.
+    fn short_name(&self, max_chars: usize) -> Option<String> {
+        let cleaned = self.clean_name();
+        (!cleaned.is_empty()).then(|| cleaned.chars().take(max_chars).collect())
+    }
 
     /// Cleans a chat message.
     ///
@@ -73,7 +77,7 @@ impl UserText for str {
         self.split_whitespace()
             .map(|word| {
                 word.chars()
-                    .filter(|c| !c.is_control() && !c.within(INVISIBLE))
+                    .filter(|c| !c.is_control() && !INVISIBLE.contains(*c))
                     .collect::<String>()
             })
             .filter(|word| !word.is_empty())
@@ -83,7 +87,7 @@ impl UserText for str {
 
     fn clean_message(&self) -> String {
         self.chars()
-            .filter(|c| !c.is_control() && !c.within(BIDI_CONTROLS))
+            .filter(|c| !c.is_control() && !BIDI_CONTROLS.contains(*c))
             .collect::<String>()
             .trim()
             .to_string()

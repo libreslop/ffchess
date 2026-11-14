@@ -8,8 +8,8 @@ use common::types::{
 };
 use serde_json::json;
 use server::instance::{GameInstance, JoinRequest};
-use std::sync::Arc;
 use server::outbound::ClientTx;
+use std::sync::Arc;
 
 /// Builds a piece config from JSON, filling in the fields the test does not care about.
 fn piece_config(id: &str, mut fields: serde_json::Value) -> PieceConfig {

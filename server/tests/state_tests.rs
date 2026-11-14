@@ -6,10 +6,10 @@ use common::types::{
     ActionId, BoardCoord, DurationMs, KitId, ModeId, PieceId, PieceTypeId, PlayerId, TimestampMs,
 };
 use server::instance::{GameInstance, JoinRequest};
+use server::outbound::ClientTx;
 use server::state::ServerState;
 use server::time::now_ms;
 use std::sync::Arc;
-use server::outbound::ClientTx;
 
 type Inbox = server::outbound::ClientFeed;
 

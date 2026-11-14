@@ -4,6 +4,7 @@
 //! listed to everyone on the board. Spectating a private match ends with the match: the
 //! instance releases its spectators itself, and the lobby forgets them on the next tick.
 
+use super::bindings::Binding;
 use super::connection::Connection;
 use super::lobby::Lobby;
 use super::requests::MAX_GUEST_NAME_CHARS;
@@ -19,8 +20,8 @@ impl Lobby {
     /// Makes a connection a named spectator of `target`.
     ///
     /// Players still competing cannot spectate. A client whose `player_id` plays on the target
-    /// board from another connection is refused and sent back to the menu board, where its
-    /// client goes on the error. A target that does not exist or already finished answers
+    /// board from another connection is refused: it goes back to the menu board and gets an
+    /// error. A target that does not exist or already finished answers
     /// [`ServerMessage::SpectateEnded`]; the connection then watches nothing until it leaves.
     pub(super) fn spectate(
         &mut self,
@@ -29,11 +30,8 @@ impl Lobby {
         target: SpectateTarget,
         player_id: Option<PlayerId>,
     ) {
-        let own_player = conn.binding.get().map(|binding| {
-            let competing = binding.instance.is_competing(binding.player_id);
-            (binding.player_id, competing)
-        });
-        if own_player.is_some_and(|(_, competing)| competing) {
+        let own_binding = conn.binding.get();
+        if own_binding.as_ref().is_some_and(Binding::is_competing) {
             return;
         }
         let name = self.spectator_name(name);
@@ -41,10 +39,13 @@ impl Lobby {
         // client has left its session either way, so the cleanup always happens.
         let instance = self.spectate_target(conn, &target);
         // This connection's own finished session is dropped below, so only other tabs count.
-        let plays_elsewhere = player_id
-            .filter(|player_id| own_player.is_none_or(|(own_id, _)| own_id != *player_id))
-            .zip(instance.as_ref())
-            .is_some_and(|(player_id, instance)| instance.has_active_session(player_id));
+        let own_id = own_binding.map(|binding| binding.player_id);
+        let plays_elsewhere = player_id.is_some_and(|player_id| {
+            Some(player_id) != own_id
+                && instance
+                    .as_ref()
+                    .is_some_and(|instance| instance.has_active_session(player_id))
+        });
         if plays_elsewhere {
             self.leave(conn);
             return conn.send_error(GameError::Custom {
@@ -113,12 +114,9 @@ impl Lobby {
     /// Spectating has no error screen to show a rejected name on, so names are fixed up
     /// instead of rejected.
     fn spectator_name(&self, input: String) -> String {
-        let cleaned = input.clean_name();
-        if cleaned.is_empty() {
-            self.generate_name()
-        } else {
-            cleaned.chars().take(MAX_GUEST_NAME_CHARS).collect()
-        }
+        input
+            .short_name(MAX_GUEST_NAME_CHARS)
+            .unwrap_or_else(|| self.generate_name())
     }
 
     /// Resolves the board a spectate request points at, if it can still be watched.

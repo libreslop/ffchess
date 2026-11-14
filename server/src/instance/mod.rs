@@ -20,8 +20,8 @@ mod world;
 pub use players::JoinRequest;
 pub use spectators::Spectator;
 
-use crate::time::now_ms;
 use crate::outbound::ClientTx;
+use crate::time::now_ms;
 use crate::types::ConnectionId;
 use common::models::{GameModeConfig, GameState, MatchPlayer, MatchSummary};
 use common::protocol::{ActionRequest, ChatLine, GameError, ServerMessage};

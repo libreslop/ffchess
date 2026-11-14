@@ -1,10 +1,8 @@
 //! Matchmaking queues of queue-based modes.
 
-use super::bindings::BindingSlot;
 use super::connection::Connection;
 use super::lobby::Lobby;
 use crate::instance::{GameInstance, JoinRequest};
-use crate::outbound::ClientTx;
 use crate::types::ConnectionId;
 use common::protocol::{GameError, ServerMessage};
 use common::types::{KitId, ModeId, PlayerCount, QueuePosition};
@@ -12,10 +10,8 @@ use std::sync::Arc;
 
 /// A connection waiting for a match.
 pub(super) struct QueueEntry {
-    pub(super) conn_id: ConnectionId,
-    tx: ClientTx,
-    binding: BindingSlot,
-    pub(super) name: String,
+    conn: Connection,
+    name: String,
     kit_name: KitId,
 }
 
@@ -30,7 +26,7 @@ impl Lobby {
         self.queues
             .get(mode_id)?
             .iter()
-            .find(|entry| entry.conn_id == conn_id)
+            .find(|entry| entry.conn.id == conn_id)
             .map(|entry| entry.name.clone())
     }
 
@@ -48,11 +44,9 @@ impl Lobby {
         self.ensure_preview_watcher(conn);
 
         let queue = self.queues.entry(conn.mode_id.clone()).or_default();
-        queue.retain(|entry| entry.conn_id != conn.id);
+        queue.retain(|entry| entry.conn.id != conn.id);
         queue.push(QueueEntry {
-            conn_id: conn.id,
-            tx: conn.tx.clone(),
-            binding: conn.binding.clone(),
+            conn: conn.clone(),
             name,
             kit_name,
         });
@@ -71,7 +65,7 @@ impl Lobby {
             return;
         };
         let before = queue.len();
-        queue.retain(|entry| entry.conn_id != conn_id);
+        queue.retain(|entry| entry.conn.id != conn_id);
         let removed = queue.len() != before;
         if queue.is_empty() {
             self.queues.remove(mode_id);
@@ -96,23 +90,26 @@ impl Lobby {
         self.games
             .insert(instance.mode_id().clone(), instance.clone());
 
-        for entry in players {
-            self.remove_preview_watcher(mode_id, entry.conn_id);
+        for QueueEntry {
+            conn,
+            name,
+            kit_name,
+        } in players
+        {
+            self.remove_preview_watcher(mode_id, conn.id);
             let joined = instance.join(JoinRequest {
-                name: entry.name,
-                kit_name: entry.kit_name,
-                tx: entry.tx.clone(),
+                name,
+                kit_name,
+                tx: conn.tx.clone(),
                 player_id: None,
                 session_secret: None,
             });
             match joined {
                 Ok((player_id, secret)) => {
-                    entry.binding.bind(player_id, instance.clone());
-                    self.send_init(&entry.tx, &instance, player_id, secret);
+                    conn.binding.bind(player_id, instance.clone());
+                    self.send_init(&conn.tx, &instance, player_id, secret);
                 }
-                Err(error) => {
-                    entry.tx.send(ServerMessage::Error(error));
-                }
+                Err(error) => conn.send_error(error),
             }
         }
     }
@@ -128,7 +125,7 @@ impl Lobby {
         };
         let queued_players = PlayerCount::new(queue.len() as u32);
         for (index, entry) in queue.iter().enumerate() {
-            entry.tx.send(ServerMessage::QueueState {
+            entry.conn.send(ServerMessage::QueueState {
                 position_in_queue: QueuePosition::new(index as u32 + 1),
                 queued_players,
                 required_players,

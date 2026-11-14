@@ -11,6 +11,13 @@ pub(super) struct Binding {
     pub(super) instance: Arc<GameInstance>,
 }
 
+impl Binding {
+    /// Returns true while the player is on the board and has not won yet.
+    pub(super) fn is_competing(&self) -> bool {
+        self.instance.is_competing(self.player_id)
+    }
+}
+
 /// The player a connection controls, readable without the lobby lock.
 ///
 /// Moves only need this, so they skip the lobby lock that every other request takes. The lock

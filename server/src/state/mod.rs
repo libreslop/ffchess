@@ -19,11 +19,12 @@ pub use connection::Connection;
 use crate::config::ConfigManager;
 use crate::instance::GameInstance;
 use crate::outbound::ClientTx;
-use common::models::ModeSummary;
 use crate::time::now_ms;
+use common::models::ModeSummary;
 use common::protocol::{ClientMessage, ServerMessage};
 use common::types::ModeId;
 use lobby::Lobby;
+use requests::JoinForm;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 /// Shared server state: configuration plus the lobby of live instances.
@@ -71,8 +72,8 @@ impl ServerState {
 
     /// Handles one message received from a connection.
     ///
-    /// Moves and pings are answered without the lobby lock, so a flood of other requests does
-    /// not slow down play.
+    /// Moves and pings only concern the connection itself and skip the lobby lock, so a flood
+    /// of other requests does not slow down play.
     pub fn handle_message(&self, conn: &Connection, message: ClientMessage) {
         match message {
             ClientMessage::QueueAction(request) => conn.submit_action(request),
@@ -80,7 +81,33 @@ impl ServerState {
             ClientMessage::Ping(client_time) => {
                 conn.send(ServerMessage::Pong(client_time, now_ms()));
             }
-            message => self.lobby().handle_message(conn, message),
+            ClientMessage::Join {
+                name,
+                kit_name,
+                player_id,
+                session_secret,
+            } => self.lobby().join(
+                conn,
+                JoinForm {
+                    name,
+                    kit_name,
+                    player_id,
+                    session_secret,
+                },
+            ),
+            ClientMessage::Leave => self.lobby().leave(conn),
+            ClientMessage::ListMatches => self.lobby().send_match_list(conn),
+            ClientMessage::Spectate {
+                name,
+                target,
+                player_id,
+            } => self.lobby().spectate(conn, name, target, player_id),
+            ClientMessage::SetPreviewDefault { enabled } => {
+                self.lobby().set_preview_default(conn, enabled);
+            }
+            ClientMessage::Chat { name_hint, message } => {
+                self.lobby().chat(conn, name_hint, message);
+            }
         }
     }
 

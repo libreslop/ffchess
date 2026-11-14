@@ -67,7 +67,10 @@ async fn feed_closes_on_event_overflow() {
 #[test]
 /// Verifies names lose control and invisible characters and keep single spaces.
 fn names_drop_invisible_characters() {
-    assert_eq!("  Bob\u{200B}\u{202E} \t Smith\u{0007} ".clean_name(), "Bob Smith");
+    assert_eq!(
+        "  Bob\u{200B}\u{202E} \t Smith\u{0007} ".clean_name(),
+        "Bob Smith"
+    );
     assert_eq!("\u{2800}\u{3164}".clean_name(), "");
     assert_eq!("محمد".clean_name(), "محمد");
 }
