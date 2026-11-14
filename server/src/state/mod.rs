@@ -2,7 +2,8 @@
 //!
 //! Everything lives in one [`Lobby`] behind one mutex. Lobby operations may call into game
 //! instances (which take their own lock), but instances never call back into the lobby, so the
-//! lock order is always lobby before instance.
+//! lock order is always lobby before instance. Moves skip the lobby: they only need the player
+//! a connection controls, which its binding slot holds.
 
 mod bindings;
 mod connection;
@@ -17,9 +18,10 @@ pub use connection::Connection;
 
 use crate::config::ConfigManager;
 use crate::instance::GameInstance;
-use crate::types::ClientTx;
+use crate::outbound::ClientTx;
 use common::models::ModeSummary;
-use common::protocol::ClientMessage;
+use crate::time::now_ms;
+use common::protocol::{ClientMessage, ServerMessage};
 use common::types::ModeId;
 use lobby::Lobby;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -68,8 +70,18 @@ impl ServerState {
     }
 
     /// Handles one message received from a connection.
+    ///
+    /// Moves and pings are answered without the lobby lock, so a flood of other requests does
+    /// not slow down play.
     pub fn handle_message(&self, conn: &Connection, message: ClientMessage) {
-        self.lobby().handle_message(conn, message);
+        match message {
+            ClientMessage::QueueAction(request) => conn.submit_action(request),
+            ClientMessage::ClearActions { piece_id } => conn.clear_actions(piece_id),
+            ClientMessage::Ping(client_time) => {
+                conn.send(ServerMessage::Pong(client_time, now_ms()));
+            }
+            message => self.lobby().handle_message(conn, message),
+        }
     }
 
     /// Releases everything a closed connection held.

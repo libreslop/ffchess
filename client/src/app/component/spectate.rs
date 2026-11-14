@@ -3,12 +3,16 @@
 use super::callbacks::SlotSession;
 use crate::reducer::GameAction;
 use crate::ui_state::{JoinStep, RejoinFlow};
+use crate::utils::SessionStore;
 use common::protocol::{ClientMessage, SpectateTarget};
+use common::types::ModeId;
 use yew::prelude::*;
 
 /// Inputs of the spectate callbacks.
 pub struct SpectateInputs {
     pub session: SlotSession,
+    /// Mode of the focused connection, whose stored player id identifies this client.
+    pub mode_id: ModeId,
     pub player_name: UseStateHandle<String>,
     pub join_step: UseStateHandle<JoinStep>,
     pub rejoin_flow: UseStateHandle<RejoinFlow>,
@@ -31,6 +35,7 @@ pub fn build_spectate_callbacks(inputs: SpectateInputs) -> SpectateCallbacks {
         let player_name = inputs.player_name.clone();
         let rejoin_flow = inputs.rejoin_flow.clone();
         let has_interacted = inputs.has_interacted.clone();
+        let mode_id = inputs.mode_id.clone();
         Callback::from(move |target: SpectateTarget| {
             let Some(sender) = &session.tx else {
                 return;
@@ -38,9 +43,12 @@ pub fn build_spectate_callbacks(inputs: SpectateInputs) -> SpectateCallbacks {
             has_interacted.set(true);
             rejoin_flow.set(RejoinFlow::Inactive);
             session.reducer.dispatch(GameAction::BeginSpectate);
+            // The server refuses to show a game this client plays in from another tab.
+            let (player_id, _) = SessionStore::new(&mode_id).load();
             sender.send(ClientMessage::Spectate {
                 name: (*player_name).clone(),
                 target,
+                player_id,
             });
         })
     };

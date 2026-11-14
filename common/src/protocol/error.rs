@@ -25,8 +25,6 @@ pub enum GameError {
     NoSpaceNearby,
     /// The action was dropped because an earlier action of the same chain failed or was cleared.
     ActionCancelled,
-    /// The stored session secret does not match the requested player id.
-    InvalidSession,
     Internal(String),
     Custom {
         title: String,
@@ -75,7 +73,6 @@ impl fmt::Display for GameError {
             }
             Self::NoSpaceNearby => write!(f, "No free space nearby"),
             Self::ActionCancelled => write!(f, "Action cancelled"),
-            Self::InvalidSession => write!(f, "Invalid session secret for this player ID."),
             Self::Internal(s) => write!(f, "Internal error: {}", s),
             Self::Custom { title, message } => write!(f, "{}: {}", title, message),
         }

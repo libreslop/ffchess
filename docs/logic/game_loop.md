@@ -28,7 +28,7 @@ they describe.
 5. Refresh color activity for currently connected players.
 6. Recalculate the target board size and shrink only if no player-owned piece would fall outside the new boundary.
 7. Resolve the hook events collected since the previous tick.
-8. Broadcast a full `UpdateState` snapshot to active players and passive viewers.
+8. Encode a full `UpdateState` snapshot once and publish it to active players and passive viewers.
 
 ## Why NPCs Pause When Unwatched
 
@@ -58,8 +58,22 @@ At the end of the tick, the server sends one `ServerMessage::UpdateState` contai
 - all current shops,
 - the current board size.
 
-The snapshot is complete, so the client replaces its world with it instead of merging. A client
-whose outgoing buffer is full simply misses a snapshot and catches up on the next one.
+The snapshot is complete, so the client replaces its world with it instead of merging. It is
+encoded to JSON once per tick and the same text is handed to every connection
+(`server/src/outbound.rs`).
+
+Each connection has two outbound lanes:
+
+- **snapshots** keep only the newest unsent one, so a client that reads slowly gets a lower frame
+  rate instead of a growing backlog, and memory stays one shared snapshot per connection;
+- **events** (action results, chat, `Init`, errors, and the rest) wait in a queue bounded by
+  `socket_event_capacity`. Events must not be lost, so a connection whose queue fills up is closed.
+
+The socket writer takes the latest snapshot first, then drains the event queue, and writes the
+events before the snapshot. Action results are queued before the snapshot that reflects them is
+published, so they still arrive first. A snapshot taken together with an `Init` or `SpectateEnded`
+is dropped, because it may show the board the client just left. A write blocked for
+`socket_stall_timeout_ms` closes the connection.
 
 The client treats this as authoritative state and layers prediction on top of it.
 

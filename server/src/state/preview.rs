@@ -9,7 +9,8 @@ use super::connection::Connection;
 use super::lobby::Lobby;
 use crate::instance::GameInstance;
 use crate::time::now_ms;
-use crate::types::{ClientTx, ConnectionId};
+use crate::outbound::ClientTx;
+use crate::types::ConnectionId;
 use common::types::{ModeId, PlayerCount, TimestampMs};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -90,12 +91,12 @@ impl Lobby {
     /// soon as they start joining, which can arrive after the join already started a match.
     /// Pinning takes the connection out of a match it has finished (lost or won).
     pub(super) fn set_preview_default(&mut self, conn: &Connection, enabled: bool) {
-        if let Some(binding) = self.bindings.get(&conn.id) {
+        if let Some(binding) = conn.binding.get() {
             if binding.instance.is_competing(binding.player_id) {
                 return;
             }
             if enabled {
-                self.detach_binding(conn.id);
+                conn.binding.detach();
                 self.cleanup_private_games();
             }
         }

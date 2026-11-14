@@ -302,7 +302,7 @@ pub fn game_chat(props: &GameChatProps) -> Html {
                                 <div
                                     key={key.0.clone()}
                                     style={format!(
-                                        "font-size: 12px; line-height: 1; min-height: 1em; overflow-wrap: anywhere; opacity: {}; transition: opacity {}ms linear; will-change: opacity;",
+                                        "font-size: 12px; line-height: 1; min-height: 1em; overflow-wrap: anywhere; direction: ltr; opacity: {}; transition: opacity {}ms linear; will-change: opacity;",
                                         if is_expired { "0" } else { "1" },
                                         CHAT_FADE_OUT_MS
                                     )}
@@ -317,11 +317,13 @@ pub fn game_chat(props: &GameChatProps) -> Html {
                                         } else {
                                             html! {
                                                 <>
+                                                    // Name and message are isolated so right-to-left text in
+                                                    // either cannot swap their order around the colon.
                                                     <span style={format!("color: {}; text-shadow: 1px 1px 0 {};", effective_sender_color, effective_sender_shadow)}>
-                                                        {line.sender_name.clone()}
+                                                        <bdi>{line.sender_name.clone()}</bdi>
                                                     </span>
                                                     <span style={format!("color: {}; text-shadow: 1px 1px 0 {};", effective_message_color, effective_message_shadow)}>
-                                                        {" : "}{render_chat_message_with_links(&line.message, theme.link_color, &link_shadow)}
+                                                        {" : "}<bdi>{render_chat_message_with_links(&line.message, theme.link_color, &link_shadow)}</bdi>
                                                     </span>
                                                 </>
                                             }

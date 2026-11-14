@@ -2,7 +2,7 @@
 
 use super::world::World;
 use crate::spawning::{find_random_nearby_free_pos, find_spawn_pos};
-use crate::types::ClientTx;
+use crate::outbound::ClientTx;
 use common::models::{KitConfig, Piece, Player, QueuePresetPlayerConfig};
 use common::protocol::{GameError, GameOverStats, ServerMessage};
 use common::types::{
@@ -78,10 +78,9 @@ impl World {
         }
         self.check_capacity()?;
 
-        let player_id = request.player_id.unwrap_or_default();
-        let session_secret = self
-            .sessions
-            .authenticate(player_id, request.session_secret, now)?;
+        let (player_id, session_secret) =
+            self.sessions
+                .authenticate(request.player_id, request.session_secret, now);
         if let Some(wait) =
             self.sessions
                 .respawn_wait(player_id, setup.mode.respawn_cooldown_ms, now)
@@ -127,6 +126,7 @@ impl World {
             },
         );
         self.outbox.add_player(player_id, request.tx);
+        self.release_spectators_of(player_id);
         self.actions.forget_player(player_id);
         self.victors.remove(&player_id);
         self.sessions.clear_death(player_id);

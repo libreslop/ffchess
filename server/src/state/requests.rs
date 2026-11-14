@@ -3,9 +3,11 @@
 use super::connection::Connection;
 use super::lobby::Lobby;
 use crate::instance::{GameInstance, JoinRequest};
+use crate::text::UserText;
 use crate::time::now_ms;
-use crate::types::{ClientTx, ConnectionId};
-use common::protocol::{ChatLine, ClientMessage, GameError, ServerMessage};
+use crate::outbound::ClientTx;
+use crate::types::ConnectionId;
+use common::protocol::{ChatLine, ClientMessage, GameError};
 use common::types::{ColorHex, KitId, ModeId, PlayerId, SessionSecret};
 use rand::seq::SliceRandom;
 use std::sync::Arc;
@@ -36,6 +38,7 @@ impl Lobby {
             is_queue_mode: self.is_queue_mode(&mode_id),
             mode_id,
             tx,
+            binding: Default::default(),
         };
         if conn.is_queue_mode {
             self.ensure_preview_watcher(&conn);
@@ -45,7 +48,7 @@ impl Lobby {
         Some(conn)
     }
 
-    /// Dispatches one client message.
+    /// Dispatches one client message that needs the lobby.
     pub(super) fn handle_message(&mut self, conn: &Connection, message: ClientMessage) {
         match message {
             ClientMessage::Join {
@@ -64,33 +67,28 @@ impl Lobby {
             ),
             ClientMessage::Leave => self.leave(conn),
             ClientMessage::ListMatches => self.send_match_list(conn),
-            ClientMessage::Spectate { name, target } => self.spectate(conn, name, target),
-            ClientMessage::QueueAction(request) => {
-                if let Some(binding) = self.bindings.get(&conn.id) {
-                    binding.instance.submit_action(binding.player_id, request);
-                }
-            }
-            ClientMessage::ClearActions { piece_id } => {
-                if let Some(binding) = self.bindings.get(&conn.id) {
-                    binding.instance.clear_actions(binding.player_id, piece_id);
-                }
-            }
+            ClientMessage::Spectate {
+                name,
+                target,
+                player_id,
+            } => self.spectate(conn, name, target, player_id),
             ClientMessage::SetPreviewDefault { enabled } => {
                 if conn.is_queue_mode && !self.is_spectating(conn) {
                     self.set_preview_default(conn, enabled);
                 }
             }
             ClientMessage::Chat { name_hint, message } => self.chat(conn, name_hint, message),
-            ClientMessage::Ping(client_time) => {
-                conn.send(ServerMessage::Pong(client_time, now_ms()));
-            }
+            // Handled by `ServerState` without taking the lobby lock.
+            ClientMessage::QueueAction(_)
+            | ClientMessage::ClearActions { .. }
+            | ClientMessage::Ping(_) => {}
         }
     }
 
     /// Releases everything a closed connection held.
     pub(super) fn close_connection(&mut self, conn: &Connection) {
         self.stop_spectating(conn);
-        if let Some(binding) = self.bindings.remove(&conn.id) {
+        if let Some(binding) = conn.binding.take() {
             binding.instance.leave(binding.player_id);
         }
         if conn.is_queue_mode {
@@ -109,7 +107,7 @@ impl Lobby {
             Err(error) => return conn.send_error(error),
         };
         self.stop_spectating(conn);
-        self.detach_binding(conn.id);
+        conn.binding.detach();
         self.cleanup_private_games();
         self.dequeue(&conn.mode_id, conn.id);
         if conn.is_queue_mode {
@@ -139,7 +137,7 @@ impl Lobby {
         });
         match joined {
             Ok((player_id, secret)) => {
-                self.bind(conn.id, player_id, instance.clone());
+                conn.binding.bind(player_id, instance.clone());
                 self.send_init(&conn.tx, &instance, player_id, secret);
             }
             Err(error) => {
@@ -150,9 +148,9 @@ impl Lobby {
     }
 
     /// Leaves the current match, queue, or spectated board and goes back to watching.
-    fn leave(&mut self, conn: &Connection) {
+    pub(super) fn leave(&mut self, conn: &Connection) {
         self.stop_spectating(conn);
-        if let Some(binding) = self.bindings.remove(&conn.id) {
+        if let Some(binding) = conn.binding.take() {
             binding.instance.leave(binding.player_id);
             self.cleanup_private_games();
         } else {
@@ -169,7 +167,7 @@ impl Lobby {
     /// Posts a chat message to the room the connection is looking at.
     fn chat(&self, conn: &Connection, name_hint: String, message: String) {
         let message: String = message
-            .trim()
+            .clean_message()
             .chars()
             .take(self.config.global.chat_max_chars())
             .collect();
@@ -191,8 +189,8 @@ impl Lobby {
 
     /// Returns the instance whose chat room the connection is in.
     fn chat_room_of(&self, conn: &Connection) -> Option<Arc<GameInstance>> {
-        if let Some(binding) = self.bindings.get(&conn.id) {
-            return Some(binding.instance.clone());
+        if let Some(binding) = conn.binding.get() {
+            return Some(binding.instance);
         }
         if let Some(instance) = self.spectated_instance(conn) {
             return Some(instance.clone());
@@ -214,9 +212,9 @@ impl Lobby {
     /// Players use their in-game identity, queued players their queue name, named spectators
     /// the name they spectate under, and other watchers the name their client suggests.
     fn chat_identity(&self, conn: &Connection, name_hint: String) -> (String, ColorHex) {
-        if let Some(identity) = self
-            .bindings
-            .get(&conn.id)
+        if let Some(identity) = conn
+            .binding
+            .get()
             .and_then(|binding| binding.instance.player_identity(binding.player_id))
         {
             return identity;
@@ -226,29 +224,29 @@ impl Lobby {
             .and_then(|instance| instance.spectator_name(conn.id))
             .or_else(|| self.queued_name(&conn.mode_id, conn.id))
             .unwrap_or_else(|| {
-                let trimmed = name_hint.trim();
-                if trimmed.is_empty() {
+                let cleaned = name_hint.clean_name();
+                if cleaned.is_empty() {
                     "Guest".to_string()
                 } else {
-                    trimmed.chars().take(MAX_GUEST_NAME_CHARS).collect()
+                    cleaned.chars().take(MAX_GUEST_NAME_CHARS).collect()
                 }
             });
         (name, ColorHex::from(GUEST_CHAT_COLOR))
     }
 
-    /// Trims a requested player name, generating one when it is empty.
+    /// Cleans a requested player name, generating one when nothing visible is left.
     fn validate_name(&self, input: String) -> Result<String, GameError> {
-        let trimmed = input.trim();
-        if trimmed.is_empty() {
+        let cleaned = input.clean_name();
+        if cleaned.is_empty() {
             return Ok(self.generate_name());
         }
-        if trimmed.len() > MAX_NAME_LEN {
+        if cleaned.len() > MAX_NAME_LEN {
             return Err(GameError::Custom {
                 title: "Invalid Name".to_string(),
                 message: "Name must be 32 characters or less".to_string(),
             });
         }
-        Ok(trimmed.to_string())
+        Ok(cleaned)
     }
 
     /// Generates an "Adjective Noun" name from the configured name pool.

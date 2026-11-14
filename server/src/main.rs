@@ -4,7 +4,7 @@ use axum::{Router, routing::get};
 use server::state::ServerState;
 use std::sync::Arc;
 use std::time::Duration;
-use tower_http::{cors::CorsLayer, services::ServeDir, trace::TraceLayer};
+use tower_http::{services::ServeDir, trace::TraceLayer};
 
 /// Interval between simulation ticks.
 const TICK_INTERVAL: Duration = Duration::from_millis(100);
@@ -40,8 +40,7 @@ async fn main() {
         .route("/", get(server::handlers::index_html))
         .fallback_service(ServeDir::new(server::paths::client_dist_dir()))
         .with_state(state)
-        .layer(TraceLayer::new_for_http())
-        .layer(CorsLayer::permissive());
+        .layer(TraceLayer::new_for_http());
 
     let port = std::env::var("PORT")
         .ok()

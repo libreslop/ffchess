@@ -1,12 +1,7 @@
 //! Server-specific primitive wrappers.
 
-use common::protocol::ServerMessage;
 use std::fmt;
-use tokio::sync::mpsc;
 use uuid::Uuid;
-
-/// Outbound message channel of one websocket connection.
-pub type ClientTx = mpsc::Sender<ServerMessage>;
 
 /// Unique identifier for a live websocket connection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

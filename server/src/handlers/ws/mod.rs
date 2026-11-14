@@ -1,44 +1,61 @@
 //! WebSocket endpoint connecting clients to the lobby.
 
+mod origin;
 mod throttle;
 
+use crate::outbound::{ClientFeed, ClientTx};
 use crate::state::ServerState;
 use crate::time::now_ms;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Path, State};
-use axum::response::IntoResponse;
-use common::protocol::{ClientMessage, ServerMessage};
+use axum::http::{HeaderMap, StatusCode};
+use axum::response::{IntoResponse, Response};
+use common::protocol::ClientMessage;
 use common::types::ModeId;
 use futures_util::stream::SplitSink;
 use futures_util::{SinkExt, StreamExt};
+use origin::UpgradeOrigin;
 use std::sync::Arc;
+use std::time::Duration;
 use throttle::MessageThrottle;
-use tokio::sync::mpsc;
-
-/// Outbound messages buffered per connection before new ones are dropped.
-const SOCKET_BUFFER_CAPACITY: usize = 256;
 
 /// Upgrades an HTTP connection to a game WebSocket session.
+///
+/// Browsers may only connect from pages of this server or of a configured origin.
 pub async fn ws_handler(
     ws: WebSocketUpgrade,
     Path(mode_id): Path<String>,
+    headers: HeaderMap,
     State(state): State<Arc<ServerState>>,
-) -> impl IntoResponse {
+) -> Response {
+    if !UpgradeOrigin::of(&headers).is_allowed(&state.config().global.allowed_origins) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
     ws.on_upgrade(|socket| handle_socket(socket, ModeId::from(mode_id), state))
 }
 
-/// Runs one WebSocket session until the client disconnects.
+/// Runs one WebSocket session until the client disconnects or stops keeping up.
 async fn handle_socket(socket: WebSocket, mode_id: ModeId, state: Arc<ServerState>) {
     let (sender, mut receiver) = socket.split();
-    let (tx, rx) = mpsc::channel::<ServerMessage>(SOCKET_BUFFER_CAPACITY);
+    let global = &state.config().global;
+    let (tx, feed) = ClientTx::channel(global.socket_event_capacity());
+    let stall_timeout = global.socket_stall_timeout();
     let Some(conn) = state.open_connection(mode_id.clone(), tx) else {
         tracing::error!(%mode_id, "Game mode not found");
         return;
     };
-    let send_task = spawn_socket_sender(sender, rx);
+    let mut send_task = tokio::spawn(forward_to_socket(sender, feed, stall_timeout));
 
     let mut throttle = MessageThrottle::new(now_ms());
-    while let Some(Ok(message)) = receiver.next().await {
+    loop {
+        let message = tokio::select! {
+            message = receiver.next() => message,
+            // The writer gave up on the client, so the session ends too.
+            _ = &mut send_task => break,
+        };
+        let Some(Ok(message)) = message else {
+            break;
+        };
         let Message::Text(text) = message else {
             continue;
         };
@@ -56,19 +73,21 @@ async fn handle_socket(socket: WebSocket, mode_id: ModeId, state: Arc<ServerStat
     send_task.abort();
 }
 
-/// Forwards queued server messages to the socket as JSON text frames.
-fn spawn_socket_sender(
+/// Writes a connection's outbound traffic to its socket as JSON text frames.
+///
+/// Stops when the connection must close, when the socket fails, or when one write stays
+/// blocked for `stall_timeout`, so a client that never reads cannot hold the task forever.
+async fn forward_to_socket(
     mut sender: SplitSink<WebSocket, Message>,
-    mut rx: mpsc::Receiver<ServerMessage>,
-) -> tokio::task::JoinHandle<()> {
-    tokio::spawn(async move {
-        while let Some(message) = rx.recv().await {
-            let Ok(json) = serde_json::to_string(&message) else {
-                continue;
-            };
-            if sender.send(Message::Text(json)).await.is_err() {
-                break;
+    mut feed: ClientFeed,
+    stall_timeout: Duration,
+) {
+    while let Some(batch) = feed.next_batch().await {
+        for text in batch {
+            let written = tokio::time::timeout(stall_timeout, sender.send(Message::Text(text)));
+            if !matches!(written.await, Ok(Ok(()))) {
+                return;
             }
         }
-    })
+    }
 }

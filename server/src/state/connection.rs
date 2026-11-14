@@ -1,8 +1,10 @@
 //! Identity of one websocket connection as seen by the lobby.
 
-use crate::types::{ClientTx, ConnectionId};
-use common::protocol::{GameError, ServerMessage};
-use common::types::ModeId;
+use super::bindings::BindingSlot;
+use crate::outbound::ClientTx;
+use crate::types::ConnectionId;
+use common::protocol::{ActionRequest, GameError, ServerMessage};
+use common::types::{ModeId, PieceId};
 
 /// A websocket connection opened for one public mode.
 pub struct Connection {
@@ -11,16 +13,31 @@ pub struct Connection {
     pub(super) tx: ClientTx,
     /// True when the mode matches players through a queue instead of a shared world.
     pub(super) is_queue_mode: bool,
+    pub(super) binding: BindingSlot,
 }
 
 impl Connection {
-    /// Sends a message to this connection, dropping it if the connection is saturated.
+    /// Sends a message to this connection.
     pub(super) fn send(&self, message: ServerMessage) {
-        let _ = self.tx.try_send(message);
+        self.tx.send(message);
     }
 
     /// Sends an error to this connection.
     pub(super) fn send_error(&self, error: GameError) {
         self.send(ServerMessage::Error(error));
+    }
+
+    /// Queues or runs a piece action for the player this connection controls.
+    pub(super) fn submit_action(&self, request: ActionRequest) {
+        if let Some(binding) = self.binding.get() {
+            binding.instance.submit_action(binding.player_id, request);
+        }
+    }
+
+    /// Cancels the queued actions of a piece of the player this connection controls.
+    pub(super) fn clear_actions(&self, piece_id: PieceId) {
+        if let Some(binding) = self.binding.get() {
+            binding.instance.clear_actions(binding.player_id, piece_id);
+        }
     }
 }

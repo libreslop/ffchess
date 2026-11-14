@@ -1,9 +1,11 @@
 //! Matchmaking queues of queue-based modes.
 
+use super::bindings::BindingSlot;
 use super::connection::Connection;
 use super::lobby::Lobby;
 use crate::instance::{GameInstance, JoinRequest};
-use crate::types::{ClientTx, ConnectionId};
+use crate::outbound::ClientTx;
+use crate::types::ConnectionId;
 use common::protocol::{GameError, ServerMessage};
 use common::types::{KitId, ModeId, PlayerCount, QueuePosition};
 use std::sync::Arc;
@@ -12,6 +14,7 @@ use std::sync::Arc;
 pub(super) struct QueueEntry {
     pub(super) conn_id: ConnectionId,
     tx: ClientTx,
+    binding: BindingSlot,
     pub(super) name: String,
     kit_name: KitId,
 }
@@ -49,6 +52,7 @@ impl Lobby {
         queue.push(QueueEntry {
             conn_id: conn.id,
             tx: conn.tx.clone(),
+            binding: conn.binding.clone(),
             name,
             kit_name,
         });
@@ -103,11 +107,11 @@ impl Lobby {
             });
             match joined {
                 Ok((player_id, secret)) => {
-                    self.bind(entry.conn_id, player_id, instance.clone());
+                    entry.binding.bind(player_id, instance.clone());
                     self.send_init(&entry.tx, &instance, player_id, secret);
                 }
                 Err(error) => {
-                    let _ = entry.tx.try_send(ServerMessage::Error(error));
+                    entry.tx.send(ServerMessage::Error(error));
                 }
             }
         }
@@ -124,7 +128,7 @@ impl Lobby {
         };
         let queued_players = PlayerCount::new(queue.len() as u32);
         for (index, entry) in queue.iter().enumerate() {
-            let _ = entry.tx.try_send(ServerMessage::QueueState {
+            entry.tx.send(ServerMessage::QueueState {
                 position_in_queue: QueuePosition::new(index as u32 + 1),
                 queued_players,
                 required_players,

@@ -103,7 +103,14 @@ impl Reducible for GameStateReducer {
             }
             GameAction::Pong(sent_at, server_time) => next.record_pong(sent_at, server_time),
             GameAction::SetFPS(fps) => next.fps = fps,
-            GameAction::SetDisconnected(notice) => next.set_disconnect_notice(notice),
+            GameAction::SetDisconnected(notice) => {
+                // A refused spectate request never gets an Init, so the request is dropped
+                // and the menu comes back.
+                if notice.is_fatal && next.spectate == Some(SpectateStatus::Watching) {
+                    next.reset_session();
+                }
+                next.set_disconnect_notice(notice);
+            }
             GameAction::ConnectionEstablished => {
                 // The server drops queue entries and spectators along with their connection.
                 next.queue_status = None;

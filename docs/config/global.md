@@ -21,13 +21,22 @@ This file controls server-wide behavior that is not specific to one mode instanc
 | `sync_interval_ms` | integer (`u32`) | No | `10000` | Included in the `ServerMessage::Init` payload so the client knows the intended sync cadence. |
 | `chat_message_ttl_ms` | integer (`u32`) | No | `10000` | Authoritative room-chat retention window before the client-side fade begins. The server keeps each line for an extra `500ms` so the fade can complete before pruning. |
 | `chat_message_max_chars` | integer (`u32`) | No | `150` | Authoritative maximum number of characters accepted for one chat message. Longer messages are truncated server-side. |
+| `socket_event_capacity` | integer (`u32`) | No | `128` | Unsent events (every message except the per-tick board snapshot) one connection may have queued. A connection that lets its queue fill up is closed instead of silently missing an event. |
+| `socket_stall_timeout_ms` | integer (`u32`) | No | `5000` | A connection whose socket write stays blocked for this long is closed. |
+| `allowed_origins` | string[] | No | `[]` | Page origins, such as `"https://example.com"`, that may open websockets in addition to pages served by this server. Browser upgrades from any other origin are refused with `403`. |
 | `default_name` | object | No | `{}` | Source pool for generated player names when the join request name is blank. |
 | `default_name.adjectives` | string[] | No | `[]` | Random first half of an auto-generated name. |
 | `default_name.nouns` | string[] | No | `[]` | Random second half of an auto-generated name. |
 
 ### Runtime Notes
 
-- Blank names are normalized server-side. The server picks one adjective and one noun.
+- Names lose control and invisible characters (zero-width spaces and joiners, direction
+  controls, blank fillers, variation selectors, tag characters), and whitespace runs collapse
+  to one space. Names left empty are normalized server-side: the server picks one adjective
+  and one noun.
+- Board snapshots are encoded once per tick and shared by every connection. Each connection
+  keeps only the newest unsent snapshot, so a client that reads slowly gets fewer frames rather
+  than a backlog.
 - If a generated adjective and noun are identical, the server tries to swap the noun once.
 - Missing arrays fall back to `"Unnamed"` and `"Player"` at runtime.
 
@@ -38,6 +47,9 @@ This file controls server-wide behavior that is not specific to one mode instanc
   "sync_interval_ms": 10000,
   "chat_message_ttl_ms": 10000,
   "chat_message_max_chars": 150,
+  "socket_event_capacity": 128,
+  "socket_stall_timeout_ms": 5000,
+  "allowed_origins": [],
   "default_name": {
     // Used when a player submits an empty name.
     "adjectives": ["Swift", "Frosty", "Hidden"],

@@ -121,7 +121,8 @@ For a queue mode:
 3. when matched, remove preview watcher status,
 4. create or reuse the private match instance,
 5. add each player to the private instance,
-6. bind each connection id to its `(player_id, instance)`.
+6. bind each connection to its `(player_id, instance)` through the connection's binding slot,
+   which moves read without taking the lobby lock.
 
 ### Leave Or Disconnect
 

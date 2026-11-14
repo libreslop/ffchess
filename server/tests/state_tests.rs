@@ -9,9 +9,9 @@ use server::instance::{GameInstance, JoinRequest};
 use server::state::ServerState;
 use server::time::now_ms;
 use std::sync::Arc;
-use tokio::sync::mpsc;
+use server::outbound::ClientTx;
 
-type Inbox = mpsc::Receiver<ServerMessage>;
+type Inbox = server::outbound::ClientFeed;
 
 /// Returns the public instance of `mode`.
 fn instance_of(mode: &str) -> Arc<GameInstance> {
@@ -22,7 +22,7 @@ fn instance_of(mode: &str) -> Arc<GameInstance> {
 
 /// Joins `instance` with `kit` and returns the player id and their inbox.
 fn join(instance: &GameInstance, name: &str, kit: &str) -> (PlayerId, Inbox) {
-    let (tx, rx) = mpsc::channel(256);
+    let (tx, rx) = ClientTx::channel(256);
     let (player_id, _) = instance
         .join(JoinRequest {
             name: name.to_string(),
@@ -37,7 +37,7 @@ fn join(instance: &GameInstance, name: &str, kit: &str) -> (PlayerId, Inbox) {
 
 /// Collects every message waiting in an inbox.
 fn drain(rx: &mut Inbox) -> Vec<ServerMessage> {
-    std::iter::from_fn(|| rx.try_recv().ok()).collect()
+    std::iter::from_fn(|| rx.try_next_event()).collect()
 }
 
 /// Collects the action results waiting in an inbox.
@@ -337,7 +337,7 @@ async fn joins_beyond_max_players_are_refused() {
     let instance = instance_of("blitz");
     let _p1 = join(&instance, "P1", "Classic");
     let _p2 = join(&instance, "P2", "Classic");
-    let (tx, _rx) = mpsc::channel(8);
+    let (tx, _rx) = ClientTx::channel(8);
 
     let third = instance.join(JoinRequest {
         name: "P3".to_string(),
@@ -350,21 +350,23 @@ async fn joins_beyond_max_players_are_refused() {
 }
 
 #[tokio::test]
-/// Verifies rejoining with a wrong session secret is refused.
-async fn rejoin_requires_matching_secret() {
+/// Verifies rejoining with a wrong session secret continues under a fresh player id.
+async fn rejoin_with_wrong_secret_gets_fresh_id() {
     let instance = instance_of("arena");
     let (p1, _rx) = join(&instance, "P1", "Standard");
     instance.detach(p1);
-    let (tx, _rx2) = mpsc::channel(8);
+    let (tx, _rx2) = ClientTx::channel(8);
 
-    let rejoin = instance.join(JoinRequest {
-        name: "P1".to_string(),
-        kit_name: KitId::from("Standard"),
-        tx,
-        player_id: Some(p1),
-        session_secret: Some(common::types::SessionSecret::new()),
-    });
-    assert_eq!(rejoin.err(), Some(GameError::InvalidSession));
+    let (rejoined, _) = instance
+        .join(JoinRequest {
+            name: "P1".to_string(),
+            kit_name: KitId::from("Standard"),
+            tx,
+            player_id: Some(p1),
+            session_secret: Some(common::types::SessionSecret::new()),
+        })
+        .expect("join succeeds");
+    assert_ne!(rejoined, p1);
 }
 
 #[tokio::test]
@@ -375,7 +377,7 @@ async fn preview_request_after_matchmaking_keeps_player_in_match() {
     let mode = ModeId::from("blitz");
     let mut inboxes = Vec::new();
     for name in ["P1", "P2"] {
-        let (tx, rx) = mpsc::channel(512);
+        let (tx, rx) = ClientTx::channel(512);
         let conn = state
             .open_connection(mode.clone(), tx)
             .expect("mode exists");

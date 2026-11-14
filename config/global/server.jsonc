@@ -2,6 +2,12 @@
   "sync_interval_ms": 10000,
   "chat_message_ttl_ms": 10000,
   "chat_message_max_chars": 150,
+  // Unsent events (chat, action results, ...) a connection may have before it is closed.
+  "socket_event_capacity": 128,
+  // A connection whose socket accepts no data for this long is closed.
+  "socket_stall_timeout_ms": 5000,
+  // Page origins besides this server's own host allowed to open websockets.
+  "allowed_origins": [],
   "default_name": {
     "adjectives": [
       "Swift", "Brave", "Silent", "Iron", "Gold", "Shadow", "Grand", "Quick", "Old", "New",

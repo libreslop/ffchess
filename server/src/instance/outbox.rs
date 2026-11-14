@@ -1,10 +1,10 @@
 //! Outbound channels of everyone watching or playing in an instance.
 
-use crate::types::{ClientTx, ConnectionId};
+use crate::outbound::{ClientTx, EncodedUpdate};
+use crate::types::ConnectionId;
 use common::protocol::ServerMessage;
 use common::types::PlayerId;
 use std::collections::HashMap;
-use tokio::sync::mpsc::error::TrySendError;
 
 /// Message channels of spectators and players of one instance.
 #[derive(Default)]
@@ -57,25 +57,31 @@ impl Outbox {
     /// Sends `msg` to one player, if connected.
     pub(super) fn send_to_player(&self, player_id: PlayerId, msg: ServerMessage) {
         if let Some(tx) = self.players.get(&player_id) {
-            let _ = tx.try_send(msg);
+            tx.send(msg);
         }
     }
 
     /// Sends `msg` to one spectator connection, if attached.
     pub(super) fn send_to_viewer(&self, conn_id: ConnectionId, msg: ServerMessage) {
         if let Some(tx) = self.viewers.get(&conn_id) {
-            let _ = tx.try_send(msg);
+            tx.send(msg);
         }
     }
 
-    /// Sends `msg` to every player and spectator.
-    ///
-    /// Channels whose connection is gone are dropped. A full channel only misses this message;
-    /// state updates are full snapshots, so a lagging client catches up on the next one.
+    /// Sends the event `msg` to every player and spectator.
     pub(super) fn broadcast(&mut self, msg: &ServerMessage) {
-        let still_open =
-            |tx: &mut ClientTx| !matches!(tx.try_send(msg.clone()), Err(TrySendError::Closed(_)));
-        self.players.retain(|_, tx| still_open(tx));
-        self.viewers.retain(|_, tx| still_open(tx));
+        self.for_each_open(|tx| tx.send(msg.clone()));
+    }
+
+    /// Hands the latest board snapshot to every player and spectator.
+    pub(super) fn publish(&mut self, update: &EncodedUpdate) {
+        self.for_each_open(|tx| tx.publish(update));
+    }
+
+    /// Runs `f` on every channel, first dropping channels whose connection is gone.
+    fn for_each_open(&mut self, f: impl Fn(&ClientTx)) {
+        self.players.retain(|_, tx| !tx.is_closed());
+        self.viewers.retain(|_, tx| !tx.is_closed());
+        self.players.values().chain(self.viewers.values()).for_each(f);
     }
 }

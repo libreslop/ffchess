@@ -150,14 +150,6 @@ fn to_action(message: ServerMessage, mode_id: &ModeId) -> GameAction {
             required_players,
             since: local_now(),
         }),
-        ServerMessage::Error(GameError::InvalidSession) => {
-            // The stored session can never be used again; the next join starts fresh.
-            SessionStore::new(mode_id).clear();
-            GameAction::SetDisconnected(DisconnectNotice::fatal(
-                "SESSION ERROR".to_string(),
-                GameError::InvalidSession.to_string(),
-            ))
-        }
         ServerMessage::Error(GameError::Custom { title, message }) => {
             GameAction::SetDisconnected(DisconnectNotice::fatal(title, message))
         }

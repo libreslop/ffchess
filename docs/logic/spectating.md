@@ -6,7 +6,8 @@ that board, and can pan the whole board freely without fog of war.
 
 ## Starting To Spectate
 
-The client sends `ClientMessage::Spectate { name, target }`, where `target` is a `SpectateTarget`:
+The client sends `ClientMessage::Spectate { name, target, player_id }`, where `player_id` is the
+player id the client stored for the mode and `target` is a `SpectateTarget`:
 
 | Target | Resolves to |
 | --- | --- |
@@ -25,14 +26,20 @@ The client offers three entry points:
 
 Players still competing on a board cannot spectate. Otherwise the server (`server/src/state/spectate.rs`):
 
-1. resolves the target,
+1. resolves the target, and refuses when `player_id` plays on it from another connection (another
+   tab): the connection goes back to the menu board as on `Leave` and gets an "Already Playing"
+   error, on which the client returns to the menu,
 2. stops any previous spectating, detaches the connection's player binding, leaves its queue, and
    drops its preview watching,
 3. answers `ServerMessage::SpectateEnded` when the target does not exist or already finished, or
 4. registers the connection as a named spectator of the instance and sends it an `Init` with the
    nil player id.
 
-Spectator names are trimmed and cut to 32 characters; an empty name is replaced by a generated one.
+Spectator names are cleaned like player names (control and invisible characters removed) and cut
+to 32 characters; an empty name is replaced by a generated one.
+
+The reverse holds too: when a player joins a board, connections spectating it under the same
+player id get `SpectateEnded` and stop spectating, so nobody watches a game they play in.
 
 ## Spectators In An Instance
 

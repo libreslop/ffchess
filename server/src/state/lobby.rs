@@ -1,24 +1,23 @@
 //! Registry of instances and the connections attached to them.
 
-use super::bindings::Binding;
 use super::connection::Connection;
 use super::preview::PreviewWatchers;
 use super::queue::QueueEntry;
 use crate::config::ConfigManager;
 use crate::instance::GameInstance;
-use crate::types::{ClientTx, ConnectionId};
+use crate::outbound::ClientTx;
+use crate::types::ConnectionId;
 use common::models::GameModeConfig;
 use common::types::{ModeId, PlayerId, SessionSecret};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-/// All instances, queues, previews, and connection bindings of the server.
+/// All instances, queues, and previews of the server.
 pub(super) struct Lobby {
     pub(super) config: Arc<ConfigManager>,
     /// Public instances keyed by mode id, private matches keyed by their own id.
     pub(super) games: HashMap<ModeId, Arc<GameInstance>>,
     pub(super) queues: HashMap<ModeId, Vec<QueueEntry>>,
-    pub(super) bindings: HashMap<ConnectionId, Binding>,
     pub(super) previews: HashMap<ModeId, PreviewWatchers>,
     /// Boards that named spectators watch.
     pub(super) spectators: HashMap<ConnectionId, Arc<GameInstance>>,
@@ -44,7 +43,6 @@ impl Lobby {
             config,
             games,
             queues: HashMap::new(),
-            bindings: HashMap::new(),
             previews: HashMap::new(),
             spectators: HashMap::new(),
         }
@@ -92,7 +90,7 @@ impl Lobby {
         secret: SessionSecret,
     ) {
         let message = instance.init_message(player_id, secret, self.config.global.sync_interval_ms);
-        let _ = tx.try_send(message);
+        tx.send(message);
     }
 
     /// Makes `conn_id` a spectator of `instance` and sends it the board.
@@ -105,29 +103,6 @@ impl Lobby {
     pub(super) fn watch_public(&self, conn: &Connection) {
         if let Some(instance) = self.public_instance(&conn.mode_id) {
             self.watch(instance, conn.id, &conn.tx);
-        }
-    }
-
-    /// Links a connection to the player it controls.
-    pub(super) fn bind(
-        &mut self,
-        conn_id: ConnectionId,
-        player_id: PlayerId,
-        instance: Arc<GameInstance>,
-    ) {
-        self.bindings.insert(
-            conn_id,
-            Binding {
-                player_id,
-                instance,
-            },
-        );
-    }
-
-    /// Removes the player of a connection from its match so it can join again elsewhere.
-    pub(super) fn detach_binding(&mut self, conn_id: ConnectionId) {
-        if let Some(binding) = self.bindings.remove(&conn_id) {
-            binding.instance.detach(binding.player_id);
         }
     }
 

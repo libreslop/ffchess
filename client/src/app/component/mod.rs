@@ -254,6 +254,7 @@ pub fn app() -> Html {
         on_menu_spectate,
     } = build_spectate_callbacks(SpectateInputs {
         session: focused_session.clone(),
+        mode_id: current_mode_id.clone(),
         player_name: player_name.clone(),
         join_step: join_step.clone(),
         rejoin_flow: rejoin_flow.clone(),

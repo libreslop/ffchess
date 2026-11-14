@@ -77,6 +77,8 @@ pub enum ClientMessage {
     Spectate {
         name: String,
         target: SpectateTarget,
+        /// Stored player id of the client, so it cannot watch a match it plays in elsewhere.
+        player_id: Option<PlayerId>,
     },
     QueueAction(ActionRequest),
     ClearActions {
@@ -145,4 +147,12 @@ pub enum ServerMessage {
         line: ChatLine,
     },
     Pong(u64, TimestampMs),
+}
+
+impl ServerMessage {
+    /// Returns true for messages after which earlier snapshots may describe a board the client
+    /// no longer looks at.
+    pub fn switches_board(&self) -> bool {
+        matches!(self, Self::Init { .. } | Self::SpectateEnded)
+    }
 }

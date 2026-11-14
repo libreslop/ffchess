@@ -1,6 +1,7 @@
 //! Periodic simulation step of a game instance.
 
 use super::world::World;
+use crate::outbound::EncodedUpdate;
 use common::types::{DurationMs, TimestampMs};
 
 /// Instances nobody has looked at for this long stop simulating.
@@ -33,8 +34,10 @@ impl World {
         self.shrink_board();
         self.resolve_hooks(now);
         self.release_spectators_if_finished();
-        let update = self.update_message();
-        self.outbox.broadcast(&update);
+        // Encoded once here, so every connection writes the same text without re-encoding it.
+        if let Some(update) = EncodedUpdate::encode(&self.update_message()) {
+            self.outbox.publish(&update);
+        }
     }
 
     /// Shrinks the board to the mode's size for the current player count.

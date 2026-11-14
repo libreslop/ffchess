@@ -39,6 +39,10 @@ The chat identity logic also depends on connection state:
 - queued or unbound users use a grey sender color,
 - if the client supplies a blank or noisy fallback name, the server sanitizes it before use.
 
+Every name loses control and invisible characters (`server/src/text.rs`), so it cannot pass for
+another player's name. Messages lose control characters and bidirectional controls (direction
+marks, embeddings, overrides, isolates); joiners and variation selectors stay for emoji.
+
 The sender color is stored in each `ChatLine` so spectators and reconnecting clients see the same
 identity that existed when the message was sent.
 
@@ -72,6 +76,9 @@ It handles:
   - the join menu keeps the chat input and its three latest lines clear; on short windows the
     game mode list shrinks (to no less than 2.5 rows, the half row hinting at the hidden
     scrollbar) and scrolls instead
+- bidirectional isolation: the sender name and the message are each wrapped in `<bdi>` inside a
+  left-to-right line, so right-to-left text in either still renders as `name : message`
+  instead of the neutral ` : ` joining both into one right-to-left run
 - client-side URL linkification for `http://`, `https://`, and `www.` prefixes
 - a live `current/max` counter once the draft length crosses `chat_warning_chars`
 - focus retention on send, and blur only when the user clicks outside the input

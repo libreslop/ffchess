@@ -18,9 +18,11 @@ mod ticks;
 mod world;
 
 pub use players::JoinRequest;
+pub use spectators::Spectator;
 
 use crate::time::now_ms;
-use crate::types::{ClientTx, ConnectionId};
+use crate::outbound::ClientTx;
+use crate::types::ConnectionId;
 use common::models::{GameModeConfig, GameState, MatchPlayer, MatchSummary};
 use common::protocol::{ActionRequest, ChatLine, GameError, ServerMessage};
 use common::rules::Catalog;
@@ -172,8 +174,8 @@ impl GameInstance {
     }
 
     /// Watches the instance as a named spectator, announcing the arrival in chat.
-    pub fn add_spectator(&self, conn_id: ConnectionId, tx: ClientTx, name: String) {
-        self.world().add_spectator(conn_id, tx, name);
+    pub fn add_spectator(&self, conn_id: ConnectionId, tx: ClientTx, spectator: Spectator) {
+        self.world().add_spectator(conn_id, tx, spectator);
     }
 
     /// Stops watching as a named spectator, announcing the departure in chat.

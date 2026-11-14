@@ -29,13 +29,6 @@ fn write(key: &str, value: &str) {
     }
 }
 
-/// Removes one local storage entry, ignoring storage failures.
-fn remove(key: &str) {
-    if let Some(storage) = local_storage() {
-        let _ = storage.remove_item(key);
-    }
-}
-
 /// Returns the last entered player name, or an empty string.
 pub fn stored_name() -> String {
     read(NAME_KEY).unwrap_or_default()
@@ -91,12 +84,6 @@ impl SessionStore {
     pub fn save(&self, player_id: PlayerId, secret: SessionSecret) {
         write(&self.key("player_id"), &player_id.to_string());
         write(&self.key("session_secret"), &secret.to_string());
-    }
-
-    /// Forgets the player id and rejoin secret.
-    pub fn clear(&self) {
-        remove(&self.key("player_id"));
-        remove(&self.key("session_secret"));
     }
 
     /// Returns the last recorded death.

@@ -11,6 +11,7 @@ use std::collections::HashMap;
 use std::hash::Hash;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 use walkdir::WalkDir;
 
 /// Name parts used for generating default player names.
@@ -31,6 +32,16 @@ pub struct ServerGlobalConfig {
     pub chat_message_ttl_ms: u32,
     #[educe(Default = 150)]
     pub chat_message_max_chars: u32,
+    /// Unsent events (everything except board snapshots) a connection may have before it is
+    /// closed.
+    #[educe(Default = 128)]
+    pub socket_event_capacity: u32,
+    /// A connection whose socket accepts no data for this long is closed.
+    #[educe(Default = 5000)]
+    pub socket_stall_timeout_ms: u32,
+    /// Page origins besides the server's own that may open websockets, such as
+    /// `"https://example.com"`.
+    pub allowed_origins: Vec<String>,
 }
 
 impl ServerGlobalConfig {
@@ -42,6 +53,16 @@ impl ServerGlobalConfig {
     /// Returns the maximum accepted chat message length in characters.
     pub fn chat_max_chars(&self) -> usize {
         self.chat_message_max_chars.max(1) as usize
+    }
+
+    /// Returns how many unsent events a connection may have before it is closed.
+    pub fn socket_event_capacity(&self) -> usize {
+        self.socket_event_capacity.max(1) as usize
+    }
+
+    /// Returns how long one socket write may block before the connection is closed.
+    pub fn socket_stall_timeout(&self) -> Duration {
+        Duration::from_millis(self.socket_stall_timeout_ms.max(1) as u64)
     }
 }
 

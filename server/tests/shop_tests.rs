@@ -13,7 +13,7 @@ use common::types::{
 use glam::IVec2;
 use server::instance::{GameInstance, JoinRequest};
 use std::sync::Arc;
-use tokio::sync::mpsc;
+use server::outbound::ClientTx;
 
 /// Builds a minimal piece config for testing.
 fn make_piece_config(id: &str, score: u64) -> PieceConfig {
@@ -77,7 +77,7 @@ fn shop_purchase_deducts_score_and_adds_piece() {
     };
     let instance = GameInstance::public(mode, Arc::new(catalog), DurationMs::from_millis(10_000));
 
-    let (tx, mut rx) = mpsc::channel(100);
+    let (tx, mut rx) = ClientTx::channel(100);
     let (player_id, _) = instance
         .join(JoinRequest {
             name: "Tester".to_string(),
@@ -111,7 +111,7 @@ fn shop_purchase_deducts_score_and_adds_piece() {
         },
     );
 
-    let result = std::iter::from_fn(|| rx.try_recv().ok()).find_map(|message| match message {
+    let result = std::iter::from_fn(|| rx.try_next_event()).find_map(|message| match message {
         ServerMessage::ActionResult { id, result } => Some((id, result)),
         _ => None,
     });

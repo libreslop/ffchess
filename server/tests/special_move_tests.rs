@@ -9,7 +9,7 @@ use common::types::{
 use serde_json::json;
 use server::instance::{GameInstance, JoinRequest};
 use std::sync::Arc;
-use tokio::sync::mpsc;
+use server::outbound::ClientTx;
 
 /// Builds a piece config from JSON, filling in the fields the test does not care about.
 fn piece_config(id: &str, mut fields: serde_json::Value) -> PieceConfig {
@@ -71,7 +71,7 @@ fn castling_cancels_partner_queue() {
         ..GameModeConfig::default()
     };
     let instance = GameInstance::public(mode, Arc::new(catalog), DurationMs::from_millis(10_000));
-    let (tx, mut rx) = mpsc::channel(100);
+    let (tx, mut rx) = ClientTx::channel(100);
     let (player_id, _) = instance
         .join(JoinRequest {
             name: "Tester".to_string(),
@@ -110,7 +110,7 @@ fn castling_cancels_partner_queue() {
     instance.submit_action(player_id, request(1, rook_id, [8, 6]));
     instance.submit_action(player_id, request(2, king_id, [7, 5]));
 
-    let results: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok())
+    let results: Vec<_> = std::iter::from_fn(|| rx.try_next_event())
         .filter_map(|message| match message {
             ServerMessage::ActionResult { id, result } => Some((id, result)),
             _ => None,
