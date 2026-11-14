@@ -6,30 +6,30 @@
     "auto_upgrade_single_item": false,
     "groups": [
         {
-            "applies_to": ["rapid_pawn_northbound_moved", "rapid_pawn_southbound_moved"],
+            "applies_to": ["bullet_pawn_northbound_moved", "bullet_pawn_southbound_moved"],
             "items": [
                 {
                     "display_name": "Queen",
                     "price_expr": null,
-                    "replace_with": "rapid_queen",
+                    "replace_with": "bullet_queen",
                     "add_pieces": []
                 },
                 {
                     "display_name": "Rook",
                     "price_expr": null,
-                    "replace_with": "rapid_rook",
+                    "replace_with": "bullet_rook",
                     "add_pieces": []
                 },
                 {
                     "display_name": "Bishop",
                     "price_expr": null,
-                    "replace_with": "rapid_bishop",
+                    "replace_with": "bullet_bishop",
                     "add_pieces": []
                 },
                 {
                     "display_name": "Knight",
                     "price_expr": null,
-                    "replace_with": "rapid_knight",
+                    "replace_with": "bullet_knight",
                     "add_pieces": []
                 }
             ]

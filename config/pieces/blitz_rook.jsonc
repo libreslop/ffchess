@@ -2,7 +2,7 @@
     "display_name": "Rook",
     "svg_path": "rook.svg",
     "score_value": 50,
-    "cooldown_ms": 3000,
+    "cooldown_ms": 7000,
     "move_paths": [
         [
             [

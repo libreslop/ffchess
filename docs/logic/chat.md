@@ -8,8 +8,8 @@ target room depending on what the connection is currently attached to.
 
 There are two logical room families:
 
-- **mode room**: the public instance for one mode such as `ffa`, `arena`, or the public `blitz` preview board
-- **game room**: a private queue-match instance such as `blitz__<uuid>`
+- **mode room**: the public instance for one mode such as `ffa`, `arena`, or the public `bullet` preview board
+- **game room**: a private queue-match instance such as `bullet__<uuid>`
 
 Non-queue modes only expose the mode room. Queue modes expose both:
 

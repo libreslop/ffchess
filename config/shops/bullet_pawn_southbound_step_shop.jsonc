@@ -5,12 +5,12 @@
     "auto_upgrade_single_item": true,
     "groups": [
         {
-            "applies_to": ["rapid_pawn_southbound_not_moved"],
+            "applies_to": ["bullet_pawn_southbound_not_moved"],
             "items": [
                 {
                     "display_name": "Advance Discipline",
                     "price_expr": null,
-                    "replace_with": "rapid_pawn_southbound_moved",
+                    "replace_with": "bullet_pawn_southbound_moved",
                     "add_pieces": []
                 }
             ]

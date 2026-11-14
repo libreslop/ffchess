@@ -2,7 +2,7 @@
     "display_name": "Pawn (Northbound)",
     "svg_path": "pawn.svg",
     "score_value": 10,
-    "cooldown_ms": 3000,
+    "cooldown_ms": 7000,
     "move_paths": [
         [[0, -1]]
     ],

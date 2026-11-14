@@ -154,7 +154,7 @@ async fn king_capture_eliminates_owner() {
 #[tokio::test]
 /// Verifies disconnecting in a duel grants a win message to the remaining player.
 async fn duel_leave_grants_victory() {
-    let instance = instance_of("blitz");
+    let instance = instance_of("bullet");
     let (p1, mut rx1) = join(&instance, "P1", "Classic");
     let (_p2, mut rx2) = join(&instance, "P2", "Classic");
 
@@ -191,7 +191,7 @@ async fn leave_is_announced_in_chat() {
 #[tokio::test]
 /// Verifies a king-capture victory is delivered once and no leave victory follows.
 async fn duel_capture_victory_has_no_delayed_leave_victory() {
-    let instance = instance_of("blitz");
+    let instance = instance_of("bullet");
     let (p1, _rx1) = join(&instance, "P1", "Classic");
     let (p2, mut rx2) = join(&instance, "P2", "Classic");
     let kings = keep_only_kings(&instance, &[(p1, [1, 1], false), (p2, [0, 0], false)]);
@@ -208,7 +208,7 @@ async fn duel_capture_victory_has_no_delayed_leave_victory() {
 #[tokio::test]
 /// Verifies an action on a piece in cooldown waits and runs on a later tick.
 async fn queued_move_runs_after_cooldown() {
-    let instance = instance_of("blitz");
+    let instance = instance_of("bullet");
     let (p1, mut rx) = join(&instance, "P1", "Classic");
     let king = keep_only_kings(&instance, &[(p1, [0, 0], true)])[0];
 
@@ -226,7 +226,7 @@ async fn queued_move_runs_after_cooldown() {
 #[tokio::test]
 /// Verifies a chain returning to its starting square runs fully and in order.
 async fn chained_moves_run_in_order() {
-    let instance = instance_of("blitz");
+    let instance = instance_of("bullet");
     let (p1, mut rx) = join(&instance, "P1", "Classic");
     let king = keep_only_kings(&instance, &[(p1, [0, 0], true)])[0];
 
@@ -298,7 +298,7 @@ async fn failed_action_cancels_its_chain() {
 #[tokio::test]
 /// Verifies clearing a piece's actions cancels them before they run.
 async fn clear_actions_cancels_queue() {
-    let instance = instance_of("blitz");
+    let instance = instance_of("bullet");
     let (p1, mut rx) = join(&instance, "P1", "Classic");
     let king = keep_only_kings(&instance, &[(p1, [0, 0], true)])[0];
 
@@ -317,7 +317,7 @@ async fn clear_actions_cancels_queue() {
 #[tokio::test]
 /// Verifies players cannot act with pieces they do not own.
 async fn actions_on_foreign_pieces_are_rejected() {
-    let instance = instance_of("blitz");
+    let instance = instance_of("bullet");
     let (p1, mut rx1) = join(&instance, "P1", "Classic");
     let (p2, _rx2) = join(&instance, "P2", "Classic");
     let kings = keep_only_kings(&instance, &[(p1, [0, 0], false), (p2, [3, 3], false)]);
@@ -334,7 +334,7 @@ async fn actions_on_foreign_pieces_are_rejected() {
 #[tokio::test]
 /// Verifies joins beyond the mode's player limit are refused.
 async fn joins_beyond_max_players_are_refused() {
-    let instance = instance_of("blitz");
+    let instance = instance_of("bullet");
     let _p1 = join(&instance, "P1", "Classic");
     let _p2 = join(&instance, "P2", "Classic");
     let (tx, _rx) = ClientTx::channel(8);
@@ -374,7 +374,7 @@ async fn rejoin_with_wrong_secret_gets_fresh_id() {
 /// the match that join started.
 async fn preview_request_after_matchmaking_keeps_player_in_match() {
     let state = ServerState::new();
-    let mode = ModeId::from("blitz");
+    let mode = ModeId::from("bullet");
     let mut inboxes = Vec::new();
     for name in ["P1", "P2"] {
         let (tx, rx) = ClientTx::channel(512);
@@ -399,7 +399,7 @@ async fn preview_request_after_matchmaking_keeps_player_in_match() {
         .mode_summaries()
         .into_iter()
         .find(|summary| summary.id == mode)
-        .expect("blitz listed");
+        .expect("bullet listed");
     assert_eq!(summary.players, common::types::PlayerCount::new(2));
     for (_, rx) in &mut inboxes {
         assert!(
@@ -412,12 +412,12 @@ async fn preview_request_after_matchmaking_keeps_player_in_match() {
 }
 
 #[tokio::test]
-/// Verifies the blitz king castles with the shipped config, but not onto an attacked square.
-async fn blitz_king_castles_unless_attacked() {
-    let instance = instance_of("blitz");
+/// Verifies the bullet king castles with the shipped config, but not onto an attacked square.
+async fn bullet_king_castles_unless_attacked() {
+    let instance = instance_of("bullet");
     let (p1, mut rx) = join(&instance, "P1", "Classic");
     let (p2, _rx2) = join(&instance, "P2", "Classic");
-    let rook_type = PieceTypeId::from("blitz_rook");
+    let rook_type = PieceTypeId::from("bullet_rook");
     let [king, rook, attacker] = instance.with_state(|state| {
         let rook_of = |player| {
             state

@@ -2,7 +2,7 @@
     "display_name": "Bishop",
     "svg_path": "bishop.svg",
     "score_value": 30,
-    "cooldown_ms": 1000,
+    "cooldown_ms": 7000,
     "move_paths": [
         [
             [

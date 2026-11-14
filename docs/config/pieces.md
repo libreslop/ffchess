@@ -8,7 +8,7 @@ scores, and renders.
 The filename stem becomes the runtime `PieceConfig.id`. For example:
 
 - `config/pieces/queen.jsonc` -> `id = "queen"`
-- `config/pieces/blitz_pawn_northbound_not_moved.jsonc` -> `id = "blitz_pawn_northbound_not_moved"`
+- `config/pieces/bullet_pawn_northbound_not_moved.jsonc` -> `id = "bullet_pawn_northbound_not_moved"`
 
 ## Schema
 
@@ -32,7 +32,7 @@ Examples:
 
 - `[[1, 2]]`: a single knight jump.
 - `[[0, 1], [0, 2], [0, 3]]`: one ray that may stop at 1, 2, or 3 tiles along the same file.
-- `[[0, -1], [0, -2]]`: a two-step forward pawn path used by the "not moved yet" blitz and rapid pawns.
+- `[[0, -1], [0, -2]]`: a two-step forward pawn path used by the "not moved yet" bullet and blitz pawns.
 
 ### How Paths Are Interpreted
 
@@ -124,7 +124,7 @@ piece ids in `types`, `becomes`, and `action`.
 
 ### Example: Castling King
 
-This is the castling of the blitz and rapid kings. Unlike standard chess, the king may cross an
+This is the castling of the bullet and blitz kings. Unlike standard chess, the king may cross an
 attacked square; adding `&& !square_targeted` to the `[1, 0]` and `[-1, 0]` requirements
 forbids that too.
 
@@ -302,17 +302,17 @@ That affects:
 
 - player spawn validation (`kits` and `queue_layout` must include a king),
 - kill tracking,
-- hook targeting in common configs such as `target_piece_id = "king"` or `"blitz_king"`.
+- hook targeting in common configs such as `target_piece_id = "king"` or `"bullet_king"`.
 
 ## Practical Patterns In This Repository
 
 - `king`, `knight`, and `pawn` are direct-move pieces with short paths.
 - `bishop`, `rook`, and `queen` use one long path per direction for sliding.
-- Blitz and rapid pawns encode state transitions as different piece ids:
-  - `blitz_pawn_*_not_moved` / `rapid_pawn_*_not_moved`
-  - `blitz_pawn_*_moved` / `rapid_pawn_*_moved`
-- Blitz and rapid promotion is not built into piece configs; it is implemented through shops.
-- Blitz and rapid kings castle through `special_moves` (see `config/pieces/blitz_king.jsonc`).
+- Bullet and blitz pawns encode state transitions as different piece ids:
+  - `bullet_pawn_*_not_moved` / `blitz_pawn_*_not_moved`
+  - `bullet_pawn_*_moved` / `blitz_pawn_*_moved`
+- Bullet and blitz promotion is not built into piece configs; it is implemented through shops.
+- Bullet and blitz kings castle through `special_moves` (see `config/pieces/bullet_king.jsonc`).
 
 ## Example: Standard Pawn
 
@@ -341,11 +341,11 @@ That affects:
 }
 ```
 
-## Example: Blitz Pawn Before Its First Move
+## Example: Bullet Pawn Before Its First Move
 
 ```jsonc
 {
-  "display_name": "Blitz Pawn (Northbound, Not Moved)",
+  "display_name": "Bullet Pawn (Northbound, Not Moved)",
   "svg_path": "pawn.svg",
   "score_value": 10,
   "cooldown_ms": 3000,

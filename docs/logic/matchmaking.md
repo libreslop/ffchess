@@ -1,6 +1,6 @@
 # Matchmaking, Preview Boards, And Private Matches
 
-Queue-based modes such as `blitz` and `rapid` do not send players directly into the public mode
+Queue-based modes such as `bullet` and `blitz` do not send players directly into the public mode
 instance. Instead, the server layers matchmaking and preview logic on top of the same `GameInstance`
 type.
 
@@ -84,7 +84,7 @@ player straight back out of the match.
 If a queue mode defines `queue_layout`, private matches spawn players from exact preset slots instead
 of the random kit-cluster spawn used by sandbox modes.
 
-Each slot can also set `board_rotation_deg`, which is how blitz and rapid give both players opposite
+Each slot can also set `board_rotation_deg`, which is how bullet and blitz give both players opposite
 perspectives on the same board.
 
 ## Queue Countdown
@@ -97,7 +97,7 @@ If `queue_countdown_ms > 0` on the mode config:
 - premoves are allowed during the countdown,
 - authoritative movement execution waits until `now >= move_unlock_at`.
 
-This is why blitz and rapid can show the full starting board for a few seconds before the first move is
+This is why bullet and blitz can show the full starting board for a few seconds before the first move is
 legal without delaying room creation or chat-room switching.
 
 ## Connection Binding Flow

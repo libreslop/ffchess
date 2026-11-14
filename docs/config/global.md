@@ -102,7 +102,7 @@ This file is injected into the landing page and deserialized by the Yew client a
 
 ```jsonc
 {
-  "game_order": ["ffa", "arena", "blitz", "rapid"],
+  "game_order": ["ffa", "arena", "bullet", "blitz"],
   "quick_play_modes": ["ffa", "arena"],
   "title_pieces": ["king", "queen", "rook", "bishop", "knight", "pawn"],
   "modes_refresh_ms": 5000,

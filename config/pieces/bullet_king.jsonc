@@ -2,7 +2,7 @@
     "display_name": "King",
     "svg_path": "king.svg",
     "score_value": 500,
-    "cooldown_ms": 7000,
+    "cooldown_ms": 3000,
     "move_paths": [
         [[0, 1]], [[0, -1]], [[1, 0]], [[-1, 0]],
         [[1, 1]], [[1, -1]], [[-1, 1]], [[-1, -1]]
@@ -29,7 +29,7 @@
                 {
                     "at": [3, 0],
                     "owner": "self",
-                    "types": ["rapid_rook"],
+                    "types": ["bullet_rook"],
                     "condition": "partner_moves == 0",
                     "action": { "move_to": [1, 0] }
                 }
@@ -50,7 +50,7 @@
                 {
                     "at": [-4, 0],
                     "owner": "self",
-                    "types": ["rapid_rook"],
+                    "types": ["bullet_rook"],
                     "condition": "partner_moves == 0",
                     "action": { "move_to": [-1, 0] }
                 }

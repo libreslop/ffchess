@@ -194,7 +194,7 @@ joining the extra slot fails at runtime.
 
 ```jsonc
 {
-  "display_name": "Blitz",
+  "display_name": "Bullet",
   "max_players": 2,
   "queue_players": 2,
   "preview_switch_delay_ms": 5000,
@@ -209,13 +209,13 @@ joining the extra slot fails at runtime.
   "npc_limits": [],
   "shop_counts": [],
   "fixed_shops": [
-    { "shop_id": "blitz_pawn_northbound_step_shop", "position": [-4, 1] }
+    { "shop_id": "bullet_pawn_northbound_step_shop", "position": [-4, 1] }
   ],
   "kits": [
     {
       "name": "Classic",
       "description": "Standard chess pieces",
-      "pieces": ["blitz_king", "blitz_queen"]
+      "pieces": ["bullet_king", "bullet_queen"]
     }
   ],
   "queue_layout": {
@@ -223,13 +223,13 @@ joining the extra slot fails at runtime.
       {
         "board_rotation_deg": 0,
         "pieces": [
-          { "piece_id": "blitz_king", "position": [0, 3] }
+          { "piece_id": "bullet_king", "position": [0, 3] }
         ]
       },
       {
         "board_rotation_deg": 180,
         "pieces": [
-          { "piece_id": "blitz_king", "position": [0, -4] }
+          { "piece_id": "bullet_king", "position": [0, -4] }
         ]
       }
     ]
@@ -237,7 +237,7 @@ joining the extra slot fails at runtime.
   "hooks": [
     {
       "trigger": "OnCapturePieceActive",
-      "target_piece_id": "blitz_king",
+      "target_piece_id": "bullet_king",
       "action": "WinCapturer",
       "victory_focus": "CaptureSquare"
     }

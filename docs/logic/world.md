@@ -78,7 +78,7 @@ When a shop is used:
    - the shop is removed,
    - a fresh copy of the same `shop_id` respawns at a new random spawn position.
 
-The invisible pawn rule tiles of blitz and rapid use the same system, just with very large `default_uses` and transparent colors.
+The invisible pawn rule tiles of bullet and blitz use the same system, just with very large `default_uses` and transparent colors.
 
 ## Shop Interaction Summary
 
