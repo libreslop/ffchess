@@ -11,10 +11,10 @@ use std::rc::Rc;
 use wasm_bindgen::JsCast;
 use web_sys::HtmlCanvasElement;
 
-/// Fill color around the board, matching the dark squares so the light rim marks the edge.
+/// Fill color around the board, dark so the light rim marks the edge.
 const OFF_BOARD_COLOR: &str = "#413931";
 const LIGHT_SQUARE_COLOR: &str = "#ffd5b4";
-const DARK_SQUARE_COLOR: &str = "#413931";
+const DARK_SQUARE_COLOR: &str = "#e0b591";
 /// Color the view fades into beyond the fog-of-war radius, the off-board color as rgb
 /// components.
 const FOG_RGB: &str = "65, 57, 49";
