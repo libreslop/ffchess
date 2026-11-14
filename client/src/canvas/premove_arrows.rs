@@ -1,7 +1,7 @@
 //! Pixelated arrows tracing each piece's queued moves.
 
 use super::color::{ARROW_ALPHA, arrow_color};
-use super::renderer::{ART_PIXELS_PER_TILE, ArtRect, FrameGeometry};
+use super::renderer::{ArtRect, FrameGeometry};
 use super::types::{RenderParams, Renderer};
 use crate::math::{Vec2, vec2};
 use crate::premoves::PremoveLine;
@@ -189,13 +189,9 @@ impl Renderer {
                 }
             };
             for failed in &trail.failed_moves {
-                let origin = geometry.square_art_origin(failed.target);
                 self.ctx.set_fill_style_str(&color(failed.piece_id));
                 self.fill_art_rect(
-                    ArtRect {
-                        min: origin,
-                        max: origin + ART_PIXELS_PER_TILE,
-                    },
+                    ArtRect::square(geometry.square_art_origin(failed.target)),
                     geometry,
                 );
             }

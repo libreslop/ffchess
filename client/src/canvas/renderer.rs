@@ -1,7 +1,7 @@
 //! Canvas rendering of the board, shops, shading, move hints, pieces, and fog of war.
 
 use super::types::{PieceDrawParams, PieceNameDrawParams, PieceSvgCache, RenderParams, Renderer};
-use crate::math::{Vec2, vec2};
+use crate::math::Vec2;
 use common::models::{GameModeClientConfig, Piece};
 use common::rules::Catalog;
 use common::types::{BoardCoord, ExprVars, PlayerId};
@@ -11,18 +11,29 @@ use std::rc::Rc;
 use wasm_bindgen::JsCast;
 use web_sys::HtmlCanvasElement;
 
-/// Fill color around the board.
-const OFF_BOARD_COLOR: &str = "#e2e8f0";
-const BOARD_COLOR: &str = "#ffffff";
-const DARK_SQUARE_COLOR: &str = "#f1f5f9";
-const GRID_COLOR: &str = "#cbd5e1";
-const BORDER_COLOR: &str = "#1e293b";
+/// Fill color around the board, matching the dark squares so the light rim marks the edge.
+const OFF_BOARD_COLOR: &str = "#413931";
+const LIGHT_SQUARE_COLOR: &str = "#ffd5b4";
+const DARK_SQUARE_COLOR: &str = "#413931";
+/// Color the view fades into beyond the fog-of-war radius, the off-board color as rgb
+/// components.
+const FOG_RGB: &str = "65, 57, 49";
 const DEFAULT_SHOP_COLOR: &str = "#fde047";
 const DEFAULT_SHOP_FOCUS_COLOR: &str = "rgba(253, 224, 71, 0.35)";
 
-/// Size of the art pixel grid that move hints and premove arrows snap to, in art pixels per
-/// tile.
+/// Size of the art pixel grid everything on the board snaps to, in art pixels per tile.
+///
+/// Piece sprites are this many pixels across, so their pixels match the board's, the move
+/// hints', the shops' and the premove arrows'.
 pub(super) const ART_PIXELS_PER_TILE: f64 = 16.0;
+/// Width of the ring each square is framed with in the other square color, in art pixels.
+const SQUARE_RIM_PIXELS: f64 = 1.0;
+/// Width of the light rim around the whole board, in art pixels.
+const BOARD_RIM_PIXELS: f64 = 1.0;
+/// Inset of a shop's mark from the edge of its square, in art pixels.
+const SHOP_INSET_PIXELS: f64 = 2.0;
+/// Inset of the open shop's highlight from the edge of its square, in art pixels.
+const SHOP_FOCUS_INSET_PIXELS: f64 = 1.0;
 
 /// Opacity of predicted piece positions.
 const GHOST_ALPHA: f64 = 0.4;
@@ -64,20 +75,20 @@ impl FrameGeometry {
         if self.rotated { -pos - Vec2::ONE } else { pos }
     }
 
-    /// Maps a grid line coordinate, flipping the board when rotated.
-    fn map_line(&self, line: i32) -> i32 {
-        if self.rotated { -line } else { line }
-    }
-
     /// Returns the fractional square position, already mapped for drawing, of a square
     /// centered on `pixel`.
     fn pixel_pos(&self, pixel: Vec2) -> Vec2 {
         (pixel - self.offset) / self.tile - 0.5
     }
 
+    /// Returns the top-left pixel of a fractional square position already mapped for drawing.
+    pub(super) fn mapped_origin(&self, mapped: Vec2) -> Vec2 {
+        mapped * self.tile + self.offset
+    }
+
     /// Returns the top-left pixel of a fractional square position.
     pub(super) fn pos_origin(&self, pos: Vec2) -> Vec2 {
-        self.map_pos(pos) * self.tile + self.offset
+        self.mapped_origin(self.map_pos(pos))
     }
 
     /// Returns the center pixel of a fractional square position.
@@ -103,19 +114,60 @@ impl FrameGeometry {
         self.map_square(square.0).as_dvec2() * ART_PIXELS_PER_TILE
     }
 
+    /// Returns the top-left corner of a fractional square position, already mapped for
+    /// drawing, rounded to whole art pixels counted from the board origin.
+    ///
+    /// Things drawn there, such as sliding pieces, stay on the art pixel grid.
+    pub(super) fn mapped_art_origin(&self, mapped: Vec2) -> Vec2 {
+        (mapped * ART_PIXELS_PER_TILE).round()
+    }
+
+    /// Returns the top-left corner of a fractional square position, rounded to whole art
+    /// pixels counted from the board origin.
+    pub(super) fn pos_art_origin(&self, pos: Vec2) -> Vec2 {
+        self.mapped_art_origin(self.map_pos(pos))
+    }
+
     /// Returns the center of a square, in art pixels counted from the board origin.
     pub(super) fn square_art_center(&self, square: BoardCoord) -> Vec2 {
         self.square_art_origin(square) + ART_PIXELS_PER_TILE / 2.0
     }
 
-    /// Converts art pixels to the nearest screen pixel.
-    fn screen_point(&self, art: Vec2) -> Vec2 {
-        (art * self.tile / ART_PIXELS_PER_TILE + self.offset).round()
+    /// Converts art pixels to screen pixels, possibly fractional.
+    fn exact_screen_point(&self, art: Vec2) -> Vec2 {
+        art * self.tile / ART_PIXELS_PER_TILE + self.offset
     }
 
-    /// Returns the pixel of a grid line intersection.
-    fn line_point(&self, x: i32, y: i32) -> Vec2 {
-        vec2(self.map_line(x) as f64, self.map_line(y) as f64) * self.tile + self.offset
+    /// Converts art pixels to the nearest screen pixel.
+    fn screen_point(&self, art: Vec2) -> Vec2 {
+        self.exact_screen_point(art).round()
+    }
+
+    /// Returns the screen pixels covering `rect`.
+    ///
+    /// Both edges are rounded, so neighbouring rectangles meet without gaps or overlaps.
+    pub(super) fn screen_rect(&self, rect: ArtRect) -> ScreenRect {
+        let min = self.screen_point(rect.min);
+        ScreenRect {
+            min,
+            size: self.screen_point(rect.max) - min,
+        }
+    }
+
+    /// Returns the exact, possibly fractional, screen area of `rect`.
+    fn exact_screen_rect(&self, rect: ArtRect) -> ScreenRect {
+        let min = self.exact_screen_point(rect.min);
+        ScreenRect {
+            min,
+            size: self.exact_screen_point(rect.max) - min,
+        }
+    }
+
+    /// Returns true when any part of `rect` lies on a canvas of `canvas_size`.
+    fn shows(&self, rect: ArtRect, canvas_size: Vec2) -> bool {
+        let screen = self.screen_rect(rect);
+        let max = screen.min + screen.size;
+        max.x > 0.0 && max.y > 0.0 && screen.min.x < canvas_size.x && screen.min.y < canvas_size.y
     }
 }
 
@@ -124,6 +176,31 @@ impl FrameGeometry {
 pub(super) struct ArtRect {
     pub(super) min: Vec2,
     pub(super) max: Vec2,
+}
+
+impl ArtRect {
+    /// Returns the rectangle of a whole square whose top-left corner is `origin`.
+    pub(super) fn square(origin: Vec2) -> Self {
+        Self {
+            min: origin,
+            max: origin + ART_PIXELS_PER_TILE,
+        }
+    }
+
+    /// Returns the rectangle shrunk by `pixels` on every side.
+    pub(super) fn inset(self, pixels: f64) -> Self {
+        Self {
+            min: self.min + pixels,
+            max: self.max - pixels,
+        }
+    }
+}
+
+/// A rectangle of whole screen pixels.
+#[derive(Clone, Copy)]
+pub(super) struct ScreenRect {
+    pub(super) min: Vec2,
+    pub(super) size: Vec2,
 }
 
 /// The part of the board the local player can see.
@@ -229,50 +306,48 @@ impl Renderer {
         }
     }
 
-    /// Draws the board surface, checkerboard, grid lines, and border.
+    /// Draws the board, antialiased: a light rim around the whole board, and each square
+    /// framed by a ring in the other square color.
+    ///
+    /// Only squares on the canvas are drawn.
     fn draw_board(&self, params: &RenderParams<'_>, geometry: &FrameGeometry) {
         let board_size = params.state.board_size;
         let (low, high) = (-board_size.half(), board_size.limit_pos());
-        let tile = geometry.tile;
-        let corner = vec2(low as f64, low as f64) * tile + geometry.offset;
-        let dim = board_size.as_i32() as f64 * tile;
+        // Corner squares swap places when the board is rotated.
+        let (first, last) = (
+            geometry.square_art_origin(BoardCoord::new(low, low)),
+            geometry.square_art_origin(BoardCoord::new(high - 1, high - 1)),
+        );
+        let board = ArtRect {
+            min: first.min(last),
+            max: first.max(last) + ART_PIXELS_PER_TILE,
+        };
+        self.ctx.set_fill_style_str(LIGHT_SQUARE_COLOR);
+        self.fill_smooth_art_rect(board.inset(-BOARD_RIM_PIXELS), geometry);
 
-        self.ctx.set_fill_style_str(BOARD_COLOR);
-        self.ctx.fill_rect(corner.x, corner.y, dim, dim);
-
+        // Dark squares keep a rim of the light board underneath; light squares are filled
+        // dark, then light inside their rim.
+        let squares: Vec<(ArtRect, bool)> = (low..high)
+            .flat_map(|x| (low..high).map(move |y| BoardCoord::new(x, y)))
+            .map(|square| {
+                let dark = (square.0.x + square.0.y).rem_euclid(2) != 0;
+                (ArtRect::square(geometry.square_art_origin(square)), dark)
+            })
+            .filter(|(rect, _)| geometry.shows(*rect, params.canvas_size))
+            .collect();
         self.ctx.set_fill_style_str(DARK_SQUARE_COLOR);
-        for x in low..high {
-            for y in low..high {
-                if (x.rem_euclid(2) + y.rem_euclid(2)) % 2 != 0 {
-                    let origin = geometry.square_origin(BoardCoord::new(x, y));
-                    self.ctx.fill_rect(origin.x, origin.y, tile, tile);
-                }
-            }
+        for (rect, dark) in &squares {
+            let fill = if *dark {
+                rect.inset(SQUARE_RIM_PIXELS)
+            } else {
+                *rect
+            };
+            self.fill_smooth_art_rect(fill, geometry);
         }
-
-        self.ctx.set_stroke_style_str(GRID_COLOR);
-        self.ctx.set_line_width(1.0);
-        self.ctx.begin_path();
-        for line in low..=high {
-            for (from, to) in [
-                (
-                    geometry.line_point(line, low),
-                    geometry.line_point(line, high),
-                ),
-                (
-                    geometry.line_point(low, line),
-                    geometry.line_point(high, line),
-                ),
-            ] {
-                self.ctx.move_to(from.x, from.y);
-                self.ctx.line_to(to.x, to.y);
-            }
+        self.ctx.set_fill_style_str(LIGHT_SQUARE_COLOR);
+        for (rect, _) in squares.iter().filter(|(_, dark)| !dark) {
+            self.fill_smooth_art_rect(rect.inset(SQUARE_RIM_PIXELS), geometry);
         }
-        self.ctx.stroke();
-
-        self.ctx.set_stroke_style_str(BORDER_COLOR);
-        self.ctx.set_line_width(2.0);
-        self.ctx.stroke_rect(corner.x, corner.y, dim, dim);
     }
 
     /// Draws shop squares and the highlight of the shop whose menu is open.
@@ -282,7 +357,6 @@ impl Renderer {
         geometry: &FrameGeometry,
         visibility: &Visibility,
     ) {
-        let (tile, zoom) = (geometry.tile, geometry.zoom);
         for shop in params
             .state
             .shops
@@ -295,14 +369,9 @@ impl Renderer {
                 .get(&shop.shop_id)
                 .and_then(|config| config.color.as_deref())
                 .unwrap_or(DEFAULT_SHOP_COLOR);
-            let origin = geometry.square_origin(shop.position);
+            let square = ArtRect::square(geometry.square_art_origin(shop.position));
             self.ctx.set_fill_style_str(color);
-            self.ctx.fill_rect(
-                origin.x + 5.0 * zoom,
-                origin.y + 5.0 * zoom,
-                tile - 10.0 * zoom,
-                tile - 10.0 * zoom,
-            );
+            self.fill_art_rect(square.inset(SHOP_INSET_PIXELS), geometry);
         }
 
         let Some(highlight) = params
@@ -317,10 +386,9 @@ impl Renderer {
             .and_then(|shop| self.catalog.shops.get(&shop.shop_id))
             .and_then(|config| config.focus_color.as_deref().or(config.color.as_deref()))
             .unwrap_or(DEFAULT_SHOP_FOCUS_COLOR);
-        let origin = geometry.square_origin(highlight);
+        let square = ArtRect::square(geometry.square_art_origin(highlight));
         self.ctx.set_fill_style_str(color);
-        self.ctx
-            .fill_rect(origin.x + 2.0, origin.y + 2.0, tile - 4.0, tile - 4.0);
+        self.fill_art_rect(square.inset(SHOP_FOCUS_INSET_PIXELS), geometry);
     }
 
     /// Fills the screen pixels covering `rect`.
@@ -328,12 +396,22 @@ impl Renderer {
     /// Both edges are rounded, so neighbouring rectangles meet without gaps or overlaps and
     /// translucent colors do not stack.
     pub(super) fn fill_art_rect(&self, rect: ArtRect, geometry: &FrameGeometry) {
-        let (min, max) = (
-            geometry.screen_point(rect.min),
-            geometry.screen_point(rect.max),
-        );
+        self.fill_screen_rect(geometry.screen_rect(rect));
+    }
+
+    /// Fills the exact screen area of `rect`, antialiasing edges that fall between screen
+    /// pixels, so every art pixel keeps the same apparent size at any zoom.
+    ///
+    /// Only for opaque colors whose rectangles never share an edge with another of the same
+    /// color, which would show a faint seam.
+    fn fill_smooth_art_rect(&self, rect: ArtRect, geometry: &FrameGeometry) {
+        self.fill_screen_rect(geometry.exact_screen_rect(rect));
+    }
+
+    /// Fills `screen`.
+    fn fill_screen_rect(&self, screen: ScreenRect) {
         self.ctx
-            .fill_rect(min.x, min.y, max.x - min.x, max.y - min.y);
+            .fill_rect(screen.min.x, screen.min.y, screen.size.x, screen.size.y);
     }
 
     /// Draws every visible piece, plus a faded copy where queued actions will move it.
@@ -421,13 +499,11 @@ impl Renderer {
         PieceDrawParams {
             piece,
             player_id: params.player_id,
-            offset: geometry.offset,
+            geometry: *geometry,
             alpha,
             state: params.state,
             is_ghost,
             pos: geometry.map_pos(square),
-            tile_size: geometry.tile,
-            zoom: geometry.zoom,
             clock_offset_ms: params.clock_offset_ms,
         }
     }
@@ -446,16 +522,14 @@ impl Renderer {
             let square = params.displayed_square(king);
             self.draw_piece_name(PieceNameDrawParams {
                 piece: king,
-                offset: geometry.offset,
+                geometry: *geometry,
                 state: params.state,
-                zoom: geometry.zoom,
-                tile_size: geometry.tile,
                 pos: geometry.map_pos(square),
             });
         }
     }
 
-    /// Fades everything outside the view radius around the local king to white.
+    /// Fades everything outside the view radius around the local king into the off-board color.
     fn draw_fog(
         &self,
         params: &RenderParams<'_>,
@@ -477,8 +551,8 @@ impl Renderer {
         ) else {
             return;
         };
-        let _ = gradient.add_color_stop(0.0, "rgba(255, 255, 255, 0.0)");
-        let _ = gradient.add_color_stop(1.0, "rgba(255, 255, 255, 1.0)");
+        let _ = gradient.add_color_stop(0.0, &format!("rgba({FOG_RGB}, 0.0)"));
+        let _ = gradient.add_color_stop(1.0, &format!("rgba({FOG_RGB}, 1.0)"));
         self.ctx.set_fill_style_canvas_gradient(&gradient);
         self.ctx
             .fill_rect(0.0, 0.0, params.canvas_size.x, params.canvas_size.y);

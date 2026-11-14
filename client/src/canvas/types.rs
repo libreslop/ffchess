@@ -1,5 +1,6 @@
 //! Data structures used by the canvas renderer.
 
+use super::renderer::FrameGeometry;
 use super::shading::ShadeCache;
 use crate::math::Vec2;
 use crate::premoves::{FailedMove, PremoveLine, Projection};
@@ -41,29 +42,27 @@ pub(crate) struct PieceSvgKey {
 
 /// Parameters for drawing a single piece.
 #[derive(Clone, Copy)]
-pub(crate) struct PieceDrawParams<'a> {
-    pub piece: &'a Piece,
-    pub player_id: PlayerId,
-    pub offset: Vec2,
-    pub alpha: f64,
-    pub state: &'a GameState,
-    pub is_ghost: bool,
-    /// Square position to draw at, possibly fractional while animating.
-    pub pos: Vec2,
-    pub tile_size: f64,
-    pub zoom: f64,
-    pub clock_offset_ms: i64,
+pub(super) struct PieceDrawParams<'a> {
+    pub(super) piece: &'a Piece,
+    pub(super) player_id: PlayerId,
+    pub(super) geometry: FrameGeometry,
+    pub(super) alpha: f64,
+    pub(super) state: &'a GameState,
+    pub(super) is_ghost: bool,
+    /// Square position to draw at, already mapped for drawing, possibly fractional while
+    /// animating.
+    pub(super) pos: Vec2,
+    pub(super) clock_offset_ms: i64,
 }
 
 /// Parameters for drawing a piece name overlay.
 #[derive(Clone, Copy)]
-pub(crate) struct PieceNameDrawParams<'a> {
-    pub piece: &'a Piece,
-    pub offset: Vec2,
-    pub state: &'a GameState,
-    pub zoom: f64,
-    pub tile_size: f64,
-    pub pos: Vec2,
+pub(super) struct PieceNameDrawParams<'a> {
+    pub(super) piece: &'a Piece,
+    pub(super) geometry: FrameGeometry,
+    pub(super) state: &'a GameState,
+    /// Square position the name is drawn above, already mapped for drawing.
+    pub(super) pos: Vec2,
 }
 
 /// A piece being dragged, drawn centered under the pointer.

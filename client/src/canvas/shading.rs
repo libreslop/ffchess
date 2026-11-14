@@ -1,7 +1,7 @@
 //! Drawing of piece shading: square backgrounds and threat marks configured per piece type.
 
 use super::color::{NPC_PIECE_COLOR, hex_to_rgba};
-use super::renderer::{FrameGeometry, Visibility};
+use super::renderer::{ArtRect, FrameGeometry, Visibility};
 use super::types::{RenderParams, Renderer};
 use crate::math::Vec2;
 use common::models::{GameState, Piece};
@@ -56,7 +56,7 @@ impl Renderer {
         shades
     }
 
-    /// Fills the squares of shaded pieces, drawn below the pieces.
+    /// Fills the squares of shaded pieces on the art pixel grid, drawn below the pieces.
     pub(super) fn draw_shade_backgrounds(
         &self,
         shades: &[Shade],
@@ -71,11 +71,12 @@ impl Renderer {
             let Some(square) = Self::shown_square(params, visibility, piece) else {
                 continue;
             };
-            let origin = geometry.pos_origin(square);
             self.ctx
                 .set_fill_style_str(&paint_css(color, params.state, opacity));
-            self.ctx
-                .fill_rect(origin.x, origin.y, geometry.tile, geometry.tile);
+            self.fill_art_rect(
+                ArtRect::square(geometry.pos_art_origin(square)),
+                geometry,
+            );
         }
     }
 
