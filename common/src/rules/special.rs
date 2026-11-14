@@ -3,7 +3,7 @@
 use super::catalog::Catalog;
 use super::movement::{MovePlan, MoveStep};
 use crate::models::{
-    GameState, Partner, PartnerAction, PartnerOwner, PartneredMove, Piece, SpecialMove,
+    GameState, MoveTiming, Partner, PartnerAction, PartnerOwner, PartneredMove, Piece, SpecialMove,
     SquareRequirement,
 };
 use crate::types::{BoardCoord, ExprString, ExprVars, MoveCount};
@@ -24,16 +24,18 @@ impl SpecialMove {
         }
     }
 
-    /// Plans this special move of `mover` onto `end`, or returns `None` when it is not legal.
+    /// Plans this special move of `mover` onto `end`, made with `timing`, or returns `None`
+    /// when it is not legal.
     pub(crate) fn plan(
         &self,
         catalog: &Catalog,
         state: &GameState,
         mover: &Piece,
         end: BoardCoord,
+        timing: MoveTiming,
     ) -> Option<MovePlan> {
         match self {
-            Self::PartneredMove(partnered) => partnered.plan(catalog, state, mover, end),
+            Self::PartneredMove(partnered) => partnered.plan(catalog, state, mover, end, timing),
         }
     }
 }
@@ -86,13 +88,15 @@ impl PartneredMove {
             .with("self_targeted", mover_targeted)
     }
 
-    /// Plans the move when its target is `end` and every requirement is met.
+    /// Plans the move when its target is `end` and every requirement that applies to
+    /// `timing` is met.
     fn plan(
         &self,
         catalog: &Catalog,
         state: &GameState,
         mover: &Piece,
         end: BoardCoord,
+        timing: MoveTiming,
     ) -> Option<MovePlan> {
         let start = mover.position;
         if start + self.target != end {
@@ -106,6 +110,7 @@ impl PartneredMove {
             || !self
                 .requirements
                 .iter()
+                .filter(|requirement| requirement.applies_to(timing))
                 .all(|requirement| requirement.holds(catalog, state, mover, &vars))
         {
             return None;
@@ -129,7 +134,7 @@ impl PartneredMove {
             mover: mover.id,
             steps: self.steps(mover, end, &partners),
         };
-        plan.fits(state).then_some(plan)
+        plan.fits(state, timing).then_some(plan)
     }
 
     /// Builds the plan steps: captures, then relocations, then type changes.

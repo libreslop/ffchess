@@ -1,11 +1,13 @@
 //! Flashing of premove trails that disappear because their actions failed.
 
 use crate::canvas::FailedTrail;
-use crate::premoves::{PremoveLine, Projection};
+use crate::premoves::{FailedMove, PremoveLine, Projection};
 
-/// One failed trail flashing since `started_at`.
+/// One failed trail, and the squares its failed moves tried to move into, flashing since
+/// `started_at`.
 struct Flash {
     lines: Vec<PremoveLine>,
+    failed_moves: Vec<FailedMove>,
     started_at: f64,
 }
 
@@ -31,7 +33,8 @@ impl TrailFlashes {
     }
 
     /// Starts flashing the lines drawn for the previous projection that `projection` no
-    /// longer draws because their actions failed.
+    /// longer draws because their actions failed, along with the targets of the actions that
+    /// failed themselves.
     ///
     /// Lines that vanish because their actions ran, were cleared, or are hidden while their
     /// piece is dragged do not flash.
@@ -40,13 +43,23 @@ impl TrailFlashes {
             .last_lines
             .iter()
             .filter(|line| {
-                projection.failed.contains(&line.action) && !projection.lines.contains(line)
+                projection.failed.contains_key(&line.action) && !projection.lines.contains(line)
             })
             .copied()
             .collect();
         if !failed.is_empty() {
+            let mut failed_moves: Vec<FailedMove> = Vec::new();
+            for failed_move in failed
+                .iter()
+                .filter_map(|line| projection.failed.get(&line.action).copied().flatten())
+            {
+                if !failed_moves.contains(&failed_move) {
+                    failed_moves.push(failed_move);
+                }
+            }
             self.active.push(Flash {
                 lines: failed,
+                failed_moves,
                 started_at: now,
             });
         }
@@ -64,6 +77,7 @@ impl TrailFlashes {
             .iter()
             .map(|flash| FailedTrail {
                 lines: flash.lines.clone(),
+                failed_moves: flash.failed_moves.clone(),
                 dark: (((now - flash.started_at) / self.phase_ms) as u64).is_multiple_of(2),
             })
             .collect()

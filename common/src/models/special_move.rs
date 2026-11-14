@@ -1,5 +1,6 @@
 //! Config of special moves: moves with extra conditions and side effects on other pieces.
 
+use crate::models::MoveTiming;
 use crate::types::{ExprString, PieceTypeId};
 use glam::IVec2;
 use serde::{Deserialize, Serialize};
@@ -46,6 +47,17 @@ pub struct SquareRequirement {
     pub at: IVec2,
     /// Condition on the square, evaluated with the `self_*` and `square_*` variables.
     pub condition: ExprString,
+    /// Skips the condition while the move is a premove, so castling can be queued while
+    /// pieces still stand in the way; the move is still checked when it runs.
+    #[serde(default)]
+    pub ignore_for_premove: bool,
+}
+
+impl SquareRequirement {
+    /// Returns true when the requirement applies to a move made with `timing`.
+    pub fn applies_to(&self, timing: MoveTiming) -> bool {
+        timing == MoveTiming::Now || !self.ignore_for_premove
+    }
 }
 
 /// A piece a [`PartneredMove`] requires, and what the move does to it.

@@ -61,7 +61,7 @@ move, in the same coordinates as paths.
 | `type` | `"partneredmove"` | Yes | Selects the kind of special move. |
 | `target` | `[x, y]` | Yes | Where the mover lands. Selecting this square triggers the move. |
 | `condition` | condition | No | Must hold for the mover. Sees the `self_*` variables. |
-| `requirements` | requirement[] | No | Conditions on board squares, each `{ "at": [x, y], "condition": "..." }`. Sees the `self_*` and `square_*` variables. |
+| `requirements` | requirement[] | No | Conditions on board squares, each `{ "at": [x, y], "condition": "...", "ignore_for_premove": false }`. Sees the `self_*` and `square_*` variables. `ignore_for_premove` defaults to `false`; when `true`, the requirement is skipped while the move is queued behind a cooldown or other actions, and only checked when it runs. |
 | `becomes` | piece id | No | Piece type the mover turns into. |
 | `partners` | partner[] | No | Pieces that must be present, and what happens to them. |
 
@@ -88,6 +88,9 @@ Other rules:
 - a partner moved by `move_to` counts a move (`partner_moves`), but only the mover's cooldown
   restarts: castling is the king's move, so the rook stays ready,
 - a captured partner credits the mover's owner, like a normal capture,
+- a premove (a move queued behind a cooldown or other actions) may land on squares other pieces
+  still stand on, since they may have left by the time it runs; the server checks every square
+  when the move runs and rejects it then,
 - the server cancels queued premoves of every partner the move changed, since they were planned
   from where the partner stood before,
 - a special move that affects other pieces is hinted with a capture frame around those pieces
@@ -141,9 +144,10 @@ forbids that too.
       "condition": "self_moves == 0 && !self_targeted",
       // The king may not land on an attacked square. The square it crosses is where the rook
       // lands, so it only has to be empty.
+      // Castling may be queued while pieces are still in the way.
       "requirements": [
-        { "at": [1, 0], "condition": "square_empty" },
-        { "at": [2, 0], "condition": "square_empty && !square_targeted" }
+        { "at": [1, 0], "condition": "square_empty", "ignore_for_premove": true },
+        { "at": [2, 0], "condition": "square_empty && !square_targeted", "ignore_for_premove": true }
       ],
       "partners": [{
         "at": [3, 0],
@@ -159,10 +163,10 @@ forbids that too.
       "target": [-2, 0],
       "condition": "self_moves == 0 && !self_targeted",
       "requirements": [
-        { "at": [-1, 0], "condition": "square_empty" },
-        { "at": [-2, 0], "condition": "square_empty && !square_targeted" },
+        { "at": [-1, 0], "condition": "square_empty", "ignore_for_premove": true },
+        { "at": [-2, 0], "condition": "square_empty && !square_targeted", "ignore_for_premove": true },
         // Only the rook crosses this square, so it may be attacked.
-        { "at": [-3, 0], "condition": "square_empty" }
+        { "at": [-3, 0], "condition": "square_empty", "ignore_for_premove": true }
       ],
       "partners": [{
         "at": [-4, 0],
@@ -189,7 +193,7 @@ breaking one is rejected with `DestinationRestricted` and is never offered as a 
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
 | `condition` | condition | Yes | The [condition](#conditions) the move must meet. |
-| `ignore_for_premove` | bool | No | Defaults to `false`. When `true`, clients skip the requirement when predicting queued moves, so a queued chain is not shown as cancelled while a threat it would pass through comes and goes. The server still checks it when the move runs, and cancels the move and the rest of its chain if it fails then. |
+| `ignore_for_premove` | bool | No | Defaults to `false`. When `true`, the requirement is skipped while the move is a premove (queued behind a cooldown or other actions), so it can be queued, and stays shown, while a threat it would pass through comes and goes. The server still checks it when the move runs, and cancels the move and the rest of its chain if it fails then. |
 
 Conditions see these variables:
 

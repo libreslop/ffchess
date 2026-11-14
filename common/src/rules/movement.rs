@@ -127,11 +127,13 @@ impl MovePlan {
         after
     }
 
-    /// Returns true when the board can hold the pieces where the plan puts them.
+    /// Returns true when the board can hold the pieces where the plan, made with `timing`,
+    /// puts them.
     ///
-    /// Every destination must be on the board, no two pieces may land on the same square,
-    /// and a destination may only be occupied by a piece this plan moves away or captures.
-    pub(crate) fn fits(&self, state: &GameState) -> bool {
+    /// Every destination must be on the board and no two pieces may land on the same square.
+    /// A destination may only be occupied by a piece this plan moves away or captures, unless
+    /// the plan is a premove: the occupant may have left by the time it runs.
+    pub(crate) fn fits(&self, state: &GameState, timing: MoveTiming) -> bool {
         let leaving: HashSet<PieceId> = self
             .steps
             .iter()
@@ -143,9 +145,10 @@ impl MovePlan {
             MoveStep::Relocate { to, .. } => {
                 state.board_size.contains(*to)
                     && destinations.insert(*to)
-                    && state
-                        .piece_at(*to)
-                        .is_none_or(|occupant| leaving.contains(&occupant.id))
+                    && (timing == MoveTiming::Premove
+                        || state
+                            .piece_at(*to)
+                            .is_none_or(|occupant| leaving.contains(&occupant.id)))
             }
             MoveStep::Capture(_) | MoveStep::Retype { .. } => true,
         })
@@ -356,7 +359,7 @@ impl Catalog {
             config
                 .special_moves
                 .iter()
-                .find_map(|special| special.plan(self, state, mover, end))
+                .find_map(|special| special.plan(self, state, mover, end, timing))
                 .ok_or(error)
         })?;
         if config.allows_destination(self, state, mover, &plan, timing) {

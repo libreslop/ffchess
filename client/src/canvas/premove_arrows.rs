@@ -1,7 +1,7 @@
 //! Pixelated arrows tracing each piece's queued moves.
 
 use super::color::{ARROW_ALPHA, arrow_color};
-use super::renderer::{ArtRect, FrameGeometry};
+use super::renderer::{ART_PIXELS_PER_TILE, ArtRect, FrameGeometry};
 use super::types::{RenderParams, Renderer};
 use crate::math::{Vec2, vec2};
 use crate::premoves::PremoveLine;
@@ -168,7 +168,8 @@ fn piece_arrows(lines: &[PremoveLine], geometry: &FrameGeometry) -> Vec<(PieceId
 
 impl Renderer {
     /// Draws one pixelated arrow per piece through all its predicted moves, each piece in a
-    /// color of its own, then the flashes of failed trails.
+    /// color of its own, then the flashes of failed trails and the squares their moves failed
+    /// to move into.
     ///
     /// Each arrow is filled as non-overlapping runs, so its translucent color does not stack.
     pub(super) fn draw_premove_arrows(&self, params: &RenderParams<'_>, geometry: &FrameGeometry) {
@@ -180,13 +181,26 @@ impl Renderer {
             );
         }
         for trail in params.failed_trails {
-            for (piece_id, arrow) in piece_arrows(&trail.lines, geometry) {
-                let color = if trail.dark {
+            let color = |piece_id: PieceId| {
+                if trail.dark {
                     FAILED_TRAIL_DARK_COLOR.to_string()
                 } else {
                     arrow_color(piece_id.0.as_u128(), 1.0)
-                };
-                self.fill_arrow(&arrow, &color, geometry);
+                }
+            };
+            for failed in &trail.failed_moves {
+                let origin = geometry.square_art_origin(failed.target);
+                self.ctx.set_fill_style_str(&color(failed.piece_id));
+                self.fill_art_rect(
+                    ArtRect {
+                        min: origin,
+                        max: origin + ART_PIXELS_PER_TILE,
+                    },
+                    geometry,
+                );
+            }
+            for (piece_id, arrow) in piece_arrows(&trail.lines, geometry) {
+                self.fill_arrow(&arrow, &color(piece_id), geometry);
             }
         }
     }

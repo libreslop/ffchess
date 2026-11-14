@@ -2,7 +2,7 @@
 
 use super::shading::ShadeCache;
 use crate::math::Vec2;
-use crate::premoves::{PremoveLine, Projection};
+use crate::premoves::{FailedMove, PremoveLine, Projection};
 use common::models::{GameModeClientConfig, GameState, Piece};
 use common::rules::Catalog;
 use common::types::{BoardCoord, PieceId, PieceTypeId, PlayerId};
@@ -79,6 +79,8 @@ pub struct DraggedPiece {
 pub struct FailedTrail {
     /// The lines of the trail as last drawn.
     pub lines: Vec<PremoveLine>,
+    /// The moves that failed, whose target squares flash with the trail.
+    pub failed_moves: Vec<FailedMove>,
     /// True while the flash is black rather than the trail's color.
     pub dark: bool,
 }

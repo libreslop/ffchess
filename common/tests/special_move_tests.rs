@@ -1,6 +1,6 @@
 //! Tests for special moves configured as `partneredmove`.
 
-use common::models::{GameState, MoveTiming, Piece, PieceConfig, Player};
+use common::models::{GameState, MoveTiming, Piece, PieceConfig, Player, SpecialMove};
 use common::protocol::GameError;
 use common::rules::{Catalog, LegalMove, MoveKind, PieceMove, Simulation};
 use common::types::{
@@ -518,4 +518,39 @@ fn validation_reports_config_mistakes() {
     ];
     let error = catalog(vec![bad_condition, rook()]).validate().unwrap_err();
     assert!(error.contains("invalid condition"), "{error}");
+}
+
+#[test]
+/// Square requirements marked `ignore_for_premove` let castling be premoved while a piece
+/// still stands where the rook lands; the move made at once, or with unmarked requirements,
+/// is still refused.
+fn castling_premove_ignores_marked_square_requirements() {
+    let mut king = castling_king();
+    for SpecialMove::PartneredMove(partnered) in &mut king.special_moves {
+        for requirement in &mut partnered.requirements {
+            requirement.ignore_for_premove = true;
+        }
+    }
+    let lenient = catalog(vec![king, rook()]);
+    let mut board = CastlingBoard::new();
+    let me = board.state.pieces[&board.king].owner_id;
+    add_piece(&mut board.state, me, "rook", [5, 0]);
+    let mover = &board.state.pieces[&board.king];
+
+    assert!(
+        lenient
+            .check_move(&board.state, mover, coord([6, 0]), MoveTiming::Now)
+            .is_err()
+    );
+    assert_eq!(
+        lenient.check_move(&board.state, mover, coord([6, 0]), MoveTiming::Premove),
+        Ok(MoveKind::Quiet)
+    );
+
+    let strict = catalog(vec![castling_king(), rook()]);
+    assert!(
+        strict
+            .check_move(&board.state, mover, coord([6, 0]), MoveTiming::Premove)
+            .is_err()
+    );
 }

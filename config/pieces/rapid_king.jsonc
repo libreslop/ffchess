@@ -13,7 +13,8 @@
     ],
     // The king may not castle out of or into an attacked square, and neither the king nor the
     // rook may have moved before. The square the king crosses is where the rook lands, so it
-    // only has to be empty.
+    // only has to be empty. Castling may be queued while pieces are still in the way; the
+    // squares are only checked when it runs.
     "special_moves": [
         {
             // Short castle: the king steps two squares, the rook jumps over it.
@@ -21,8 +22,8 @@
             "target": [2, 0],
             "condition": "self_moves == 0 && !self_targeted",
             "requirements": [
-                { "at": [1, 0], "condition": "square_empty" },
-                { "at": [2, 0], "condition": "square_empty && !square_targeted" }
+                { "at": [1, 0], "condition": "square_empty", "ignore_for_premove": true },
+                { "at": [2, 0], "condition": "square_empty && !square_targeted", "ignore_for_premove": true }
             ],
             "partners": [
                 {
@@ -40,10 +41,10 @@
             "target": [-2, 0],
             "condition": "self_moves == 0 && !self_targeted",
             "requirements": [
-                { "at": [-1, 0], "condition": "square_empty" },
-                { "at": [-2, 0], "condition": "square_empty && !square_targeted" },
+                { "at": [-1, 0], "condition": "square_empty", "ignore_for_premove": true },
+                { "at": [-2, 0], "condition": "square_empty && !square_targeted", "ignore_for_premove": true },
                 // Only the rook crosses this square, so it may be attacked.
-                { "at": [-3, 0], "condition": "square_empty" }
+                { "at": [-3, 0], "condition": "square_empty", "ignore_for_premove": true }
             ],
             "partners": [
                 {
