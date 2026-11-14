@@ -1,5 +1,6 @@
 //! Shared end-of-match overlay for victory and defeat outcomes.
 
+use super::countdown_label::CountdownLabel;
 use super::pixel_font::{NATIVE_PX, title_pixel_px};
 use crate::ui_state::CooldownSeconds;
 use crate::utils::is_mobile;
@@ -25,6 +26,8 @@ pub struct EndScreenProps {
     pub survival_secs: u64,
     pub on_rejoin: Callback<MouseEvent>,
     pub rejoin_cooldown: CooldownSeconds,
+    /// Full rejoin cooldown of the mode, used to reserve the widest countdown label.
+    pub rejoin_cooldown_max: CooldownSeconds,
     /// Keeps watching the match just played as a spectator.
     pub on_spectate: Callback<MouseEvent>,
 }
@@ -102,11 +105,7 @@ pub fn end_screen(props: &EndScreenProps) -> Html {
                                 if props.rejoin_cooldown.is_active() { "not-allowed" } else { "pointer" },
                                 if props.rejoin_cooldown.is_active() { "rgba(148, 163, 184, 0.2)" } else { "rgba(30, 41, 59, 0.4)" },
                                 if props.rejoin_cooldown.is_active() { "#94a3b8" } else { "#fff" })}>
-                            if props.rejoin_cooldown.is_active() {
-                                {format!("Wait ({}s)", props.rejoin_cooldown.as_u32())}
-                            } else {
-                                {"PLAY AGAIN"}
-                            }
+                            <CountdownLabel cooldown={props.rejoin_cooldown} max={props.rejoin_cooldown_max} ready="PLAY AGAIN" />
                         </button>
                         <button onclick={props.on_spectate.clone()}
                             style="padding: 8px 24px; font-size: 1.2em; cursor: pointer; background: transparent; color: #cbd5e1; border: 3px solid #94a3b8; border-radius: 0; font-weight: 900; transition: all 0.2s; text-transform: uppercase; letter-spacing: 2px;">

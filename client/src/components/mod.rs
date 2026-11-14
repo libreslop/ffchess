@@ -1,5 +1,6 @@
 //! Reusable Yew components for the client UI.
 
+mod countdown_label;
 pub mod disconnected_screen;
 pub mod end_screen;
 pub mod error_toast;

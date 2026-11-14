@@ -1,5 +1,6 @@
 //! Join flow UI for selecting mode, name, and kit.
 
+use super::countdown_label::CountdownLabel;
 use super::pixel_font::{NATIVE_PX, title_pixel_px};
 use crate::canvas::color::piece_icon_colors;
 use crate::reducer::QueueStatus;
@@ -40,6 +41,8 @@ pub struct JoinScreenProps {
     pub on_name_input: Callback<InputEvent>,
     pub on_name_submit: Callback<SubmitEvent>,
     pub landing_cooldown: CooldownSeconds,
+    /// Full respawn cooldown of the mode, used to reserve the widest countdown label.
+    pub landing_cooldown_max: CooldownSeconds,
     pub join_step: JoinStep,
     pub on_join: Callback<KitId>,
     /// Watches the selected mode instead of playing it.
@@ -125,11 +128,7 @@ pub fn join_screen(props: &JoinScreenProps) -> Html {
                                         if props.landing_cooldown.is_active() || props.is_loading { "#94a3b8" } else { "#3b82f6" },
                                         if props.landing_cooldown.is_active() || props.is_loading { "#64748b" } else { "#1e3a8a" },
                                         if props.landing_cooldown.is_active() || props.is_loading { "not-allowed" } else { "pointer" })}>
-                                    if props.landing_cooldown.is_active() {
-                                        {format!("Wait ({}s)", props.landing_cooldown.as_u32())}
-                                    } else {
-                                        {"Play!"}
-                                    }
+                                    <CountdownLabel cooldown={props.landing_cooldown} max={props.landing_cooldown_max} ready="Play!" />
                                 </button>
                                 <button type="button" onclick={props.on_spectate.clone()} disabled={props.is_loading}
                                     style={format!("padding: 6px 20px; background: transparent; color: #e2e8f0; border: 3px solid #cbd5e1; border-radius: 0; font-weight: 900; cursor: {}; font-size: 1.2em; text-transform: uppercase; letter-spacing: 1px;",

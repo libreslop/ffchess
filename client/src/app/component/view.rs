@@ -123,6 +123,7 @@ pub fn render_app(props: AppViewProps) -> Html {
                     survival_secs={reducer.stats.survival_secs}
                     on_rejoin={props.on_rejoin.clone()}
                     rejoin_cooldown={props.rejoin_cooldown}
+                    rejoin_cooldown_max={CooldownSeconds::from_duration(reducer.respawn_cooldown())}
                     on_spectate={props.on_spectate.reform(|_| SpectateTarget::Own)}
                 />
             } else if is_spectating {
@@ -170,6 +171,7 @@ pub fn render_app(props: AppViewProps) -> Html {
                     on_name_input={props.on_name_input.clone()}
                     on_name_submit={props.on_name_submit.clone()}
                     landing_cooldown={props.landing_cooldown}
+                    landing_cooldown_max={CooldownSeconds::from_duration(reducer.respawn_cooldown())}
                     join_step={props.join_step}
                     on_join={props.on_join.clone()}
                     on_spectate={props.on_menu_spectate.clone()}
