@@ -5,7 +5,7 @@
 //! needs no further checks.
 
 use super::catalog::Catalog;
-use crate::models::{GameState, Piece, PieceConfig};
+use crate::models::{GameState, MoveTiming, Piece, PieceConfig};
 use crate::protocol::GameError;
 use crate::types::{BoardCoord, ExprVars, MoveCount, PieceId, PieceTypeId, PlayerId};
 use glam::IVec2;
@@ -173,7 +173,8 @@ impl PieceConfig {
             .with("square_targeted", square_targeted)
     }
 
-    /// Returns true when `plan` meets every destination requirement of this piece type.
+    /// Returns true when `plan` meets every destination requirement of this piece type that
+    /// applies to a move made with `timing`.
     ///
     /// Requirements see the board as it would be after the move, so a king stepping back
     /// along the ray of an attacking rook still counts as targeted.
@@ -183,8 +184,14 @@ impl PieceConfig {
         state: &GameState,
         mover: &Piece,
         plan: &MovePlan,
+        timing: MoveTiming,
     ) -> bool {
-        if self.destination_requirements.is_empty() {
+        let mut requirements = self
+            .destination_requirements
+            .iter()
+            .filter(|requirement| requirement.applies_to(timing))
+            .peekable();
+        if requirements.peek().is_none() {
             return true;
         }
         let after = plan.outcome(state);
@@ -196,9 +203,7 @@ impl PieceConfig {
             plan.kind() == MoveKind::Capture,
             catalog.is_targeted(&after, landed.position, landed.owner_id),
         );
-        self.destination_requirements
-            .iter()
-            .all(|requirement| requirement.holds(&vars))
+        requirements.all(|requirement| requirement.condition.holds(&vars))
     }
 
     /// Lists the squares a piece of this type on `start` might move to, before any checks.
@@ -295,7 +300,7 @@ impl PieceConfig {
 }
 
 impl Catalog {
-    /// Checks whether `mover` may move to `end`.
+    /// Checks whether `mover` may move to `end` with `timing`.
     ///
     /// Returns the kind of the legal move.
     pub fn check_move(
@@ -303,12 +308,19 @@ impl Catalog {
         state: &GameState,
         mover: &Piece,
         end: BoardCoord,
+        timing: MoveTiming,
     ) -> Result<MoveKind, GameError> {
-        self.plan_move(state, mover, end).map(|plan| plan.kind())
+        self.plan_move(state, mover, end, timing)
+            .map(|plan| plan.kind())
     }
 
-    /// Lists every legal move of `mover`.
-    pub fn legal_moves(&self, state: &GameState, mover: &Piece) -> Vec<LegalMove> {
+    /// Lists every legal move of `mover` made with `timing`.
+    pub fn legal_moves(
+        &self,
+        state: &GameState,
+        mover: &Piece,
+        timing: MoveTiming,
+    ) -> Vec<LegalMove> {
         let Ok(config) = self.piece(&mover.piece_type) else {
             return Vec::new();
         };
@@ -316,7 +328,7 @@ impl Catalog {
             .candidate_targets(mover.position)
             .into_iter()
             .filter_map(|end| {
-                self.plan_move(state, mover, end)
+                self.plan_move(state, mover, end, timing)
                     .ok()
                     .map(|plan| LegalMove {
                         target: end,
@@ -327,16 +339,17 @@ impl Catalog {
             .collect()
     }
 
-    /// Plans the move of `mover` to `end`.
+    /// Plans the move of `mover` to `end`, made with `timing`.
     ///
     /// Path moves take precedence; special moves are tried only when no path reaches `end`.
     /// When neither applies, the path error explains why. The chosen move must then meet the
-    /// mover's destination requirements.
+    /// mover's destination requirements that apply to `timing`.
     pub(crate) fn plan_move(
         &self,
         state: &GameState,
         mover: &Piece,
         end: BoardCoord,
+        timing: MoveTiming,
     ) -> Result<MovePlan, GameError> {
         let config = self.piece(&mover.piece_type)?;
         let plan = config.plan_path_move(state, mover, end).or_else(|error| {
@@ -346,7 +359,7 @@ impl Catalog {
                 .find_map(|special| special.plan(self, state, mover, end))
                 .ok_or(error)
         })?;
-        if config.allows_destination(self, state, mover, &plan) {
+        if config.allows_destination(self, state, mover, &plan, timing) {
             Ok(plan)
         } else {
             Err(GameError::DestinationRestricted)

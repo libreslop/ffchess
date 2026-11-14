@@ -1,6 +1,6 @@
 //! Tests for special moves configured as `partneredmove`.
 
-use common::models::{GameState, Piece, PieceConfig, Player};
+use common::models::{GameState, MoveTiming, Piece, PieceConfig, Player};
 use common::protocol::GameError;
 use common::rules::{Catalog, LegalMove, MoveKind, PieceMove, Simulation};
 use common::types::{
@@ -289,12 +289,12 @@ fn partner_conditions_see_attacks_on_the_partner() {
 
     assert!(
         catalog
-            .check_move(&state, &state.pieces[&mover], target)
+            .check_move(&state, &state.pieces[&mover], target, MoveTiming::Now)
             .is_err()
     );
     add_piece(&mut state, Some(PlayerId::new()), "lance", [5, 6]);
     assert_eq!(
-        catalog.check_move(&state, &state.pieces[&mover], target),
+        catalog.check_move(&state, &state.pieces[&mover], target, MoveTiming::Now),
         Ok(MoveKind::Quiet)
     );
     Simulation::new(&catalog, &mut state, TimestampMs::from_millis(0))
@@ -343,7 +343,8 @@ fn castling_with_an_enemy_rook_is_rejected() {
 fn legal_moves_include_castling() {
     let board = CastlingBoard::new();
     let king = &board.state.pieces[&board.king];
-    let moves = catalog(vec![castling_king(), rook()]).legal_moves(&board.state, king);
+    let moves =
+        catalog(vec![castling_king(), rook()]).legal_moves(&board.state, king, MoveTiming::Now);
     assert!(moves.contains(&LegalMove {
         target: coord([6, 0]),
         kind: MoveKind::Quiet,
@@ -471,7 +472,7 @@ fn colliding_destinations_reject_the_move() {
     add_piece(&mut state, None, "pawn", [2, 3]);
     assert!(
         catalog(vec![jumper])
-            .legal_moves(&state, &state.pieces[&mover])
+            .legal_moves(&state, &state.pieces[&mover], MoveTiming::Now)
             .is_empty()
     );
 }

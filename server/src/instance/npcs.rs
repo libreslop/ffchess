@@ -2,7 +2,7 @@
 
 use super::world::World;
 use crate::spawning::find_spawn_pos;
-use common::models::Piece;
+use common::models::{MoveTiming, Piece};
 use common::rules::{Catalog, MoveKind, Simulation};
 use common::types::{BoardCoord, PieceId, TimestampMs};
 use rand::Rng;
@@ -75,7 +75,7 @@ impl World {
     /// NPCs close in on the nearest player piece within the hunt radius, otherwise wander.
     fn choose_npc_move(&self, catalog: &Catalog, npc: &Piece) -> Option<BoardCoord> {
         let position = npc.position;
-        let moves = catalog.legal_moves(&self.state, npc);
+        let moves = catalog.legal_moves(&self.state, npc, MoveTiming::Now);
         let prey = self
             .state
             .pieces

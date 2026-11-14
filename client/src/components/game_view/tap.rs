@@ -1,9 +1,11 @@
 //! Decides what a tap on the board means for selection and queued actions.
 
+use super::geometry::grid_square;
+use crate::math::Vec2;
 use crate::premoves::{PremoveQueue, Projection};
 use common::models::GameState;
 use common::rules::Catalog;
-use common::types::{BoardCoord, PieceId, PlayerId};
+use common::types::{BoardCoord, PieceId, PlayerId, TimestampMs};
 
 /// What a tap on a board square should do.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -32,6 +34,8 @@ pub(super) struct TapContext<'a> {
     pub(super) catalog: &'a Catalog,
     pub(super) player_id: PlayerId,
     pub(super) selected: Option<PieceId>,
+    /// Server time, deciding whether a move runs at once or is queued.
+    pub(super) now: TimestampMs,
 }
 
 impl TapContext<'_> {
@@ -80,15 +84,48 @@ impl TapContext<'_> {
         }
     }
 
-    /// Resolves dropping the dragged `piece_id` on `target`: the move tapping `target` would
-    /// queue with the piece selected, or nothing when it selects no legal move.
-    pub(super) fn resolve_drop(&self, piece_id: PieceId, target: BoardCoord) -> TapOutcome {
-        self.move_target(piece_id, target)
-            .map_or(TapOutcome::Ignore, |target| TapOutcome::Move { piece_id, target })
+    /// Returns where the dragged `piece_id` lands when dropped at `point`, in grid units: the
+    /// move tapping the square under `point` would queue with the piece selected.
+    ///
+    /// When that square selects no legal move, the drop snaps to the nearest square that
+    /// does, if one is within `snap_squares` of `point`.
+    pub(super) fn drop_target(
+        &self,
+        piece_id: PieceId,
+        point: Vec2,
+        snap_squares: f64,
+    ) -> Option<BoardCoord> {
+        let square = grid_square(point);
+        if let Some(target) = self.move_target(piece_id, square) {
+            return Some(target);
+        }
+        let reach = snap_squares.max(0.0).ceil() as i32;
+        (-reach..=reach)
+            .flat_map(|dx| (-reach..=reach).map(move |dy| BoardCoord::new(dx, dy)))
+            .map(|offset| BoardCoord(square.0 + offset.0))
+            .map(|candidate| (candidate, distance_to_square(point, candidate)))
+            .filter(|(_, distance)| *distance <= snap_squares)
+            .filter_map(|(candidate, distance)| {
+                Some((self.move_target(piece_id, candidate)?, distance))
+            })
+            .min_by(|(_, a), (_, b)| a.total_cmp(b))
+            .map(|(target, _)| target)
     }
 
-    /// Returns the local player's piece predicted to stand on `target`, which a press there
-    /// picks up.
+    /// Returns the local player's piece a press on `target` picks up, and whether it is picked
+    /// up from where it stands now rather than from where its queued actions will move it.
+    ///
+    /// Pieces where queued actions will move them win over pieces standing there now.
+    pub(super) fn pickup_at(&self, target: BoardCoord) -> Option<(PieceId, bool)> {
+        self.own_piece_at(target)
+            .map(|piece_id| (piece_id, false))
+            .or_else(|| {
+                self.own_queued_piece_at(target)
+                    .map(|piece_id| (piece_id, true))
+            })
+    }
+
+    /// Returns the local player's piece predicted to stand on `target`.
     pub(super) fn own_piece_at(&self, target: BoardCoord) -> Option<PieceId> {
         self.projection
             .state
@@ -97,10 +134,22 @@ impl TapContext<'_> {
             .map(|piece| piece.id)
     }
 
+    /// Returns the local player's piece with queued actions standing on `target` now.
+    fn own_queued_piece_at(&self, target: BoardCoord) -> Option<PieceId> {
+        self.state
+            .piece_at(target)
+            .filter(|piece| {
+                piece.owner_id == Some(self.player_id) && self.premoves.has_actions_for(piece.id)
+            })
+            .map(|piece| piece.id)
+    }
+
     /// Returns true when tapping `target` should not start panning the camera.
     pub(super) fn is_interactive(&self, target: BoardCoord) -> bool {
         self.projection.state.board_size.contains(target)
-            && (self.projection.state.piece_at(target).is_some() || self.is_move_target(target))
+            && (self.projection.state.piece_at(target).is_some()
+                || self.own_queued_piece_at(target).is_some()
+                || self.is_move_target(target))
     }
 
     /// Returns true when tapping `target` selects a legal move of the selected piece.
@@ -110,7 +159,7 @@ impl TapContext<'_> {
     }
 
     /// Returns where `piece_id` lands when tapping `tapped` selects one of its legal moves
-    /// from its predicted square.
+    /// from its predicted square, checked as a premove when it would be queued.
     ///
     /// A move is selected by its hint squares (see [`common::rules::LegalMove::handles`]); a
     /// move landing on the tapped square wins over one that only affects the piece there.
@@ -118,10 +167,23 @@ impl TapContext<'_> {
         let predicted = &self.projection.state;
         let piece = predicted.pieces.get(&piece_id)?;
         self.catalog
-            .legal_moves(predicted, piece)
+            .legal_moves(
+                predicted,
+                piece,
+                self.projection.move_timing(piece, self.now),
+            )
             .into_iter()
             .filter(|legal| legal.handles().contains(&tapped))
             .min_by_key(|legal| legal.target != tapped)
             .map(|legal| legal.target)
     }
+}
+
+/// Returns the distance, in grid units, from `point` to the nearest point of `square`.
+fn distance_to_square(point: Vec2, square: BoardCoord) -> f64 {
+    let min = square.0.as_dvec2();
+    (min - point)
+        .max(point - (min + 1.0))
+        .max(Vec2::ZERO)
+        .length()
 }

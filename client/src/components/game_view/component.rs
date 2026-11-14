@@ -6,7 +6,7 @@ use super::input::{PointerContext, mouse_leave_handler};
 use super::loops::{
     CameraLoopInputs, WheelZoomInputs, use_animation_frame, use_camera_loop, use_wheel_zoom,
 };
-use super::render::{BoardFrame, use_board_render, use_piece_animations};
+use super::render::{BoardFrame, use_board_render, use_piece_animations, use_trail_flashes};
 use super::shop_context::ActiveShopQuery;
 use super::touch::TouchContext;
 use super::types::{InputEnd, InputMove, InputStart, LatestStateSnapshot, ViewHandles};
@@ -66,13 +66,19 @@ pub fn game_view(props: &GameViewProps) -> Html {
     use_animation_frame();
 
     let renderer = use_renderer(&canvas_ref, reducer);
+    // While a piece is dragged from where it stands now, the board is shown as if its queued
+    // actions were already replaced.
     let projection = use_memo(
         (
             reducer.state.clone(),
             reducer.premoves.clone(),
             reducer.catalog.clone(),
+            handles.replacing_piece(),
         ),
-        |(state, premoves, catalog)| premoves.project(state, catalog),
+        |(state, premoves, catalog, replacing)| match replacing {
+            Some(piece_id) => premoves.without_piece(*piece_id).project(state, catalog),
+            None => premoves.project(state, catalog),
+        },
     );
     use_camera_loop(CameraLoopInputs {
         camera: handles.camera.clone(),
@@ -107,11 +113,17 @@ pub fn game_view(props: &GameViewProps) -> Html {
     .resolve();
 
     let anims = use_piece_animations(reducer);
+    let trail_flashes = use_trail_flashes(
+        &projection,
+        globals.premove_fail_flashes,
+        globals.premove_fail_flash_ms,
+    );
     use_board_render(BoardFrame {
         renderer,
         reducer: reducer.clone(),
         projection: projection.clone(),
         anims,
+        trail_flashes,
         active_shop: active_shop.clone(),
         selected: *selected,
         dragged: handles.dragged_piece(),
@@ -127,6 +139,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
         tx: props.tx.clone(),
         projection,
         tile_size_px: globals.tile_size_px,
+        drag_snap_squares: globals.drag_snap_squares,
     };
     let cursor = pointer_context.cursor();
     let pointer = pointer_context.handlers();

@@ -10,6 +10,7 @@ mod render;
 mod shop_context;
 mod tap;
 mod touch;
+mod trail_flashes;
 mod types;
 
 pub use component::GameView;

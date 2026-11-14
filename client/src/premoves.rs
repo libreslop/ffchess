@@ -5,11 +5,14 @@
 //! snapshot (which already contains it) arrives; a failure drops it together with every later
 //! action of the same piece, mirroring the server's chain cancellation.
 
-use common::models::{GameState, PieceAction};
+use common::models::{GameState, MoveTiming, Piece, PieceAction};
 use common::protocol::{ActionRequest, GameError};
 use common::rules::{Catalog, PieceMove, Simulation};
 use common::types::{ActionId, BoardCoord, PieceId, TimestampMs};
-use std::collections::HashSet;
+use std::collections::{HashSet, VecDeque};
+
+/// Number of failed action ids remembered for flashing their trails.
+const FAILED_MEMORY: usize = 64;
 
 /// Lifecycle of a queued action as known to the client.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -34,14 +37,18 @@ struct Premove {
 /// A special move draws one line per piece it relocates, partners included.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PremoveLine {
+    /// The queued action making the movement.
+    pub action: ActionId,
     pub piece_id: PieceId,
     pub start: BoardCoord,
     pub target: BoardCoord,
 }
 
-impl From<PieceMove> for PremoveLine {
-    fn from(moved: PieceMove) -> Self {
+impl PremoveLine {
+    /// Builds the line of `moved`, relocated by the queued action `action`.
+    fn new(action: ActionId, moved: PieceMove) -> Self {
         Self {
+            action,
             piece_id: moved.piece_id,
             start: moved.from,
             target: moved.to,
@@ -54,6 +61,23 @@ impl From<PieceMove> for PremoveLine {
 pub struct Projection {
     pub state: GameState,
     pub lines: Vec<PremoveLine>,
+    /// Pieces with queued actions.
+    pub queued: HashSet<PieceId>,
+    /// Actions predicted to fail, or recently rejected by the server, together with the rest
+    /// of their piece's chain.
+    pub failed: HashSet<ActionId>,
+}
+
+impl Projection {
+    /// Returns when a new move of `piece`, as predicted, would run at `now`: at once when it
+    /// has nothing queued and is off cooldown, otherwise as a premove.
+    pub fn move_timing(&self, piece: &Piece, now: TimestampMs) -> MoveTiming {
+        if self.queued.contains(&piece.id) || !piece.is_ready(now) {
+            MoveTiming::Premove
+        } else {
+            MoveTiming::Now
+        }
+    }
 }
 
 /// Ordered queue of the local player's unresolved actions.
@@ -61,6 +85,8 @@ pub struct Projection {
 pub struct PremoveQueue {
     items: Vec<Premove>,
     next_id: ActionId,
+    /// Recently failed actions, oldest first.
+    failed: VecDeque<ActionId>,
 }
 
 impl PremoveQueue {
@@ -97,11 +123,18 @@ impl PremoveQueue {
             Err(error) => {
                 let piece_id = self.items[index].piece_id;
                 let mut position = 0;
+                let mut dropped = Vec::new();
                 self.items.retain(|premove| {
                     let keep = position < index || premove.piece_id != piece_id;
                     position += 1;
+                    if !keep {
+                        dropped.push(premove.id);
+                    }
                     keep
                 });
+                self.failed.extend(dropped);
+                let excess = self.failed.len().saturating_sub(FAILED_MEMORY);
+                self.failed.drain(..excess);
                 Some(error)
             }
         }
@@ -119,6 +152,13 @@ impl PremoveQueue {
     /// Forgets every queued action of one piece.
     pub fn clear_piece(&mut self, piece_id: PieceId) {
         self.items.retain(|premove| premove.piece_id != piece_id);
+    }
+
+    /// Returns a copy of the queue without the actions of one piece.
+    pub fn without_piece(&self, piece_id: PieceId) -> Self {
+        let mut queue = self.clone();
+        queue.clear_piece(piece_id);
+        queue
     }
 
     /// Forgets every queued action.
@@ -141,29 +181,44 @@ impl PremoveQueue {
 
     /// Predicts the board after every queued action, in order.
     ///
-    /// An action that would fail hides itself and the rest of its piece's chain, since the
-    /// server will cancel them as well.
+    /// Actions are checked as premoves, so destination requirements marked
+    /// `ignore_for_premove` never break a chain here; the server checks them when the action
+    /// runs. An action that would fail hides itself and the rest of its piece's chain, since
+    /// the server will cancel them as well.
     pub fn project(&self, state: &GameState, catalog: &Catalog) -> Projection {
         let mut projected = state.clone();
         let mut lines = Vec::new();
         let mut broken_pieces = HashSet::new();
+        let mut queued = HashSet::new();
+        let mut failed: HashSet<ActionId> = self.failed.iter().copied().collect();
         for premove in &self.items {
+            queued.insert(premove.piece_id);
             if broken_pieces.contains(&premove.piece_id) {
+                failed.insert(premove.id);
                 continue;
             }
             // Move timestamps of predicted pieces are never shown, so any clock value works.
             let applied = Simulation::new(catalog, &mut projected, TimestampMs::default())
+                .with_timing(MoveTiming::Premove)
                 .apply(premove.piece_id, premove.action);
             match applied {
-                Ok(effects) => lines.extend(effects.moved.into_iter().map(PremoveLine::from)),
+                Ok(effects) => lines.extend(
+                    effects
+                        .moved
+                        .into_iter()
+                        .map(|moved| PremoveLine::new(premove.id, moved)),
+                ),
                 Err(_) => {
                     broken_pieces.insert(premove.piece_id);
+                    failed.insert(premove.id);
                 }
             }
         }
         Projection {
             state: projected,
             lines,
+            queued,
+            failed,
         }
     }
 

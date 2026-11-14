@@ -92,7 +92,7 @@ impl PieceConfig {
         let destination_sample = Self::destination_vars(MoveCount::default(), false, false);
         self.destination_requirements
             .iter()
-            .try_for_each(|requirement| requirement.check_condition(&destination_sample))
+            .try_for_each(|requirement| requirement.condition.check_condition(&destination_sample))
             .map_err(|error| format!("destination requirement: {error}"))?;
         self.shading
             .iter()

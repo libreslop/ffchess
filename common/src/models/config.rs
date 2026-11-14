@@ -27,10 +27,38 @@ pub struct PieceConfig {
     /// Conditions every destination of this piece must meet, checked on the board as it
     /// would be after the move; a king requiring `!square_targeted` may not move into check.
     #[serde(default)]
-    pub destination_requirements: Vec<ExprString>,
+    pub destination_requirements: Vec<DestinationRequirement>,
     /// Visual cues drawn on pieces of this type.
     #[serde(default)]
     pub shading: Vec<ShadingRule>,
+}
+
+/// A condition every move of a piece must meet on the board as it would be after the move.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DestinationRequirement {
+    pub condition: ExprString,
+    /// Skips the condition while predicting queued moves, so a queued chain is not shown as
+    /// broken by a threat that may be gone when it runs; the move is still checked then.
+    #[serde(default)]
+    pub ignore_for_premove: bool,
+}
+
+impl DestinationRequirement {
+    /// Returns true when the requirement applies to a move made with `timing`.
+    pub fn applies_to(&self, timing: MoveTiming) -> bool {
+        timing == MoveTiming::Now || !self.ignore_for_premove
+    }
+}
+
+/// When a checked move runs.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum MoveTiming {
+    /// The move runs at once; every rule applies.
+    #[default]
+    Now,
+    /// The move is queued to run later; destination requirements marked
+    /// `ignore_for_premove` are skipped.
+    Premove,
 }
 
 /// Shop item definition, including pricing and piece changes.

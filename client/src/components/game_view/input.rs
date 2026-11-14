@@ -1,6 +1,6 @@
 //! Mouse and single-pointer input: panning the camera, tapping squares, and dragging pieces.
 
-use super::geometry::screen_to_grid;
+use super::geometry::{grid_square, screen_to_grid_point};
 use super::tap::{TapContext, TapOutcome};
 use super::types::{
     DragStart, HeldPiece, InputEnd, InputMove, InputStart, TAP_SLOP_PX, ViewHandles,
@@ -22,6 +22,7 @@ pub(super) struct PointerContext {
     pub(super) tx: MsgSender,
     pub(super) projection: Rc<Projection>,
     pub(super) tile_size_px: f64,
+    pub(super) drag_snap_squares: f64,
 }
 
 /// Callbacks for pointer presses, moves, and releases.
@@ -45,8 +46,8 @@ impl PointerContext {
     }
 
     /// Returns the CSS cursor for the board: grabbing while holding a piece, all-scroll while
-    /// panning, pointer over squares a tap moves the selected piece to, and grab over your
-    /// pieces.
+    /// panning, pointer over squares a tap moves the selected piece to, and grab over pieces
+    /// you can pick up.
     pub(super) fn cursor(&self) -> &'static str {
         if self.is_blocked() {
             return "default";
@@ -54,7 +55,10 @@ impl PointerContext {
         if self.handles.held.borrow().is_some() {
             return "grabbing";
         }
-        let is_panning = self.handles.drag_start.is_some_and(|start| start.allow_panning)
+        let is_panning = self
+            .handles
+            .drag_start
+            .is_some_and(|start| start.allow_panning)
             && *self.handles.did_pan.borrow();
         if is_panning {
             return "all-scroll";
@@ -66,7 +70,7 @@ impl PointerContext {
         let context = self.tap_context(*self.handles.selected);
         if context.is_move_target(square) {
             "pointer"
-        } else if context.own_piece_at(square).is_some() {
+        } else if context.pickup_at(square).is_some() {
             "grab"
         } else {
             "default"
@@ -80,9 +84,14 @@ impl PointerContext {
 
     /// Returns the board square under a screen position.
     fn square_at(&self, pos: Vec2) -> Option<BoardCoord> {
+        self.grid_point_at(pos).map(grid_square)
+    }
+
+    /// Returns a screen position in grid units.
+    fn grid_point_at(&self, pos: Vec2) -> Option<Vec2> {
         let canvas = self.handles.canvas_ref.cast::<HtmlCanvasElement>()?;
         let camera = self.handles.camera.borrow();
-        Some(screen_to_grid(
+        Some(screen_to_grid_point(
             pos,
             &canvas,
             camera.camera,
@@ -93,20 +102,30 @@ impl PointerContext {
 
     /// Builds the tap interpreter for the current state, with `selected` selected.
     fn tap_context(&self, selected: Option<PieceId>) -> TapContext<'_> {
+        self.tap_context_with(&self.projection, selected)
+    }
+
+    /// Builds the tap interpreter against `projection`, with `selected` selected.
+    fn tap_context_with<'a>(
+        &'a self,
+        projection: &'a Projection,
+        selected: Option<PieceId>,
+    ) -> TapContext<'a> {
         TapContext {
             state: &self.reducer.state,
-            projection: &self.projection,
+            projection,
             premoves: &self.reducer.premoves,
             catalog: &self.reducer.catalog,
             player_id: self.reducer.viewer_id(),
             selected,
+            now: self.reducer.server_now(),
         }
     }
 
     /// Starts a press; presses on pieces or move targets never pan the camera.
     ///
-    /// A press on one of your pieces (or on where queued actions will move it) picks it up
-    /// and selects it, showing its move hints.
+    /// A press on one of your pieces, either where queued actions will move it or where it
+    /// stands now, picks it up and selects it, showing its move hints.
     fn on_start(&self, input: InputStart) {
         if self.is_blocked() {
             return;
@@ -114,13 +133,13 @@ impl PointerContext {
         *self.handles.did_pan.borrow_mut() = false;
         let selected = *self.handles.selected;
         let context = self.tap_context(selected);
-        let square = self
-            .square_at(input.pos)
-            .filter(|_| !input.is_right_click);
+        let square = self.square_at(input.pos).filter(|_| !input.is_right_click);
         let is_interactive = square.is_some_and(|square| context.is_interactive(square));
-        let held = square
-            .and_then(|square| context.own_piece_at(square))
-            .map(|piece_id| HeldPiece::new(piece_id, input.pos, selected));
+        let held = square.and_then(|square| context.pickup_at(square)).map(
+            |(piece_id, replaces_actions)| {
+                HeldPiece::new(piece_id, input.pos, selected, replaces_actions)
+            },
+        );
         if let Some(held) = held {
             self.handles.selected.set(Some(held.piece_id));
         }
@@ -228,14 +247,36 @@ impl PointerContext {
     }
 
     /// Drops a dragged piece at `pos`, moving it there as if that square was tapped with the
-    /// piece selected; drops on squares it cannot move to leave it selected in place.
+    /// piece selected, or to a legal square close enough to snap to; other drops leave it
+    /// selected in place.
+    ///
+    /// A piece picked up from where it stands now moves from there, replacing its queued
+    /// actions.
     fn drop_piece(&self, held: HeldPiece, pos: Vec2) {
-        if let Some(square) = self.square_at(pos) {
-            let outcome = self
-                .tap_context(Some(held.piece_id))
-                .resolve_drop(held.piece_id, square);
-            self.apply_tap(outcome);
+        let Some(point) = self.grid_point_at(pos) else {
+            return;
+        };
+        let piece_id = held.piece_id;
+        let replaced = held.replaces_actions.then(|| {
+            self.reducer
+                .premoves
+                .without_piece(piece_id)
+                .project(&self.reducer.state, &self.reducer.catalog)
+        });
+        let projection = replaced.as_ref().unwrap_or(&self.projection);
+        let Some(target) = self
+            .tap_context_with(projection, Some(piece_id))
+            .drop_target(piece_id, point, self.drag_snap_squares)
+        else {
+            return;
+        };
+        if held.replaces_actions {
+            self.reducer.dispatch(GameAction::ClearActions {
+                piece_id,
+                tx: self.tx.clone(),
+            });
         }
+        self.apply_tap(TapOutcome::Move { piece_id, target });
     }
 
     /// Carries out the outcome of a tap.

@@ -2,6 +2,7 @@
 
 use super::anims::PieceAnimations;
 use super::shop_context::ActiveShop;
+use super::trail_flashes::TrailFlashes;
 use crate::canvas::{DraggedPiece, RenderParams, Renderer};
 use crate::math::Vec2;
 use crate::premoves::Projection;
@@ -19,6 +20,7 @@ pub(super) struct BoardFrame {
     pub(super) reducer: UseReducerHandle<GameStateReducer>,
     pub(super) projection: Rc<Projection>,
     pub(super) anims: Rc<RefCell<PieceAnimations>>,
+    pub(super) trail_flashes: Rc<RefCell<TrailFlashes>>,
     pub(super) active_shop: Option<ActiveShop>,
     pub(super) selected: Option<PieceId>,
     pub(super) dragged: Option<DraggedPiece>,
@@ -43,6 +45,25 @@ pub(super) fn use_piece_animations(
     anims
 }
 
+/// Flashes premove trails that disappeared because their actions failed.
+#[hook]
+pub(super) fn use_trail_flashes(
+    projection: &Rc<Projection>,
+    flashes: u32,
+    phase_ms: u32,
+) -> Rc<RefCell<TrailFlashes>> {
+    let trail_flashes = use_mut_ref(|| TrailFlashes::new(flashes, phase_ms));
+    {
+        let trail_flashes = trail_flashes.clone();
+        use_effect_with(projection.clone(), move |projection| {
+            trail_flashes
+                .borrow_mut()
+                .observe(projection, performance_now());
+        });
+    }
+    trail_flashes
+}
+
 /// Redraws the board after every render of the view.
 #[hook]
 pub(super) fn use_board_render(frame: BoardFrame) {
@@ -58,13 +79,16 @@ impl BoardFrame {
     fn draw(&self, renderer: &Renderer) {
         let reducer = &self.reducer;
         let has_match_result = reducer.has_match_result();
-        let animated_positions = self.anims.borrow_mut().positions_at(performance_now());
+        let now = performance_now();
+        let animated_positions = self.anims.borrow_mut().positions_at(now);
+        let failed_trails = self.trail_flashes.borrow_mut().trails_at(now);
         renderer.draw(RenderParams {
             state: &reducer.state,
             player_id: reducer.viewer_id(),
             selected_piece_id: self.selected.filter(|_| !has_match_result),
             dragged_piece: self.dragged.filter(|_| !has_match_result),
             projection: &self.projection,
+            failed_trails: &failed_trails,
             animated_positions: &animated_positions,
             camera_pos: self.camera,
             canvas_size: self.canvas_size,

@@ -2,7 +2,7 @@
 
 use super::shading::ShadeCache;
 use crate::math::Vec2;
-use crate::premoves::Projection;
+use crate::premoves::{PremoveLine, Projection};
 use common::models::{GameModeClientConfig, GameState, Piece};
 use common::rules::Catalog;
 use common::types::{BoardCoord, PieceId, PieceTypeId, PlayerId};
@@ -74,6 +74,15 @@ pub struct DraggedPiece {
     pub canvas_pos: Vec2,
 }
 
+/// A failed premove trail flashing after it disappeared.
+#[derive(Clone, Debug, PartialEq)]
+pub struct FailedTrail {
+    /// The lines of the trail as last drawn.
+    pub lines: Vec<PremoveLine>,
+    /// True while the flash is black rather than the trail's color.
+    pub dark: bool,
+}
+
 /// Parameters for a single render pass.
 #[derive(Clone, Copy)]
 pub struct RenderParams<'a> {
@@ -82,6 +91,7 @@ pub struct RenderParams<'a> {
     pub selected_piece_id: Option<PieceId>,
     pub dragged_piece: Option<DraggedPiece>,
     pub projection: &'a Projection,
+    pub failed_trails: &'a [FailedTrail],
     pub animated_positions: &'a HashMap<PieceId, Vec2>,
     pub camera_pos: Vec2,
     pub canvas_size: Vec2,

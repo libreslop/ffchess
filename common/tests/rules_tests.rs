@@ -1,8 +1,8 @@
 //! Tests for shared movement, shop, and simulation rules.
 
 use common::models::{
-    GameState, Piece, PieceAction, PieceConfig, Player, Shop, ShopConfig, ShopGroupConfig,
-    ShopItemConfig, ShopItemIndex,
+    GameState, MoveTiming, Piece, PieceAction, PieceConfig, Player, Shop, ShopConfig,
+    ShopGroupConfig, ShopItemConfig, ShopItemIndex,
 };
 use common::protocol::GameError;
 use common::rules::{Catalog, LegalMove, MoveKind, Simulation};
@@ -64,7 +64,7 @@ fn check(
     owner: Option<PlayerId>,
 ) -> Result<MoveKind, GameError> {
     let mover = Piece::new(owner, config.id.clone(), start);
-    catalog(vec![config.clone()], vec![]).check_move(state, &mover, end)
+    catalog(vec![config.clone()], vec![]).check_move(state, &mover, end, MoveTiming::Now)
 }
 
 /// Builds an empty 100x100 board.
@@ -266,6 +266,7 @@ fn legal_moves_lists_quiet_and_capture_targets() {
     let moves = catalog(vec![pawn_config()], vec![]).legal_moves(
         &state,
         &Piece::new(Some(me), PieceTypeId::from("pawn"), BoardCoord::new(0, 0)),
+        MoveTiming::Now,
     );
 
     let capture = BoardCoord::new(1, 1);

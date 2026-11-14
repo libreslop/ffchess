@@ -11,8 +11,11 @@
         [[0, 1]], [[0, -1]], [[1, 0]], [[-1, 0]],
         [[1, 1]], [[1, -1]], [[-1, 1]], [[-1, -1]]
     ],
-    // A king may never move onto a square an enemy piece could capture onto.
-    "destination_requirements": ["!square_targeted"],
+    // A king may never move onto a square an enemy piece could capture onto. Queued moves are
+    // only checked when they run, since the threat may be gone by then.
+    "destination_requirements": [
+        { "condition": "!square_targeted", "ignore_for_premove": true }
+    ],
     "shading": [
         {
             // Pieces threatening a king are filled in their team color, seen only by the

@@ -1,6 +1,6 @@
 //! Tests for destination requirements, capture threats, and piece shading.
 
-use common::models::{GameState, Piece, PieceConfig, Player};
+use common::models::{DestinationRequirement, GameState, MoveTiming, Piece, PieceConfig, Player};
 use common::protocol::GameError;
 use common::rules::{Catalog, PaintColor, Shade, ShadeMark};
 use common::types::{
@@ -52,7 +52,9 @@ fn king() -> PieceConfig {
         json!({
             "move_paths": king_steps(),
             "capture_paths": king_steps(),
-            "destination_requirements": ["!square_targeted"],
+            "destination_requirements": [
+                { "condition": "!square_targeted", "ignore_for_premove": true }
+            ],
             "shading": [
                 {
                     "condition": "self_targeted",
@@ -137,15 +139,52 @@ fn add_piece(state: &mut GameState, owner: Option<PlayerId>, kind: &str, pos: [i
     id
 }
 
-/// Checks a move of the piece `mover` to `end`.
+/// Checks a move of the piece `mover` to `end`, made at once.
 fn check(state: &GameState, mover: PieceId, end: [i32; 2]) -> Result<(), GameError> {
-    catalog()
+    check_with(catalog(), state, mover, end, MoveTiming::Now)
+}
+
+/// Checks a move of the piece `mover` to `end` with `catalog`, made with `timing`.
+fn check_with(
+    catalog: Catalog,
+    state: &GameState,
+    mover: PieceId,
+    end: [i32; 2],
+    timing: MoveTiming,
+) -> Result<(), GameError> {
+    catalog
         .check_move(
             state,
             &state.pieces[&mover],
             BoardCoord::new(end[0], end[1]),
+            timing,
         )
         .map(drop)
+}
+
+#[test]
+/// Premoves skip destination requirements marked `ignore_for_premove` and keep the others.
+fn premoves_skip_ignored_destination_requirements() {
+    let mut state = empty_state();
+    let (me, enemy) = (add_player(&mut state), add_player(&mut state));
+    let king = add_piece(&mut state, Some(me), "king", [0, 0]);
+    add_piece(&mut state, Some(enemy), "rook", [1, 4]);
+
+    assert_eq!(
+        check_with(catalog(), &state, king, [1, 0], MoveTiming::Premove),
+        Ok(())
+    );
+
+    let mut strict = catalog();
+    for config in strict.pieces.values_mut() {
+        for requirement in &mut config.destination_requirements {
+            requirement.ignore_for_premove = false;
+        }
+    }
+    assert_eq!(
+        check_with(strict, &state, king, [1, 0], MoveTiming::Premove),
+        Err(GameError::DestinationRestricted)
+    );
 }
 
 #[test]
@@ -207,7 +246,7 @@ fn legal_moves_skip_restricted_destinations() {
     add_piece(&mut state, Some(enemy), "rook", [1, 4]);
 
     let targets: Vec<BoardCoord> = catalog()
-        .legal_moves(&state, &state.pieces[&king])
+        .legal_moves(&state, &state.pieces[&king], MoveTiming::Now)
         .into_iter()
         .map(|legal| legal.target)
         .collect();
@@ -309,7 +348,10 @@ fn invalid_conditions_fail_validation() {
     let mut broken_shading = rook();
     broken_shading.shading[0].visible_to = Some("viewer_kng_targeted".into());
     let mut broken_destination = king();
-    broken_destination.destination_requirements = vec!["!square_attacked".into()];
+    broken_destination.destination_requirements = vec![DestinationRequirement {
+        condition: "!square_attacked".into(),
+        ignore_for_premove: false,
+    }];
 
     for config in [broken_shading, broken_destination] {
         let catalog = Catalog {

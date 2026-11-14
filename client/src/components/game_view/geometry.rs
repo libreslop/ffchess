@@ -26,14 +26,15 @@ pub(super) fn client_to_canvas(pos: Vec2, canvas: &HtmlCanvasElement) -> Vec2 {
     pos - vec2(rect.left(), rect.top())
 }
 
-/// Converts a client-space pointer position into a grid coordinate.
-pub(super) fn screen_to_grid(
+/// Converts a client-space pointer position into fractional grid units, where square `(x, y)`
+/// spans `x..x + 1` and `y..y + 1`.
+pub(super) fn screen_to_grid_point(
     pos: Vec2,
     canvas: &HtmlCanvasElement,
     camera: Vec2,
     tile_size: f64,
     board_rotated_180: bool,
-) -> BoardCoord {
+) -> Vec2 {
     let screen_pos = client_to_canvas(pos, canvas);
     let canvas_center = vec2(canvas.width() as f64 / 2.0, canvas.height() as f64 / 2.0);
     let world_pos = if board_rotated_180 {
@@ -41,7 +42,12 @@ pub(super) fn screen_to_grid(
     } else {
         screen_pos + camera - canvas_center
     };
-    let grid = (world_pos / tile_size).floor();
+    world_pos / tile_size
+}
+
+/// Returns the square containing a point in grid units.
+pub(super) fn grid_square(point: Vec2) -> BoardCoord {
+    let grid = point.floor();
     BoardCoord::new(grid.x as i32, grid.y as i32)
 }
 

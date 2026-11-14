@@ -1,11 +1,14 @@
 //! Pixelated arrows tracing each piece's queued moves.
 
-use super::color::arrow_color;
+use super::color::{ARROW_ALPHA, arrow_color};
 use super::renderer::{ArtRect, FrameGeometry};
 use super::types::{RenderParams, Renderer};
 use crate::math::{Vec2, vec2};
+use crate::premoves::PremoveLine;
 use common::types::PieceId;
 
+/// Color of a failed premove trail during the dark phases of its flash.
+const FAILED_TRAIL_DARK_COLOR: &str = "#000000";
 /// Thickness of a premove arrow's shaft, in art pixels.
 const ARROW_SHAFT_PIXELS: f64 = 4.0;
 /// Width of a premove arrow's head at its base, in art pixels.
@@ -144,33 +147,55 @@ impl PixelArrow {
     }
 }
 
+/// Builds one arrow per piece through its `lines`, which come in queue order.
+fn piece_arrows(lines: &[PremoveLine], geometry: &FrameGeometry) -> Vec<(PieceId, PixelArrow)> {
+    let mut paths: Vec<(PieceId, Vec<Leg>)> = Vec::new();
+    for line in lines {
+        let leg = Leg {
+            from: geometry.square_art_center(line.start),
+            to: geometry.square_art_center(line.target),
+        };
+        match paths.iter_mut().find(|(id, _)| *id == line.piece_id) {
+            Some((_, legs)) => legs.push(leg),
+            None => paths.push((line.piece_id, vec![leg])),
+        }
+    }
+    paths
+        .into_iter()
+        .filter_map(|(piece_id, legs)| Some((piece_id, PixelArrow::new(legs)?)))
+        .collect()
+}
+
 impl Renderer {
     /// Draws one pixelated arrow per piece through all its predicted moves, each piece in a
-    /// color of its own.
+    /// color of its own, then the flashes of failed trails.
     ///
     /// Each arrow is filled as non-overlapping runs, so its translucent color does not stack.
     pub(super) fn draw_premove_arrows(&self, params: &RenderParams<'_>, geometry: &FrameGeometry) {
-        // Lines come in queue order, so each piece's moves are already in sequence.
-        let mut paths: Vec<(PieceId, Vec<Leg>)> = Vec::new();
-        for line in &params.projection.lines {
-            let leg = Leg {
-                from: geometry.square_art_center(line.start),
-                to: geometry.square_art_center(line.target),
-            };
-            match paths.iter_mut().find(|(id, _)| *id == line.piece_id) {
-                Some((_, legs)) => legs.push(leg),
-                None => paths.push((line.piece_id, vec![leg])),
+        for (piece_id, arrow) in piece_arrows(&params.projection.lines, geometry) {
+            self.fill_arrow(
+                &arrow,
+                &arrow_color(piece_id.0.as_u128(), ARROW_ALPHA),
+                geometry,
+            );
+        }
+        for trail in params.failed_trails {
+            for (piece_id, arrow) in piece_arrows(&trail.lines, geometry) {
+                let color = if trail.dark {
+                    FAILED_TRAIL_DARK_COLOR.to_string()
+                } else {
+                    arrow_color(piece_id.0.as_u128(), 1.0)
+                };
+                self.fill_arrow(&arrow, &color, geometry);
             }
         }
-        for (piece_id, legs) in paths {
-            let Some(arrow) = PixelArrow::new(legs) else {
-                continue;
-            };
-            self.ctx
-                .set_fill_style_str(&arrow_color(piece_id.0.as_u128()));
-            for run in arrow.runs() {
-                self.fill_art_rect(run, geometry);
-            }
+    }
+
+    /// Fills `arrow` with `color`.
+    fn fill_arrow(&self, arrow: &PixelArrow, color: &str, geometry: &FrameGeometry) {
+        self.ctx.set_fill_style_str(color);
+        for run in arrow.runs() {
+            self.fill_art_rect(run, geometry);
         }
     }
 }

@@ -33,17 +33,26 @@ pub(super) struct HeldPiece {
     pub dragged: bool,
     /// Selection before the press, which a tap is resolved against.
     pub previous_selected: Option<PieceId>,
+    /// True when picked up from where the piece stands now rather than from where its queued
+    /// actions will move it: dropping it on a move replaces those actions.
+    pub replaces_actions: bool,
 }
 
 impl HeldPiece {
     /// Picks up `piece_id` at pointer position `pos`.
-    pub(super) fn new(piece_id: PieceId, pos: Vec2, previous_selected: Option<PieceId>) -> Self {
+    pub(super) fn new(
+        piece_id: PieceId,
+        pos: Vec2,
+        previous_selected: Option<PieceId>,
+        replaces_actions: bool,
+    ) -> Self {
         Self {
             piece_id,
             start: pos,
             pos,
             dragged: false,
             previous_selected,
+            replaces_actions,
         }
     }
 
@@ -149,6 +158,15 @@ impl ViewHandles {
     /// Returns true while a held piece is being dragged.
     pub(super) fn is_dragging_piece(&self) -> bool {
         self.held.borrow().is_some_and(|held| held.dragged)
+    }
+
+    /// Returns the piece being dragged whose queued actions a drop replaces; the board is shown
+    /// without those actions meanwhile.
+    pub(super) fn replacing_piece(&self) -> Option<PieceId> {
+        self.held
+            .borrow()
+            .filter(|held| held.dragged && held.replaces_actions)
+            .map(|held| held.piece_id)
     }
 
     /// Returns the held piece to draw under the pointer once it is being dragged.

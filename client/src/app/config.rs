@@ -51,6 +51,17 @@ pub struct GlobalClientConfig {
     pub pan_lerp_dead: f64,
     #[educe(Default = 40.0)]
     pub tile_size_px: f64,
+    /// How far, in squares, a piece dropped on a square it cannot move to may be from the
+    /// nearest square it can move to and still snap there.
+    #[educe(Default = 0.25)]
+    pub drag_snap_squares: f64,
+    /// Number of times a failed premove trail flashes black and then its color before it is
+    /// gone.
+    #[educe(Default = 3)]
+    pub premove_fail_flashes: u32,
+    /// Duration of each black or colored phase of a failed premove trail's flash.
+    #[educe(Default = 100)]
+    pub premove_fail_flash_ms: u32,
     #[educe(Default = 1.3)]
     pub death_zoom: f64,
     #[educe(Default = 1.2)]

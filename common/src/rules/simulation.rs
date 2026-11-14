@@ -5,7 +5,7 @@
 
 use super::catalog::Catalog;
 use super::movement::{MovePlan, MoveStep};
-use crate::models::{GameState, Piece, PieceAction, ShopItemConfig, ShopItemIndex};
+use crate::models::{GameState, MoveTiming, Piece, PieceAction, ShopItemConfig, ShopItemIndex};
 use crate::protocol::GameError;
 use crate::types::{BoardCoord, PieceId, PieceTypeId, PlayerId, ShopId, TimestampMs};
 use glam::IVec2;
@@ -69,16 +69,24 @@ pub struct Simulation<'a> {
     catalog: &'a Catalog,
     state: &'a mut GameState,
     now: TimestampMs,
+    timing: MoveTiming,
 }
 
 impl<'a> Simulation<'a> {
-    /// Creates a simulation that stamps moves with `now`.
+    /// Creates a simulation that stamps moves with `now` and checks them as made at once.
     pub fn new(catalog: &'a Catalog, state: &'a mut GameState, now: TimestampMs) -> Self {
         Self {
             catalog,
             state,
             now,
+            timing: MoveTiming::Now,
         }
+    }
+
+    /// Checks moves as made with `timing` instead.
+    pub fn with_timing(mut self, timing: MoveTiming) -> Self {
+        self.timing = timing;
+        self
     }
 
     /// Applies one action to `piece_id`, ignoring cooldowns.
@@ -100,7 +108,9 @@ impl<'a> Simulation<'a> {
         target: BoardCoord,
     ) -> Result<ActionEffects, GameError> {
         let piece = self.piece(piece_id)?;
-        let plan = self.catalog.plan_move(self.state, piece, target)?;
+        let plan = self
+            .catalog
+            .plan_move(self.state, piece, target, self.timing)?;
         let effects = self.apply_plan(&plan);
         // An automatic upgrade that cannot be afforded or placed simply does not happen.
         let upgrade = self.apply_auto_upgrade(piece_id).unwrap_or_default();

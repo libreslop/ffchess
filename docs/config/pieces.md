@@ -21,7 +21,7 @@ The filename stem becomes the runtime `PieceConfig.id`. For example:
 | `move_paths` | path[] | Yes | Legal non-capture movement paths. |
 | `capture_paths` | path[] | Yes | Legal capture movement paths. There is no fallback to `move_paths` when this array is empty. |
 | `special_moves` | special move[] | No | Moves beyond the paths, such as castling. See [Special Moves](#special-moves). |
-| `destination_requirements` | condition[] | No | Conditions every move of this piece must meet on the board as it would be after the move. See [Destination Requirements](#destination-requirements). |
+| `destination_requirements` | requirement[] | No | Conditions every move of this piece must meet on the board as it would be after the move. See [Destination Requirements](#destination-requirements). |
 | `shading` | shading rule[] | No | Visual cues drawn on pieces of this type. See [Shading](#shading). |
 
 ### Path Encoding
@@ -181,10 +181,17 @@ is not treated as targeted while the king itself still blocks that ray.
 
 ## Destination Requirements
 
-`destination_requirements` lists [conditions](#conditions) that every move of the piece must
-meet, path moves and special moves alike. They are evaluated on the board **as it would be after
+`destination_requirements` lists requirements that every move of the piece must meet, path moves
+and special moves alike. They are evaluated on the board **as it would be after
 the move**: captured pieces are gone and every moved piece stands on its new square. A move
 breaking one is rejected with `DestinationRestricted` and is never offered as a legal move.
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `condition` | condition | Yes | The [condition](#conditions) the move must meet. |
+| `ignore_for_premove` | bool | No | Defaults to `false`. When `true`, clients skip the requirement when predicting queued moves, so a queued chain is not shown as cancelled while a threat it would pass through comes and goes. The server still checks it when the move runs, and cancels the move and the rest of its chain if it fails then. |
+
+Conditions see these variables:
 
 | Variable | Meaning |
 | --- | --- |
@@ -195,7 +202,9 @@ breaking one is rejected with `DestinationRestricted` and is never offered as a 
 Every king in this repository uses it to forbid moving into check:
 
 ```jsonc
-"destination_requirements": ["!square_targeted"]
+"destination_requirements": [
+    { "condition": "!square_targeted", "ignore_for_premove": true }
+]
 ```
 
 Because the board after the move is used, a king cannot step back along the ray of an attacking

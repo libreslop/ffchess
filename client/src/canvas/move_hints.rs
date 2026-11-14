@@ -5,7 +5,7 @@ use super::renderer::{ART_PIXELS_PER_TILE, ArtRect, FrameGeometry};
 use super::types::{RenderParams, Renderer};
 use crate::math::{Vec2, vec2};
 use common::rules::LegalMove;
-use common::types::BoardCoord;
+use common::types::{BoardCoord, TimestampMs};
 
 const DEFAULT_HINT_COLOR: &str = "rgba(59, 130, 246, 0.4)";
 /// Side of the square marking a quiet move, in art pixels.
@@ -72,8 +72,10 @@ impl Renderer {
                 || DEFAULT_HINT_COLOR.to_string(),
                 |player| hex_to_rgba(player.color.as_ref(), 0.4),
             );
+        let now = TimestampMs::from_millis(js_sys::Date::now() as i64 + params.clock_offset_ms);
+        let timing = params.projection.move_timing(piece, now);
         MoveHints {
-            moves: self.catalog.legal_moves(predicted, piece),
+            moves: self.catalog.legal_moves(predicted, piece, timing),
             color,
         }
     }
