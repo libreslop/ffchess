@@ -103,8 +103,8 @@ pub fn end_screen(props: &EndScreenProps) -> Html {
                         <button onclick={props.on_rejoin.clone()} disabled={props.rejoin_cooldown.is_active()}
                             style={format!("padding: 8px 40px; font-size: 1.2em; cursor: {}; background: {}; color: white; border: 3px solid {}; border-radius: 0; font-weight: 900; width: auto; transition: all 0.2s; text-transform: uppercase; letter-spacing: 2px;",
                                 if props.rejoin_cooldown.is_active() { "not-allowed" } else { "pointer" },
-                                if props.rejoin_cooldown.is_active() { "rgba(148, 163, 184, 0.2)" } else { "rgba(30, 41, 59, 0.4)" },
-                                if props.rejoin_cooldown.is_active() { "#94a3b8" } else { "#fff" })}>
+                                if props.rejoin_cooldown.is_active() { "rgba(148, 163, 184, 0.2)" } else { "#3b82f6" },
+                                if props.rejoin_cooldown.is_active() { "#94a3b8" } else { "#1e3a8a" })}>
                             <CountdownLabel cooldown={props.rejoin_cooldown} max={props.rejoin_cooldown_max} ready="PLAY AGAIN" />
                         </button>
                         <button onclick={props.on_spectate.clone()}
