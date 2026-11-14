@@ -15,6 +15,8 @@ use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, HtmlImageElement};
 const COOLDOWN_RING_PIXELS: f64 = 1.0;
 /// Number of steps each side of the cooldown ring charges up in.
 const COOLDOWN_PARTS_PER_SIDE: usize = 4;
+/// Largest whole factor piece sprites are enlarged by before being scaled to the screen.
+const MAX_RASTER_SCALE: f64 = 16.0;
 
 /// Loaded SVG image plus its cache key.
 struct PieceSvgHandle {
@@ -102,21 +104,26 @@ impl Renderer {
 
         self.ctx.set_global_alpha(params.alpha);
         self.ctx.set_fill_style_str(team_color);
-        for rect in square_progress(params.square(), progress) {
-            self.fill_art_rect(rect, &params.geometry);
-        }
+        self.fill_smooth_art_rects(square_progress(params.square(), progress), &params.geometry);
         self.ctx.set_global_alpha(1.0);
     }
 
-    /// Draws the tinted piece sprite over its whole square, one sprite pixel per art pixel
-    /// and without smoothing, using a cached raster when available.
+    /// Draws the tinted piece sprite over the exact screen area of its square, like the
+    /// board, so it moves and scales smoothly with the camera instead of jittering between
+    /// screen pixels.
+    ///
+    /// The sprite is enlarged without smoothing by a whole factor, to at least its size on
+    /// screen, and only then scaled down smoothly, so its art pixels stay crisp and evenly
+    /// sized.
     fn draw_piece_icon(&self, handle: &PieceSvgHandle, params: PieceDrawParams) {
-        let screen = params.geometry.screen_rect(params.square());
+        let screen = params.geometry.exact_screen_rect(params.square());
         let (corner, size) = (screen.min, screen.size);
+        let scale = (params.geometry.tile / ART_PIXELS_PER_TILE)
+            .ceil()
+            .clamp(1.0, MAX_RASTER_SCALE) as u32;
 
         self.ctx.set_global_alpha(params.alpha);
-        self.ctx.set_image_smoothing_enabled(false);
-        let _ = match self.ensure_piece_raster(&handle.key, &handle.image) {
+        let _ = match self.ensure_piece_raster(&handle.key, &handle.image, scale) {
             Some(raster) => self.ctx.draw_image_with_html_canvas_element_and_dw_and_dh(
                 &raster, corner.x, corner.y, size.x, size.y,
             ),
@@ -128,7 +135,6 @@ impl Renderer {
                 size.y,
             ),
         };
-        self.ctx.set_image_smoothing_enabled(true);
         self.ctx.set_global_alpha(1.0);
     }
 
@@ -228,47 +234,59 @@ impl Renderer {
         let _ = self.ctx.fill_text(name, x, y);
     }
 
-    /// Returns the sprite rasterized at one pixel per art pixel, rendering it on first use.
+    /// Returns the sprite rasterized at one pixel per art pixel and enlarged `scale` times
+    /// without smoothing, rendering it on first use.
     fn ensure_piece_raster(
         &self,
         key: &PieceSvgKey,
         image: &HtmlImageElement,
+        scale: u32,
     ) -> Option<HtmlCanvasElement> {
+        let cache_key = (key.clone(), scale);
         {
             let cache = self.svg_cache.borrow();
-            if let Some(raster) = cache.rasters.get(key) {
+            if let Some(raster) = cache.rasters.get(&cache_key) {
                 return Some(raster.clone());
             }
         }
 
-        let window = web_sys::window()?;
-        let document = window.document()?;
-        let canvas = document
-            .create_element("canvas")
-            .ok()?
-            .dyn_into::<HtmlCanvasElement>()
-            .ok()?;
         let side = ART_PIXELS_PER_TILE as u32;
-        canvas.set_width(side);
-        canvas.set_height(side);
-
-        let ctx = canvas
-            .get_context("2d")
-            .ok()??
-            .dyn_into::<CanvasRenderingContext2d>()
-            .ok()?;
-        ctx.set_image_smoothing_enabled(false);
-        let _ = ctx.draw_image_with_html_image_element_and_dw_and_dh(
+        let (base, base_ctx) = Self::raster_canvas(side)?;
+        let _ = base_ctx.draw_image_with_html_image_element_and_dw_and_dh(
             image,
             0.0,
             0.0,
             ART_PIXELS_PER_TILE,
             ART_PIXELS_PER_TILE,
         );
+        let (raster, ctx) = Self::raster_canvas(side * scale)?;
+        let enlarged = (side * scale) as f64;
+        let _ = ctx.draw_image_with_html_canvas_element_and_dw_and_dh(
+            &base, 0.0, 0.0, enlarged, enlarged,
+        );
 
         let mut cache = self.svg_cache.borrow_mut();
-        cache.rasters.insert(key.clone(), canvas.clone());
-        Some(canvas)
+        cache.rasters.insert(cache_key, raster.clone());
+        Some(raster)
+    }
+
+    /// Creates an offscreen square canvas `side` pixels across that draws without smoothing.
+    fn raster_canvas(side: u32) -> Option<(HtmlCanvasElement, CanvasRenderingContext2d)> {
+        let canvas = web_sys::window()?
+            .document()?
+            .create_element("canvas")
+            .ok()?
+            .dyn_into::<HtmlCanvasElement>()
+            .ok()?;
+        canvas.set_width(side);
+        canvas.set_height(side);
+        let ctx = canvas
+            .get_context("2d")
+            .ok()??
+            .dyn_into::<CanvasRenderingContext2d>()
+            .ok()?;
+        ctx.set_image_smoothing_enabled(false);
+        Some((canvas, ctx))
     }
 
     fn svg_data_url(svg: &str) -> String {

@@ -28,7 +28,8 @@ pub(crate) struct PieceSvgCache {
     /// Piece types whose template is being fetched or failed to load.
     pub(crate) requested: HashSet<PieceTypeId>,
     pub(crate) images: HashMap<PieceSvgKey, HtmlImageElement>,
-    pub(crate) rasters: HashMap<PieceSvgKey, HtmlCanvasElement>,
+    /// Sprites rasterized at one pixel per art pixel, then enlarged by a whole factor.
+    pub(crate) rasters: HashMap<(PieceSvgKey, u32), HtmlCanvasElement>,
 }
 
 /// Cache key for a specific piece icon tinted with team colors.

@@ -155,7 +155,7 @@ impl FrameGeometry {
     }
 
     /// Returns the exact, possibly fractional, screen area of `rect`.
-    fn exact_screen_rect(&self, rect: ArtRect) -> ScreenRect {
+    pub(super) fn exact_screen_rect(&self, rect: ArtRect) -> ScreenRect {
         let min = self.exact_screen_point(rect.min);
         ScreenRect {
             min,
@@ -407,6 +407,22 @@ impl Renderer {
     /// color, which would show a faint seam.
     fn fill_smooth_art_rect(&self, rect: ArtRect, geometry: &FrameGeometry) {
         self.fill_screen_rect(geometry.exact_screen_rect(rect));
+    }
+
+    /// Fills the exact screen area of all `rects` as one shape, so edges they share show no
+    /// seam even though their outer edges are antialiased.
+    pub(super) fn fill_smooth_art_rects(
+        &self,
+        rects: impl IntoIterator<Item = ArtRect>,
+        geometry: &FrameGeometry,
+    ) {
+        self.ctx.begin_path();
+        for rect in rects {
+            let screen = geometry.exact_screen_rect(rect);
+            self.ctx
+                .rect(screen.min.x, screen.min.y, screen.size.x, screen.size.y);
+        }
+        self.ctx.fill();
     }
 
     /// Fills `screen`.
