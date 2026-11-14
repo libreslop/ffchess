@@ -21,7 +21,6 @@
     "modes_refresh_ms": 5000,
     "ping_interval_ms": 2000,
     "tick_interval_ms": 50,
-    "render_interval_ms": 16,
     "disconnected_hide_ms": 300,
     "fatal_auto_hide_ms": 5000,
     "camera_zoom_min": 0.2,

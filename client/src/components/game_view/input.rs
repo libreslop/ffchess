@@ -5,6 +5,7 @@ use super::tap::{TapContext, TapOutcome};
 use super::types::{
     DragStart, HeldPiece, InputEnd, InputMove, InputStart, TAP_SLOP_PX, ViewHandles,
 };
+use crate::camera::CAMERA_STEP_MS;
 use crate::math::Vec2;
 use crate::premoves::Projection;
 use crate::reducer::{GameAction, GameStateReducer, MsgSender};
@@ -14,6 +15,10 @@ use common::types::{BoardCoord, PieceId};
 use std::rc::Rc;
 use web_sys::HtmlCanvasElement;
 use yew::prelude::*;
+
+/// Shortest gap between pointer moves used to measure pan momentum, in milliseconds, so two
+/// moves in quick succession do not fling the camera.
+const MIN_PAN_SAMPLE_MS: f64 = 2.0;
 
 /// Everything pointer handlers need from the current render.
 #[derive(Clone)]
@@ -184,8 +189,12 @@ impl PointerContext {
             -delta
         };
         camera.camera += movement;
-        camera.velocity = movement;
-        camera.last_pan_ms = performance_now();
+        // Pointer moves arrive once per displayed frame, so the momentum is scaled to a
+        // camera step to carry the same speed on any refresh rate.
+        let now = performance_now();
+        let elapsed_ms = (now - camera.last_pan_ms).clamp(MIN_PAN_SAMPLE_MS, CAMERA_STEP_MS);
+        camera.velocity = movement * (CAMERA_STEP_MS / elapsed_ms);
+        camera.last_pan_ms = now;
         let is_alive = self
             .reducer
             .active_player_id()

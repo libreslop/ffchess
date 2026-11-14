@@ -8,6 +8,17 @@ use common::protocol::VictoryFocusTarget;
 use common::*;
 use yew::prelude::*;
 
+/// Length of the step the camera tuning values are expressed per, in milliseconds.
+///
+/// The camera advances once per displayed frame, scaling its smoothing by how many of these
+/// steps elapsed, so it moves at the same speed on any refresh rate.
+pub const CAMERA_STEP_MS: f64 = 16.0;
+
+/// Fraction of the remaining distance covered after `steps` steps covering `factor` each.
+fn lerp_factor(factor: f64, steps: f64) -> f64 {
+    1.0 - (1.0 - factor).powf(steps)
+}
+
 /// Mutable camera state for smooth panning and zoom transitions.
 pub struct CameraManager {
     pub camera: Vec2,
@@ -15,6 +26,7 @@ pub struct CameraManager {
     pub zoom: f64,
     pub target_zoom: f64,
     pub mouse_pos: Vec2,
+    /// Pan momentum, in pixels per camera step.
     pub velocity: Vec2,
     /// `performance.now()` of the last pan movement, used to drop stale momentum.
     pub last_pan_ms: f64,
@@ -51,6 +63,8 @@ impl CameraManager {
 
 /// Input parameters for a camera update tick.
 pub struct CameraUpdateParams<'a> {
+    /// Camera steps elapsed since the last update.
+    pub steps: f64,
     pub state: &'a GameState,
     pub player_id: Option<PlayerId>,
     pub canvas_ref: &'a NodeRef,
@@ -74,7 +88,7 @@ pub struct CameraUpdateParams<'a> {
     pub board_rotated_180: bool,
 }
 
-/// Advances the camera state by one tick using inputs and game state.
+/// Advances the camera state by `params.steps` steps using inputs and game state.
 ///
 /// `manager` is the mutable camera state, `params` contains context and settings.
 /// Returns `true` if the camera state changed and requires a re-render.
@@ -89,7 +103,7 @@ pub fn update_camera(manager: &mut CameraManager, params: CameraUpdateParams<'_>
 
     // 1. Zoom interpolation
     if (manager.target_zoom - manager.zoom).abs() > 0.000001 {
-        let factor = params.zoom_lerp;
+        let factor = lerp_factor(params.zoom_lerp, params.steps);
         let old_z = manager.zoom;
         manager.zoom += (manager.target_zoom - manager.zoom) * factor;
         let ratio = manager.zoom / old_z;
@@ -135,8 +149,15 @@ pub fn update_camera(manager: &mut CameraManager, params: CameraUpdateParams<'_>
         if manager.velocity.x.abs() > params.velocity_cutoff
             || manager.velocity.y.abs() > params.velocity_cutoff
         {
-            manager.camera += manager.velocity;
-            manager.velocity *= params.inertia_decay;
+            // Distance a velocity decaying every step covers over the elapsed steps.
+            let decay = params.inertia_decay.powf(params.steps);
+            let distance = if params.inertia_decay < 1.0 {
+                (1.0 - decay) / (1.0 - params.inertia_decay)
+            } else {
+                params.steps
+            };
+            manager.camera += manager.velocity * distance;
+            manager.velocity *= decay;
             manager.target_camera = manager.camera;
             changed = true;
         } else {
@@ -290,7 +311,8 @@ pub fn update_camera(manager: &mut CameraManager, params: CameraUpdateParams<'_>
         } else {
             params.pan_lerp_dead
         }; // Slightly slower pan in menus and on end screens
-        manager.camera += (manager.target_camera - manager.camera) * factor;
+        manager.camera +=
+            (manager.target_camera - manager.camera) * lerp_factor(factor, params.steps);
         changed = true;
     }
 

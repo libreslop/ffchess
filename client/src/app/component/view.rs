@@ -73,6 +73,29 @@ pub fn render_app(props: AppViewProps) -> Html {
             spectators={reducer.spectators.clone()}
         />
     };
+    let stats_overlay = html! {
+        <div
+            data-testid="stats-overlay"
+            class="pointer-events-none"
+            style="
+                position: fixed;
+                right: 4px;
+                bottom: 4px;
+                padding: 0;
+                background: transparent;
+                color: #000;
+                font-family: monospace;
+                font-size: 11px;
+                line-height: 1.2;
+                text-align: right;
+                z-index: 50;
+            "
+        >
+            <div>{format!("FPS: {}", reducer.fps)}</div>
+            <div>{format!("Ping: {}ms", reducer.ping_ms)}</div>
+            <div>{format!("Board: {}x{}", reducer.state.board_size, reducer.state.board_size)}</div>
+        </div>
+    };
 
     html! {
         <div style="margin: 0; padding: 0; width: 100vw; height: 100vh; overflow: hidden; position: relative; background: #f0f2f5;">
@@ -129,6 +152,7 @@ pub fn render_app(props: AppViewProps) -> Html {
             } else if is_spectating {
                 <div data-testid="spectator-hud">
                     { leaderboard.clone() }
+                    { stats_overlay.clone() }
                     if reducer.spectate_ended() {
                         <SpectateEnded on_return={props.on_leave.clone()} />
                     }
@@ -136,27 +160,7 @@ pub fn render_app(props: AppViewProps) -> Html {
             } else if is_joined && !force_join_overlay {
                     <div data-testid="in-game-hud">
                         { leaderboard }
-                        <div
-                            data-testid="stats-overlay"
-                            class="pointer-events-none"
-                            style="
-                                position: fixed;
-                                right: 4px;
-                                bottom: 4px;
-                                padding: 0;
-                                background: transparent;
-                                color: #000;
-                                font-family: monospace;
-                                font-size: 11px;
-                                line-height: 1.2;
-                                text-align: right;
-                                z-index: 50;
-                            "
-                        >
-                            <div>{format!("FPS: {}", reducer.fps)}</div>
-                            <div>{format!("Ping: {}ms", reducer.ping_ms)}</div>
-                            <div>{format!("Board: {}x{}", reducer.state.board_size, reducer.state.board_size)}</div>
-                        </div>
+                        { stats_overlay }
                     </div>
             } else if let (Some(sender), true) = (tx.clone(), props.join_step.is_select_match()) {
                 <MatchBrowser

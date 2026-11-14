@@ -29,8 +29,6 @@ pub struct GlobalClientConfig {
     pub ping_interval_ms: u32,
     #[educe(Default = 50)]
     pub tick_interval_ms: u32,
-    #[educe(Default = 16)]
-    pub render_interval_ms: u32,
     #[educe(Default = 300)]
     pub disconnected_hide_ms: u32,
     #[educe(Default = 5000)]

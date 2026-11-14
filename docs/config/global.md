@@ -74,17 +74,16 @@ This file is injected into the landing page and deserialized by the Yew client a
 | `modes_refresh_ms` | integer (`u32`) | No | `5000` | Poll interval for `/api/modes`. The client clamps this to at least `500`. |
 | `ping_interval_ms` | integer (`u32`) | No | `2000` | WebSocket ping cadence. The client clamps this to at least `500`. |
 | `tick_interval_ms` | integer (`u32`) | No | `50` | Loaded into config, but currently unused by the runtime. |
-| `render_interval_ms` | integer (`u32`) | No | `16` | Interval used by the render timer that drives camera updates and FPS reporting. |
 | `disconnected_hide_ms` | integer (`u32`) | No | `300` | Loaded into config, but currently unused. The disconnect overlay hide delay is hard-coded separately. |
 | `fatal_auto_hide_ms` | integer (`u32`) | No | `5000` | Loaded into config, but currently unused. Fatal reset timing is hard-coded separately. |
 | `camera_zoom_min` | float | No | `0.2` | Minimum allowed zoom after wheel and pinch input. |
 | `camera_zoom_max` | float | No | `2.0` | Maximum allowed zoom after wheel and pinch input. |
-| `zoom_lerp` | float | No | `0.15` | Smoothing factor used when interpolating toward `target_zoom`. |
-| `inertia_decay` | float | No | `0.94` | Per-frame decay applied to camera velocity after panning stops. |
-| `velocity_cutoff` | float | No | `0.1` | Velocity threshold below which inertial camera panning stops. |
+| `zoom_lerp` | float | No | `0.15` | Fraction of the remaining distance to `target_zoom` covered every 16 ms. The camera steps once per displayed frame and scales this by the time elapsed, so it zooms at the same speed on any refresh rate. |
+| `inertia_decay` | float | No | `0.94` | Decay applied to camera velocity every 16 ms after panning stops. |
+| `velocity_cutoff` | float | No | `0.1` | Velocity threshold, in pixels per 16 ms, below which inertial camera panning stops. |
 | `pan_idle_ms` | float | No | `50.0` | How long, in milliseconds, a pan can hold still before releasing it no longer carries momentum. |
-| `pan_lerp_alive` | float | No | `0.15` | Camera interpolation speed while the local player is alive. |
-| `pan_lerp_dead` | float | No | `0.08` | Camera interpolation speed in menu/dead/victory states. |
+| `pan_lerp_alive` | float | No | `0.15` | Fraction of the remaining distance to the camera target covered every 16 ms while the local player is alive or spectating. |
+| `pan_lerp_dead` | float | No | `0.08` | Fraction of the remaining distance to the camera target covered every 16 ms in menu/dead/victory states. |
 | `tile_size_px` | float | No | `40.0` | Base world-tile size before zoom is applied. |
 | `death_zoom` | float | No | `1.3` | Target zoom when the death or victory camera takes over. |
 | `scroll_zoom_base` | float | No | `1.2` | Exponential base used for wheel zoom scaling. Values above `1.0` make zoom responsive without going unstable. |
@@ -108,7 +107,6 @@ This file is injected into the landing page and deserialized by the Yew client a
   "title_pieces": ["king", "queen", "rook", "bishop", "knight", "pawn"],
   "modes_refresh_ms": 5000,
   "ping_interval_ms": 2000,
-  "render_interval_ms": 16,
 
   // Camera tuning
   "camera_zoom_min": 0.2,

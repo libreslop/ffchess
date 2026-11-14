@@ -39,7 +39,7 @@ pub fn leaderboard(props: &LeaderboardProps) -> Html {
                             let is_self = props.self_id == p.id;
                             let display_name = if p.name.trim().is_empty() { "An Unnamed Player" } else { &p.name };
                             html! {
-                                <div style={format!("display: flex; justify-content: space-between; gap: 16px; font-size: 0.9em; font-weight: bold; color: {};", p.color.as_ref())}>
+                                <div style={format!("display: flex; justify-content: space-between; gap: 16px; font-size: 0.9em; font-weight: bold; color: color-mix(in srgb, {} 85%, white);", p.color.as_ref())}>
                                     <span style={format!("overflow: hidden; text-overflow: ellipsis; white-space: nowrap; {}", if is_self { "text-decoration: underline;" } else { "" })}>{display_name}</span>
                                     <span>{p.score.to_string()}</span>
                                 </div>
@@ -67,7 +67,7 @@ fn spectator_list(props: &SpectatorListProps) -> Html {
     }
     let hidden = props.names.len().saturating_sub(MAX_LISTED);
     html! {
-        <div data-testid="spectator-list" style="position: absolute; top: 50%; right: 10px; transform: translateY(-50%); padding: 5px; width: 200px; z-index: 60; pointer-events: none; display: flex; flex-direction: column; gap: 3px; font-size: 0.8em; color: #6b7280; text-align: right;">
+        <div data-testid="spectator-list" style="position: absolute; top: 50%; right: 10px; transform: translateY(-50%); padding: 5px; width: 200px; z-index: 60; pointer-events: none; display: flex; flex-direction: column; gap: 3px; font-size: 0.8em; color: #818793; text-align: right;">
             <span style="font-weight: bold; text-transform: uppercase; letter-spacing: 1px; font-size: 0.85em;">
                 {"Spectators"}
             </span>
