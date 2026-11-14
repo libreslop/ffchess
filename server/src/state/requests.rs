@@ -14,7 +14,7 @@ use std::sync::Arc;
 const MAX_NAME_LEN: usize = 32;
 
 /// Longest chat sender name used for guests, in characters.
-const MAX_GUEST_NAME_CHARS: usize = 32;
+pub(super) const MAX_GUEST_NAME_CHARS: usize = 32;
 
 /// Chat color of players who are not in a match.
 const GUEST_CHAT_COLOR: &str = "#555555";
@@ -63,6 +63,8 @@ impl Lobby {
                 },
             ),
             ClientMessage::Leave => self.leave(conn),
+            ClientMessage::ListMatches => self.send_match_list(conn),
+            ClientMessage::Spectate { name, target } => self.spectate(conn, name, target),
             ClientMessage::QueueAction(request) => {
                 if let Some(binding) = self.bindings.get(&conn.id) {
                     binding.instance.submit_action(binding.player_id, request);
@@ -74,7 +76,7 @@ impl Lobby {
                 }
             }
             ClientMessage::SetPreviewDefault { enabled } => {
-                if conn.is_queue_mode {
+                if conn.is_queue_mode && !self.is_spectating(conn) {
                     self.set_preview_default(conn, enabled);
                 }
             }
@@ -87,6 +89,7 @@ impl Lobby {
 
     /// Releases everything a closed connection held.
     pub(super) fn close_connection(&mut self, conn: &Connection) {
+        self.stop_spectating(conn);
         if let Some(binding) = self.bindings.remove(&conn.id) {
             binding.instance.leave(binding.player_id);
         }
@@ -105,6 +108,7 @@ impl Lobby {
             Ok(name) => name,
             Err(error) => return conn.send_error(error),
         };
+        self.stop_spectating(conn);
         self.detach_binding(conn.id);
         self.cleanup_private_games();
         self.dequeue(&conn.mode_id, conn.id);
@@ -145,8 +149,9 @@ impl Lobby {
         }
     }
 
-    /// Leaves the current match or queue and goes back to watching.
+    /// Leaves the current match, queue, or spectated board and goes back to watching.
     fn leave(&mut self, conn: &Connection) {
+        self.stop_spectating(conn);
         if let Some(binding) = self.bindings.remove(&conn.id) {
             binding.instance.leave(binding.player_id);
             self.cleanup_private_games();
@@ -189,6 +194,9 @@ impl Lobby {
         if let Some(binding) = self.bindings.get(&conn.id) {
             return Some(binding.instance.clone());
         }
+        if let Some(instance) = self.spectated_instance(conn) {
+            return Some(instance.clone());
+        }
         let watched = conn
             .is_queue_mode
             .then(|| {
@@ -203,8 +211,8 @@ impl Lobby {
 
     /// Returns the name and color a connection chats with.
     ///
-    /// Players use their in-game identity, queued players their queue name, and spectators
-    /// the name their client suggests.
+    /// Players use their in-game identity, queued players their queue name, named spectators
+    /// the name they spectate under, and other watchers the name their client suggests.
     fn chat_identity(&self, conn: &Connection, name_hint: String) -> (String, ColorHex) {
         if let Some(identity) = self
             .bindings
@@ -213,14 +221,18 @@ impl Lobby {
         {
             return identity;
         }
-        let name = self.queued_name(&conn.mode_id, conn.id).unwrap_or_else(|| {
-            let trimmed = name_hint.trim();
-            if trimmed.is_empty() {
-                "Guest".to_string()
-            } else {
-                trimmed.chars().take(MAX_GUEST_NAME_CHARS).collect()
-            }
-        });
+        let name = self
+            .spectated_instance(conn)
+            .and_then(|instance| instance.spectator_name(conn.id))
+            .or_else(|| self.queued_name(&conn.mode_id, conn.id))
+            .unwrap_or_else(|| {
+                let trimmed = name_hint.trim();
+                if trimmed.is_empty() {
+                    "Guest".to_string()
+                } else {
+                    trimmed.chars().take(MAX_GUEST_NAME_CHARS).collect()
+                }
+            });
         (name, ColorHex::from(GUEST_CHAT_COLOR))
     }
 
@@ -240,7 +252,7 @@ impl Lobby {
     }
 
     /// Generates an "Adjective Noun" name from the configured name pool.
-    fn generate_name(&self) -> String {
+    pub(super) fn generate_name(&self) -> String {
         let pool = &self.config.name_pool;
         let mut rng = rand::thread_rng();
         let adjective = pool

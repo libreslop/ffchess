@@ -32,6 +32,7 @@ impl World {
 
         self.shrink_board();
         self.resolve_hooks(now);
+        self.release_spectators_if_finished();
         let update = self.update_message();
         self.outbox.broadcast(&update);
     }

@@ -4,11 +4,12 @@ use crate::app::GlobalClientConfig;
 use crate::app::focus::Slot;
 use crate::components::{
     DisconnectedScreen, EndScreen, EndScreenKind, ErrorToast, FatalNotification, GameView,
-    JoinScreen, Leaderboard, LeaveButton, NestedQueue, QueueBanner,
+    JoinScreen, Leaderboard, LeaveButton, MatchBrowser, NestedQueue, QueueBanner, SpectateEnded,
 };
 use crate::reducer::{GameStateReducer, MsgSender};
 use crate::ui_state::{Backdrop, CooldownSeconds, JoinStep};
 use common::models::ModeSummary;
+use common::protocol::SpectateTarget;
 use common::types::{KitId, ModeId};
 use yew::prelude::*;
 
@@ -37,6 +38,8 @@ pub struct AppViewProps {
     pub on_rejoin: Callback<MouseEvent>,
     pub rejoin_cooldown: CooldownSeconds,
     pub on_leave: Callback<MouseEvent>,
+    pub on_spectate: Callback<SpectateTarget>,
+    pub on_menu_spectate: Callback<MouseEvent>,
     pub quick_play_modes: Vec<ModeSummary>,
     pub on_quick_play: Callback<ModeId>,
     pub nested_queue: Option<NestedQueue>,
@@ -58,8 +61,18 @@ pub fn render_app(props: AppViewProps) -> Html {
         .as_ref()
         .is_none_or(|mode| mode.show_scoreboard);
     let victory = reducer.victory.clone();
+    let is_spectating = reducer.is_spectating();
     // Every screen past the name entry form can be left.
-    let on_main_menu = !is_joined && queue_status.is_none() && props.join_step.is_enter_name();
+    let on_main_menu =
+        !is_joined && !is_spectating && queue_status.is_none() && props.join_step.is_enter_name();
+    let leaderboard = html! {
+        <Leaderboard
+            players={reducer.state.players.values().cloned().collect::<Vec<_>>()}
+            self_id={player_id}
+            show_scores={show_scoreboard}
+            spectators={reducer.spectators.clone()}
+        />
+    };
 
     html! {
         <div style="margin: 0; padding: 0; width: 100vw; height: 100vh; overflow: hidden; position: relative; background: #f0f2f5;">
@@ -110,12 +123,18 @@ pub fn render_app(props: AppViewProps) -> Html {
                     survival_secs={reducer.stats.survival_secs}
                     on_rejoin={props.on_rejoin.clone()}
                     rejoin_cooldown={props.rejoin_cooldown}
+                    on_spectate={props.on_spectate.reform(|_| SpectateTarget::Own)}
                 />
+            } else if is_spectating {
+                <div data-testid="spectator-hud">
+                    { leaderboard.clone() }
+                    if reducer.spectate_ended() {
+                        <SpectateEnded on_return={props.on_leave.clone()} />
+                    }
+                </div>
             } else if is_joined && !force_join_overlay {
                     <div data-testid="in-game-hud">
-                        if show_scoreboard {
-                            <Leaderboard players={reducer.state.players.values().cloned().collect::<Vec<_>>()} self_id={player_id} />
-                        }
+                        { leaderboard }
                         <div
                             data-testid="stats-overlay"
                             class="pointer-events-none"
@@ -138,6 +157,13 @@ pub fn render_app(props: AppViewProps) -> Html {
                             <div>{format!("Board: {}x{}", reducer.state.board_size, reducer.state.board_size)}</div>
                         </div>
                     </div>
+            } else if let (Some(sender), true) = (tx.clone(), props.join_step.is_select_match()) {
+                <MatchBrowser
+                    matches={reducer.match_list.clone()}
+                    tx={sender}
+                    now={reducer.server_now()}
+                    on_select={props.on_spectate.reform(SpectateTarget::Match)}
+                />
             } else if (tx.is_some() && !has_match_result) || force_join_overlay {
                 <JoinScreen
                     player_name={props.player_name.clone()}
@@ -146,6 +172,7 @@ pub fn render_app(props: AppViewProps) -> Html {
                     landing_cooldown={props.landing_cooldown}
                     join_step={props.join_step}
                     on_join={props.on_join.clone()}
+                    on_spectate={props.on_menu_spectate.clone()}
                     error={reducer.error.as_ref().map(|notice| notice.error.clone())}
                     queue_status={queue_status.clone()}
                     is_loading={props.is_joining}

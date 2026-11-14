@@ -1,7 +1,9 @@
 //! Reducer actions and payloads for client state updates.
 
 use crate::reducer::types::{MsgSender, QueueStatus};
-use common::models::{GameModeClientConfig, GameState, Piece, PieceAction, Player, Shop};
+use common::models::{
+    GameModeClientConfig, GameState, MatchSummary, Piece, PieceAction, Player, Shop,
+};
 use common::protocol::{ChatLine, GameError, GameOverStats, VictoryFocusTarget};
 use common::rules::Catalog;
 use common::types::{ActionId, BoardSize, PieceId, PlayerId, SessionSecret, TimestampMs};
@@ -16,6 +18,7 @@ pub struct InitPayload {
     pub catalog: Catalog,
     pub chat_room_key: String,
     pub chat_history: Vec<ChatLine>,
+    pub spectators: Vec<String>,
 }
 
 /// Per-tick world snapshot payload.
@@ -24,6 +27,7 @@ pub struct UpdateStatePayload {
     pub pieces: Vec<Piece>,
     pub shops: Vec<Shop>,
     pub board_size: BoardSize,
+    pub spectators: Vec<String>,
 }
 
 /// Content of an overlay telling the player about a lost or refused connection.
@@ -108,4 +112,9 @@ pub enum GameAction {
     ConnectionEstablished,
     ResetForRejoin,
     Reset,
+    /// Leaves the local session to watch a board; the server answers with its Init.
+    BeginSpectate,
+    /// The spectated match ended.
+    SpectateEnded,
+    SetMatchList(Vec<MatchSummary>),
 }

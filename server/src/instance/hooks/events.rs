@@ -29,6 +29,8 @@ pub(in crate::instance) struct HookEvents {
     pub(super) kills: Vec<KillEvent>,
     pub(super) countdowns: Vec<u32>,
     pub(super) game_started: bool,
+    pub(in crate::instance) spectator_joins: Vec<String>,
+    pub(in crate::instance) spectator_leaves: Vec<String>,
 }
 
 impl HookEvents {
@@ -41,6 +43,8 @@ impl HookEvents {
             && self.kills.is_empty()
             && self.countdowns.is_empty()
             && !self.game_started
+            && self.spectator_joins.is_empty()
+            && self.spectator_leaves.is_empty()
     }
 
     /// Returns the owners of captured pieces whose type matches `matches`.

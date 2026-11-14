@@ -11,6 +11,7 @@ mod lobby;
 mod preview;
 mod queue;
 mod requests;
+mod spectate;
 
 pub use connection::Connection;
 
@@ -84,6 +85,7 @@ impl ServerState {
         }
         let mut lobby = self.lobby();
         lobby.refresh_previews();
+        lobby.prune_spectators();
         lobby.cleanup_private_games();
     }
 }

@@ -20,6 +20,10 @@ pub enum HookTrigger {
     OnQueueCountdown,
     #[serde(rename = "OnGameStart")]
     OnGameStart,
+    #[serde(rename = "OnSpectatorJoin")]
+    OnSpectatorJoin,
+    #[serde(rename = "OnSpectatorLeave")]
+    OnSpectatorLeave,
 }
 
 /// Effect applied when a hook trigger matches.
@@ -55,6 +59,8 @@ pub enum SupportedHook {
     SystemChatOnPlayerKilled,
     SystemChatOnQueueCountdown,
     SystemChatOnGameStart,
+    SystemChatOnSpectatorJoin,
+    SystemChatOnSpectatorLeave,
 }
 
 /// Trigger-action hook for game events.
@@ -103,6 +109,12 @@ impl HookConfig {
             (HookTrigger::OnGameStart, HookAction::SystemChatMessage) => {
                 Some(SupportedHook::SystemChatOnGameStart)
             }
+            (HookTrigger::OnSpectatorJoin, HookAction::SystemChatMessage) => {
+                Some(SupportedHook::SystemChatOnSpectatorJoin)
+            }
+            (HookTrigger::OnSpectatorLeave, HookAction::SystemChatMessage) => {
+                Some(SupportedHook::SystemChatOnSpectatorLeave)
+            }
             _ => None,
         }
     }
@@ -138,7 +150,9 @@ impl HookConfig {
             | SupportedHook::SystemChatOnPlayerDisconnect
             | SupportedHook::SystemChatOnPlayerKilled
             | SupportedHook::SystemChatOnQueueCountdown
-            | SupportedHook::SystemChatOnGameStart => HookVictoryFocus::KeepCurrent,
+            | SupportedHook::SystemChatOnGameStart
+            | SupportedHook::SystemChatOnSpectatorJoin
+            | SupportedHook::SystemChatOnSpectatorLeave => HookVictoryFocus::KeepCurrent,
         })
     }
 }

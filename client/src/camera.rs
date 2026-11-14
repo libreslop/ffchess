@@ -240,6 +240,19 @@ pub fn update_camera(manager: &mut CameraManager, params: CameraUpdateParams<'_>
             manager.input_locked = false;
             changed = true;
         }
+    } else if params.phase == ClientPhase::Spectating {
+        manager.was_alive = false;
+        manager.last_tracked_king_id = None;
+        manager.last_tracked_join_time = None;
+        manager.input_locked = false;
+        // Free panning, pulled back once the view centre leaves the board.
+        if !params.is_dragging {
+            let tile_size = params.tile_size_px * manager.zoom;
+            let bounded = board_bounds(params.state.board_size, tile_size).clamp(manager.camera);
+            if bounded != manager.camera {
+                manager.target_camera = bounded;
+            }
+        }
     } else if matches!(params.phase, ClientPhase::Menu | ClientPhase::Queued) {
         // Menu / Choose Army screen
         // In this coordinate system, (0,0) is the center of the board
@@ -262,11 +275,11 @@ pub fn update_camera(manager: &mut CameraManager, params: CameraUpdateParams<'_>
         && ((manager.target_camera.x - manager.camera.x).abs() > 0.1
             || (manager.target_camera.y - manager.camera.y).abs() > 0.1)
     {
-        let factor = if is_alive {
+        let factor = if is_alive || params.phase == ClientPhase::Spectating {
             params.pan_lerp_alive
         } else {
             params.pan_lerp_dead
-        }; // Slightly slower pan in menus
+        }; // Slightly slower pan in menus and on end screens
         manager.camera += (manager.target_camera - manager.camera) * factor;
         changed = true;
     }
@@ -284,6 +297,27 @@ pub fn update_camera(manager: &mut CameraManager, params: CameraUpdateParams<'_>
     }
 
     changed
+}
+
+/// Area of camera positions, in pixels, whose view centre lies on the board.
+struct CameraBounds {
+    min: Vec2,
+    max: Vec2,
+}
+
+impl CameraBounds {
+    /// Returns the point of the bounds closest to `camera`.
+    fn clamp(&self, camera: Vec2) -> Vec2 {
+        camera.clamp(self.min, self.max)
+    }
+}
+
+/// Returns the camera bounds of a board of `board_size` drawn with `tile_size` pixel squares.
+fn board_bounds(board_size: BoardSize, tile_size: f64) -> CameraBounds {
+    CameraBounds {
+        min: Vec2::splat(-board_size.half() as f64 * tile_size),
+        max: Vec2::splat(board_size.limit_pos() as f64 * tile_size),
+    }
 }
 
 fn start_camera_pan(

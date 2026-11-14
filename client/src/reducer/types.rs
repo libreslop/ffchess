@@ -2,7 +2,7 @@
 
 use crate::premoves::PremoveQueue;
 use crate::utils::DEFAULT_RESPAWN_COOLDOWN;
-use common::models::{GameModeClientConfig, GameState, Player};
+use common::models::{GameModeClientConfig, GameState, MatchSummary, Player};
 use common::protocol::{ChatLine, ClientMessage, GameError, VictoryFocusTarget};
 use common::rules::Catalog;
 use common::types::{
@@ -19,6 +19,17 @@ pub enum ClientPhase {
     Joining,
     Alive,
     Dead,
+    /// Watching a board as a named spectator, without playing on it.
+    Spectating,
+}
+
+/// Progress of watching a board as a named spectator.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum SpectateStatus {
+    /// The board is live; the server sends updates.
+    Watching,
+    /// The spectated match ended; the last board stays shown.
+    Ended,
 }
 
 /// Queue state shown while waiting for a matchmaking game to start.
@@ -123,6 +134,11 @@ pub struct GameStateReducer {
     pub queue_status: Option<QueueStatus>,
     pub phase: ClientPhase,
     pub chat: ChatLog,
+    pub spectate: Option<SpectateStatus>,
+    /// Names of the named spectators of the shown board.
+    pub spectators: Vec<String>,
+    /// Running matches offered for spectating, once the server listed them.
+    pub match_list: Option<Vec<MatchSummary>>,
 }
 
 impl GameStateReducer {
@@ -146,11 +162,30 @@ impl GameStateReducer {
         self.is_dead || self.is_victory()
     }
 
-    /// Returns true while the client plays or queues, so moving elsewhere must tell the server.
+    /// Returns true while the client plays, queues, or spectates, so moving elsewhere must tell
+    /// the server.
     pub fn has_session(&self) -> bool {
         self.phase == ClientPhase::Alive
             || self.queue_status.is_some()
             || self.active_player_id().is_some()
+            || self.spectate.is_some()
+    }
+
+    /// Returns true while the client watches a board as a named spectator, ended or not.
+    pub fn is_spectating(&self) -> bool {
+        self.spectate.is_some()
+    }
+
+    /// Returns true once the spectated match ended.
+    pub fn spectate_ended(&self) -> bool {
+        self.spectate == Some(SpectateStatus::Ended)
+    }
+
+    /// Returns true when the mode matches players through a queue of separate matches.
+    pub fn is_queue_mode(&self) -> bool {
+        self.mode
+            .as_ref()
+            .is_some_and(|mode| mode.queue_players.as_u32() >= 2)
     }
 
     /// Returns true while the local player still has a place on the board, winners included.

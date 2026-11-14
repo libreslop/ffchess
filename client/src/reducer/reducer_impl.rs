@@ -1,7 +1,9 @@
 //! Reducer implementation for applying actions to client state.
 
 use super::actions::{DisconnectNotice, GameAction};
-use super::types::{ClientPhase, ErrorNotice, GameStateReducer, MatchStats, Victory};
+use super::types::{
+    ClientPhase, ErrorNotice, GameStateReducer, MatchStats, SpectateStatus, Victory,
+};
 use common::protocol::{ChatLine, ClientMessage, GameError};
 use common::types::{PlayerId, TimestampMs};
 use std::rc::Rc;
@@ -103,8 +105,9 @@ impl Reducible for GameStateReducer {
             GameAction::SetFPS(fps) => next.fps = fps,
             GameAction::SetDisconnected(notice) => next.set_disconnect_notice(notice),
             GameAction::ConnectionEstablished => {
-                // The server drops queue entries along with their connection.
+                // The server drops queue entries and spectators along with their connection.
                 next.queue_status = None;
+                next.spectate = None;
             }
             GameAction::ResetForRejoin => {
                 // Chat stays visible until the next Init confirms a room switch.
@@ -115,6 +118,18 @@ impl Reducible for GameStateReducer {
                 next.reset_session();
                 next.chat = Default::default();
             }
+            GameAction::BeginSpectate => {
+                // The board stays until the server's Init replaces it, so watching the match
+                // just lost does not flash back to the menu board.
+                next.leave_session();
+                next.spectate = Some(SpectateStatus::Watching);
+            }
+            GameAction::SpectateEnded => {
+                // The server releases every spectator of a finished match.
+                next.spectate = Some(SpectateStatus::Ended);
+                next.spectators.clear();
+            }
+            GameAction::SetMatchList(matches) => next.match_list = Some(matches),
         }
         next.phase = compute_phase(&next);
         next.into()
@@ -161,12 +176,19 @@ impl GameStateReducer {
         };
     }
 
-    /// Returns to spectating the preview board, dropping the local session.
+    /// Returns to watching the preview board, dropping the local session.
     fn reset_session(&mut self) {
+        self.leave_session();
+        self.state = self.menu_preview_state.clone().unwrap_or_default();
+        self.spectate = None;
+        self.match_list = None;
+    }
+
+    /// Drops the local player, queue, and match result, keeping the shown board.
+    fn leave_session(&mut self) {
         self.player_id = Some(PlayerId::nil());
         self.session_secret = None;
         self.move_unlock_at = None;
-        self.state = self.menu_preview_state.clone().unwrap_or_default();
         self.premoves.clear();
         self.error = None;
         self.clear_disconnect_ui();
@@ -193,7 +215,9 @@ impl GameStateReducer {
 /// Derives the session phase from authoritative server state plus the local death flag.
 fn compute_phase(state: &GameStateReducer) -> ClientPhase {
     let Some(player_id) = state.active_player_id() else {
-        return if state.queue_status.is_some() {
+        return if state.is_spectating() {
+            ClientPhase::Spectating
+        } else if state.queue_status.is_some() {
             ClientPhase::Queued
         } else {
             ClientPhase::Menu

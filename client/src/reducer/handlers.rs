@@ -16,6 +16,7 @@ impl GameStateReducer {
             catalog,
             chat_room_key,
             chat_history,
+            spectators,
         } = payload;
         self.player_id = Some(player_id);
         self.session_secret = Some(session_secret);
@@ -23,6 +24,7 @@ impl GameStateReducer {
         self.state = state;
         self.mode = Some(mode);
         self.catalog = Rc::new(catalog);
+        self.spectators = spectators;
         self.chat = ChatLog {
             room_key: Some(chat_room_key),
             lines: chat_history,
@@ -53,6 +55,7 @@ impl GameStateReducer {
         self.state.players = payload.players.into_iter().map(|p| (p.id, p)).collect();
         self.state.pieces = payload.pieces.into_iter().map(|p| (p.id, p)).collect();
         self.state.shops = payload.shops;
+        self.spectators = payload.spectators;
 
         let Some(player_id) = self.active_player_id() else {
             self.premoves.clear();

@@ -20,6 +20,8 @@ pub(super) struct Lobby {
     pub(super) queues: HashMap<ModeId, Vec<QueueEntry>>,
     pub(super) bindings: HashMap<ConnectionId, Binding>,
     pub(super) previews: HashMap<ModeId, PreviewWatchers>,
+    /// Boards that named spectators watch.
+    pub(super) spectators: HashMap<ConnectionId, Arc<GameInstance>>,
 }
 
 impl Lobby {
@@ -44,6 +46,7 @@ impl Lobby {
             queues: HashMap::new(),
             bindings: HashMap::new(),
             previews: HashMap::new(),
+            spectators: HashMap::new(),
         }
     }
 

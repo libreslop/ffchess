@@ -60,7 +60,15 @@ struct MessageContext<'a> {
     seconds: Option<u32>,
 }
 
-impl MessageContext<'_> {
+impl<'a> MessageContext<'a> {
+    /// Returns one context naming each of `names` as `{player}`.
+    fn players(names: &'a [String]) -> impl Iterator<Item = Self> {
+        names.iter().map(|name| Self {
+            player: Some(name),
+            ..Self::default()
+        })
+    }
+
     /// Substitutes `{player}`, `{killer}` and `{seconds}` in `template`.
     fn render(&self, template: &str) -> String {
         let mut rendered = template.to_string();
@@ -209,20 +217,14 @@ impl World {
             SupportedHook::SystemChatOnPlayerJoin => HookOutcome::matched(self.emit_system_chats(
                 hook,
                 "{player} joined the game",
-                events.joins.iter().map(|name| MessageContext {
-                    player: Some(name),
-                    ..MessageContext::default()
-                }),
+                MessageContext::players(&events.joins),
                 now,
             )),
             SupportedHook::SystemChatOnPlayerDisconnect => {
                 HookOutcome::matched(self.emit_system_chats(
                     hook,
                     "{player} disconnected",
-                    events.disconnects.iter().map(|name| MessageContext {
-                        player: Some(name),
-                        ..MessageContext::default()
-                    }),
+                    MessageContext::players(&events.disconnects),
                     now,
                 ))
             }
@@ -255,6 +257,22 @@ impl World {
                 events.game_started.then(MessageContext::default),
                 now,
             )),
+            SupportedHook::SystemChatOnSpectatorJoin => {
+                HookOutcome::matched(self.emit_system_chats(
+                    hook,
+                    "{player} is spectating",
+                    MessageContext::players(&events.spectator_joins),
+                    now,
+                ))
+            }
+            SupportedHook::SystemChatOnSpectatorLeave => {
+                HookOutcome::matched(self.emit_system_chats(
+                    hook,
+                    "{player} stopped spectating",
+                    MessageContext::players(&events.spectator_leaves),
+                    now,
+                ))
+            }
         }
     }
 

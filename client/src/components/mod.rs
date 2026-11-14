@@ -8,9 +8,11 @@ pub mod game_view;
 pub mod join_screen;
 pub mod leaderboard;
 pub mod leave_button;
+pub mod match_browser;
 mod pixel_font;
 pub mod queue_banner;
 pub mod shop_ui;
+pub mod spectate_ended;
 
 pub use disconnected_screen::DisconnectedScreen;
 pub use end_screen::{EndScreen, EndScreenKind};
@@ -20,4 +22,6 @@ pub use game_view::GameView;
 pub use join_screen::JoinScreen;
 pub use leaderboard::Leaderboard;
 pub use leave_button::LeaveButton;
+pub use match_browser::MatchBrowser;
 pub use queue_banner::{NestedQueue, QueueBanner};
+pub use spectate_ended::SpectateEnded;

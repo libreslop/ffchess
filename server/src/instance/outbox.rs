@@ -61,6 +61,13 @@ impl Outbox {
         }
     }
 
+    /// Sends `msg` to one spectator connection, if attached.
+    pub(super) fn send_to_viewer(&self, conn_id: ConnectionId, msg: ServerMessage) {
+        if let Some(tx) = self.viewers.get(&conn_id) {
+            let _ = tx.try_send(msg);
+        }
+    }
+
     /// Sends `msg` to every player and spectator.
     ///
     /// Channels whose connection is gone are dropped. A full channel only misses this message;

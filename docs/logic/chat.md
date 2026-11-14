@@ -22,9 +22,10 @@ Non-queue modes only expose the mode room. Queue modes expose both:
 `server/src/state/requests.rs` resolves the destination room for each `ClientMessage::Chat`:
 
 1. if the connection is actively bound to a player, send to that bound `GameInstance`,
-2. otherwise, for queue modes, try the currently watched preview instance,
-3. otherwise, for queue modes, fall back to the public joinable mode instance,
-4. otherwise, for non-queue modes, use the public lobby/mode instance.
+2. otherwise, if the connection is a named spectator, send to the spectated instance,
+3. otherwise, for queue modes, try the currently watched preview instance,
+4. otherwise, for queue modes, fall back to the public joinable mode instance,
+5. otherwise, for non-queue modes, use the public lobby/mode instance.
 
 That means the server never needs a separate chat-room registry. Room identity is derived from the
 same `GameInstance` that already owns the authoritative board state.
@@ -34,6 +35,7 @@ same `GameInstance` that already owns the authoritative board state.
 The chat identity logic also depends on connection state:
 
 - active players use their live in-game `player.name` and `player.color`,
+- named spectators use the name they spectate with and a grey sender color,
 - queued or unbound users use a grey sender color,
 - if the client supplies a blank or noisy fallback name, the server sanitizes it before use.
 

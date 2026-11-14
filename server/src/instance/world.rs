@@ -6,6 +6,7 @@ use super::hooks::HookEvents;
 use super::outbox::Outbox;
 use super::sessions::SessionBook;
 use super::setup::InstanceSetup;
+use super::spectators::SpectatorRoster;
 use crate::colors::ColorManager;
 use common::models::GameState;
 use common::protocol::{ChatLine, ServerMessage};
@@ -53,6 +54,7 @@ pub(super) struct World {
     pub(super) hooks: HookEvents,
     pub(super) chat: ChatHistory,
     pub(super) colors: ColorManager,
+    pub(super) spectators: SpectatorRoster,
     /// Players that already won and only remain to view the final board.
     pub(super) victors: HashSet<PlayerId>,
     pub(super) clock: InstanceClock,
@@ -75,6 +77,7 @@ impl World {
             hooks: HookEvents::default(),
             chat: ChatHistory::new(chat_ttl),
             colors: ColorManager::new(),
+            spectators: SpectatorRoster::default(),
             victors: HashSet::new(),
             clock: InstanceClock::new(now),
         }
@@ -129,6 +132,7 @@ impl World {
             catalog: Box::new((*self.setup.catalog).clone()),
             chat_room_key: self.setup.chat_room_key(),
             chat_history: self.chat.snapshot(now),
+            spectators: self.spectators.names(),
             sync_interval_ms,
         }
     }
@@ -140,6 +144,7 @@ impl World {
             pieces: self.state.pieces.values().cloned().collect(),
             shops: self.state.shops.clone(),
             board_size: self.state.board_size,
+            spectators: self.spectators.names(),
         }
     }
 }

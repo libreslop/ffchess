@@ -1,5 +1,5 @@
 use crate::models::config::JoinCameraCenterConfig;
-use crate::types::{DurationMs, ExprString, KitId, ModeId, PlayerCount};
+use crate::types::{ColorHex, DurationMs, ExprString, KitId, ModeId, PlayerCount, TimestampMs};
 use educe::Educe;
 use serde::{Deserialize, Serialize};
 
@@ -57,4 +57,22 @@ impl ModeSummary {
     pub fn is_queue_mode(&self) -> bool {
         self.queue_players.as_u32() >= 2
     }
+}
+
+/// A player of a running match, as listed to prospective spectators.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MatchPlayer {
+    pub name: String,
+    pub color: ColorHex,
+}
+
+/// A running private match of a queue mode that can be spectated.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MatchSummary {
+    /// Instance id of the match, used as its [`crate::protocol::SpectateTarget::Match`].
+    pub id: ModeId,
+    pub players: Vec<MatchPlayer>,
+    pub spectators: PlayerCount,
+    /// Server time the match started.
+    pub started_at: TimestampMs,
 }

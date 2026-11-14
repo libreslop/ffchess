@@ -13,6 +13,7 @@ mod players;
 mod sessions;
 mod setup;
 mod shops;
+mod spectators;
 mod ticks;
 mod world;
 
@@ -20,7 +21,7 @@ pub use players::JoinRequest;
 
 use crate::time::now_ms;
 use crate::types::{ClientTx, ConnectionId};
-use common::models::{GameModeConfig, GameState};
+use common::models::{GameModeConfig, GameState, MatchPlayer, MatchSummary};
 use common::protocol::{ActionRequest, ChatLine, GameError, ServerMessage};
 use common::rules::Catalog;
 use common::types::{
@@ -168,6 +169,45 @@ impl GameInstance {
     /// Returns true when `conn_id` watches this instance as a spectator.
     pub fn has_viewer(&self, conn_id: ConnectionId) -> bool {
         self.world().outbox.has_viewer(conn_id)
+    }
+
+    /// Watches the instance as a named spectator, announcing the arrival in chat.
+    pub fn add_spectator(&self, conn_id: ConnectionId, tx: ClientTx, name: String) {
+        self.world().add_spectator(conn_id, tx, name);
+    }
+
+    /// Stops watching as a named spectator, announcing the departure in chat.
+    pub fn remove_spectator(&self, conn_id: ConnectionId) {
+        self.world().remove_spectator(conn_id);
+    }
+
+    /// Returns the name `conn_id` spectates under, while it spectates here.
+    pub fn spectator_name(&self, conn_id: ConnectionId) -> Option<String> {
+        self.world().spectators.name_of(conn_id).map(str::to_string)
+    }
+
+    /// Returns true once a private match has no competing player left.
+    pub fn is_finished(&self) -> bool {
+        self.world().is_finished()
+    }
+
+    /// Describes this match for the list of spectatable matches.
+    pub fn match_summary(&self) -> MatchSummary {
+        let world = self.world();
+        MatchSummary {
+            id: self.mode_id().clone(),
+            players: world
+                .state
+                .players
+                .values()
+                .map(|player| MatchPlayer {
+                    name: player.name.clone(),
+                    color: player.color.clone(),
+                })
+                .collect(),
+            spectators: PlayerCount::new(world.spectators.len() as u32),
+            started_at: world.clock.last_started_at,
+        }
     }
 
     /// Adds a player to the match.

@@ -108,6 +108,7 @@ fn to_action(message: ServerMessage, mode_id: &ModeId) -> GameAction {
             catalog,
             chat_room_key,
             chat_history,
+            spectators,
             sync_interval_ms: _,
         } => {
             if !player_id.is_nil() {
@@ -122,6 +123,7 @@ fn to_action(message: ServerMessage, mode_id: &ModeId) -> GameAction {
                 catalog: *catalog,
                 chat_room_key,
                 chat_history,
+                spectators,
             }))
         }
         ServerMessage::UpdateState {
@@ -129,11 +131,13 @@ fn to_action(message: ServerMessage, mode_id: &ModeId) -> GameAction {
             pieces,
             shops,
             board_size,
+            spectators,
         } => GameAction::UpdateState(Box::new(UpdateStatePayload {
             players,
             pieces,
             shops,
             board_size,
+            spectators,
         })),
         ServerMessage::ActionResult { id, result } => GameAction::ActionResult { id, result },
         ServerMessage::QueueState {
@@ -170,5 +174,7 @@ fn to_action(message: ServerMessage, mode_id: &ModeId) -> GameAction {
         ServerMessage::GameOver(stats) => GameAction::GameOver(stats),
         ServerMessage::Pong(sent_at, server_time) => GameAction::Pong(sent_at, server_time),
         ServerMessage::Chat { line } => GameAction::PushChatLine(line),
+        ServerMessage::MatchList { matches } => GameAction::SetMatchList(matches),
+        ServerMessage::SpectateEnded => GameAction::SpectateEnded,
     }
 }

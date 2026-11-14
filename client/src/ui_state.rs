@@ -9,6 +9,8 @@ pub enum JoinStep {
     #[default]
     EnterName,
     SelectKit,
+    /// Picking a running match of a queue mode to spectate.
+    SelectMatch,
 }
 
 impl JoinStep {
@@ -20,6 +22,11 @@ impl JoinStep {
     /// Returns true when kit selection should be shown.
     pub const fn is_select_kit(self) -> bool {
         matches!(self, Self::SelectKit)
+    }
+
+    /// Returns true when the list of matches to spectate should be shown.
+    pub const fn is_select_match(self) -> bool {
+        matches!(self, Self::SelectMatch)
     }
 }
 
@@ -82,7 +89,7 @@ impl CooldownSeconds {
 /// What sits behind floating UI such as the chat and the leave button.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Backdrop {
-    /// The bright board, seen while playing.
+    /// The bright board, seen while playing or spectating.
     LightBoard,
     /// The dimming overlay of menus, queues and end screens.
     DarkOverlay,
@@ -91,7 +98,8 @@ pub enum Backdrop {
 impl Backdrop {
     /// Returns the backdrop of the screen the client currently shows.
     pub fn of(reducer: &GameStateReducer) -> Self {
-        if reducer.phase == ClientPhase::Alive && !reducer.has_match_result() {
+        let watching = reducer.phase == ClientPhase::Spectating && !reducer.spectate_ended();
+        if (reducer.phase == ClientPhase::Alive && !reducer.has_match_result()) || watching {
             Self::LightBoard
         } else {
             Self::DarkOverlay

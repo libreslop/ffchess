@@ -137,6 +137,16 @@
     },
     "hooks": [
         {
+            "trigger": "OnSpectatorJoin",
+            "action": "SystemChatMessage",
+            "message": "{player} is spectating"
+        },
+        {
+            "trigger": "OnSpectatorLeave",
+            "action": "SystemChatMessage",
+            "message": "{player} stopped spectating"
+        },
+        {
             "trigger": "OnCapture",
             "target_piece_id": "rapid_king",
             "action": "EliminateOwner"

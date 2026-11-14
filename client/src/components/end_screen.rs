@@ -25,6 +25,8 @@ pub struct EndScreenProps {
     pub survival_secs: u64,
     pub on_rejoin: Callback<MouseEvent>,
     pub rejoin_cooldown: CooldownSeconds,
+    /// Keeps watching the match just played as a spectator.
+    pub on_spectate: Callback<MouseEvent>,
 }
 
 /// Returns a `text-shadow` drawing a black outline one font pixel thick around text whose font
@@ -40,7 +42,7 @@ fn pixel_outline(pixel_px: u32) -> String {
 }
 
 #[function_component(EndScreen)]
-/// Renders the end-of-match summary and rejoin button.
+/// Renders the end-of-match summary with the rejoin and spectate buttons.
 pub fn end_screen(props: &EndScreenProps) -> Html {
     let mobile = is_mobile();
     let title_pixel_px = title_pixel_px();
@@ -94,17 +96,23 @@ pub fn end_screen(props: &EndScreenProps) -> Html {
                         </div>
                     </div>
 
-                    <button onclick={props.on_rejoin.clone()} disabled={props.rejoin_cooldown.is_active()}
-                        style={format!("padding: 8px 40px; font-size: 1.2em; cursor: {}; background: {}; color: white; border: 3px solid {}; border-radius: 0; font-weight: 900; width: auto; transition: all 0.2s; text-transform: uppercase; letter-spacing: 2px;",
-                            if props.rejoin_cooldown.is_active() { "not-allowed" } else { "pointer" },
-                            if props.rejoin_cooldown.is_active() { "rgba(148, 163, 184, 0.2)" } else { "rgba(30, 41, 59, 0.4)" },
-                            if props.rejoin_cooldown.is_active() { "#94a3b8" } else { "#fff" })}>
-                        if props.rejoin_cooldown.is_active() {
-                            {format!("Wait ({}s)", props.rejoin_cooldown.as_u32())}
-                        } else {
-                            {"PLAY AGAIN"}
-                        }
-                    </button>
+                    <div style="display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">
+                        <button onclick={props.on_rejoin.clone()} disabled={props.rejoin_cooldown.is_active()}
+                            style={format!("padding: 8px 40px; font-size: 1.2em; cursor: {}; background: {}; color: white; border: 3px solid {}; border-radius: 0; font-weight: 900; width: auto; transition: all 0.2s; text-transform: uppercase; letter-spacing: 2px;",
+                                if props.rejoin_cooldown.is_active() { "not-allowed" } else { "pointer" },
+                                if props.rejoin_cooldown.is_active() { "rgba(148, 163, 184, 0.2)" } else { "rgba(30, 41, 59, 0.4)" },
+                                if props.rejoin_cooldown.is_active() { "#94a3b8" } else { "#fff" })}>
+                            if props.rejoin_cooldown.is_active() {
+                                {format!("Wait ({}s)", props.rejoin_cooldown.as_u32())}
+                            } else {
+                                {"PLAY AGAIN"}
+                            }
+                        </button>
+                        <button onclick={props.on_spectate.clone()}
+                            style="padding: 8px 24px; font-size: 1.2em; cursor: pointer; background: transparent; color: #cbd5e1; border: 3px solid #94a3b8; border-radius: 0; font-weight: 900; transition: all 0.2s; text-transform: uppercase; letter-spacing: 2px;">
+                            {"Spectate"}
+                        </button>
+                    </div>
                     <p style="margin-top: 16px; font-size: 0.8em; color: #cbd5e1; letter-spacing: 1px;">{"Tip: Press ENTER to play again"}</p>
                 </div>
             </div>

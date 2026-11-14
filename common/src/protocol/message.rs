@@ -1,8 +1,10 @@
-use crate::models::{GameModeClientConfig, GameState, Piece, PieceAction, Player, Shop};
+use crate::models::{
+    GameModeClientConfig, GameState, MatchSummary, Piece, PieceAction, Player, Shop,
+};
 use crate::protocol::error::GameError;
 use crate::rules::Catalog;
 use crate::types::{
-    ActionId, BoardCoord, BoardSize, ColorHex, KitId, PieceId, PlayerCount, PlayerId,
+    ActionId, BoardCoord, BoardSize, ColorHex, KitId, ModeId, PieceId, PlayerCount, PlayerId,
     QueuePosition, Score, SessionSecret, TimestampMs,
 };
 use serde::{Deserialize, Serialize};
@@ -49,6 +51,15 @@ pub struct GameOverStats {
     pub time_survived_secs: u64,
 }
 
+/// The board a client asks to spectate.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum SpectateTarget {
+    /// The match the connection last played in, or the mode's shared world when it has none.
+    Own,
+    /// A running private match of a queue mode, by its instance id.
+    Match(ModeId),
+}
+
 /// Messages sent from the client to the server.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ClientMessage {
@@ -58,7 +69,15 @@ pub enum ClientMessage {
         player_id: Option<PlayerId>,
         session_secret: Option<SessionSecret>,
     },
+    /// Leaves the current match, queue, or spectated board.
     Leave,
+    /// Asks for the running matches of a queue mode, answered by [`ServerMessage::MatchList`].
+    ListMatches,
+    /// Watches a board as a named spectator.
+    Spectate {
+        name: String,
+        target: SpectateTarget,
+    },
     QueueAction(ActionRequest),
     ClearActions {
         piece_id: PieceId,
@@ -85,6 +104,8 @@ pub enum ServerMessage {
         catalog: Box<Catalog>,
         chat_room_key: String,
         chat_history: Vec<ChatLine>,
+        /// Names of the named spectators of the board.
+        spectators: Vec<String>,
         sync_interval_ms: u32,
     },
     /// Full snapshot of the mutable world state, sent every server tick.
@@ -93,6 +114,7 @@ pub enum ServerMessage {
         pieces: Vec<Piece>,
         shops: Vec<Shop>,
         board_size: BoardSize,
+        spectators: Vec<String>,
     },
     /// Outcome of a queued action; every [`ActionRequest`] gets exactly one result.
     ///
@@ -113,6 +135,12 @@ pub enum ServerMessage {
         required_players: PlayerCount,
     },
     GameOver(GameOverStats),
+    /// Running matches of the connection's queue mode, newest first.
+    MatchList {
+        matches: Vec<MatchSummary>,
+    },
+    /// The spectated match ended, or was already over; the connection no longer spectates it.
+    SpectateEnded,
     Chat {
         line: ChatLine,
     },

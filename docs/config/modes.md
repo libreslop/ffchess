@@ -93,7 +93,7 @@ Untagged union: use exactly one of these objects.
 
 | Field | Type | Required | Default | Notes |
 | --- | --- | --- | --- | --- |
-| `trigger` | string enum | Yes | none | One of `OnCapture`, `OnCapturePieceActive`, `OnPlayerLeave`, `OnPlayerJoin`, `OnPlayerDisconnect`, `OnPlayerKilled`, `OnQueueCountdown`. |
+| `trigger` | string enum | Yes | none | One of `OnCapture`, `OnCapturePieceActive`, `OnPlayerLeave`, `OnPlayerJoin`, `OnPlayerDisconnect`, `OnPlayerKilled`, `OnQueueCountdown`, `OnGameStart`, `OnSpectatorJoin`, `OnSpectatorLeave`. |
 | `target_piece_id` | piece id or `null` | No | `null` | Piece filter for capture hooks. `null` means "all piece types". |
 | `players_left` | integer (`u32`) or `null` | No | `null` | Only used by `OnPlayerLeave` / `WinRemaining`. |
 | `action` | string enum | Yes | none | One of `EliminateOwner`, `WinCapturer`, `WinRemaining`, `SystemChatMessage`. |
@@ -116,6 +116,8 @@ executes these combinations:
 | `OnPlayerDisconnect` | `SystemChatMessage` | Broadcast one system chat line (yellow) for each player who left the board, by leaving or by losing the connection. |
 | `OnPlayerKilled` | `SystemChatMessage` | Broadcast one system chat line (yellow) for each king-kill event; supports `{player}` and `{killer}` variables. |
 | `OnQueueCountdown` | `SystemChatMessage` | Broadcast one system chat line (yellow) for each countdown second; supports `{seconds}` variable. |
+| `OnSpectatorJoin` | `SystemChatMessage` | Broadcast one system chat line (yellow) for each named spectator who started watching; supports `{player}`. Default message: `{player} is spectating`. |
+| `OnSpectatorLeave` | `SystemChatMessage` | Broadcast one system chat line (yellow) for each named spectator who stopped watching; supports `{player}`. Default message: `{player} stopped spectating`. |
 
 Any other pairing deserializes successfully but is ignored by hook resolution.
 

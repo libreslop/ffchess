@@ -42,6 +42,8 @@ pub struct JoinScreenProps {
     pub landing_cooldown: CooldownSeconds,
     pub join_step: JoinStep,
     pub on_join: Callback<KitId>,
+    /// Watches the selected mode instead of playing it.
+    pub on_spectate: Callback<MouseEvent>,
     pub error: Option<common::protocol::GameError>,
     pub queue_status: Option<QueueStatus>,
     pub is_loading: bool,
@@ -117,17 +119,24 @@ pub fn join_screen(props: &JoinScreenProps) -> Html {
                                     })
                                 }}
                                 style="padding: 8px 20px; border-radius: 0; border: 2px solid #cbd5e1; width: 100%; box-sizing: border-box; font-size: 1.2em; outline: none; background: #fff; text-align: center;"/>
-                            <button type="submit" disabled={props.landing_cooldown.is_active() || props.is_loading}
-                                style={format!("padding: 6px 40px; background: {}; color: #fff; border: 3px solid {}; border-radius: 0; font-weight: 900; cursor: {}; font-size: 1.2em; width: auto; text-transform: uppercase; letter-spacing: 1px;",
-                                    if props.landing_cooldown.is_active() || props.is_loading { "#94a3b8" } else { "#3b82f6" },
-                                    if props.landing_cooldown.is_active() || props.is_loading { "#64748b" } else { "#1e3a8a" },
-                                    if props.landing_cooldown.is_active() || props.is_loading { "not-allowed" } else { "pointer" })}>
-                                if props.landing_cooldown.is_active() {
-                                    {format!("Wait ({}s)", props.landing_cooldown.as_u32())}
-                                } else {
-                                    {"Play!"}
-                                }
-                            </button>
+                            <div style="display: flex; gap: 8px; justify-content: center;">
+                                <button type="submit" disabled={props.landing_cooldown.is_active() || props.is_loading}
+                                    style={format!("padding: 6px 40px; background: {}; color: #fff; border: 3px solid {}; border-radius: 0; font-weight: 900; cursor: {}; font-size: 1.2em; width: auto; text-transform: uppercase; letter-spacing: 1px;",
+                                        if props.landing_cooldown.is_active() || props.is_loading { "#94a3b8" } else { "#3b82f6" },
+                                        if props.landing_cooldown.is_active() || props.is_loading { "#64748b" } else { "#1e3a8a" },
+                                        if props.landing_cooldown.is_active() || props.is_loading { "not-allowed" } else { "pointer" })}>
+                                    if props.landing_cooldown.is_active() {
+                                        {format!("Wait ({}s)", props.landing_cooldown.as_u32())}
+                                    } else {
+                                        {"Play!"}
+                                    }
+                                </button>
+                                <button type="button" onclick={props.on_spectate.clone()} disabled={props.is_loading}
+                                    style={format!("padding: 6px 20px; background: transparent; color: #e2e8f0; border: 3px solid #cbd5e1; border-radius: 0; font-weight: 900; cursor: {}; font-size: 1.2em; text-transform: uppercase; letter-spacing: 1px;",
+                                        if props.is_loading { "not-allowed" } else { "pointer" })}>
+                                    {"Spectate"}
+                                </button>
+                            </div>
                         </div>
                     </form>
                 } else {

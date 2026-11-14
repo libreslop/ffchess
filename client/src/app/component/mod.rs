@@ -3,6 +3,7 @@
 mod callbacks;
 mod effects;
 mod quick_play;
+mod spectate;
 mod view;
 
 use crate::app::browser::PageMetadata;
@@ -30,6 +31,7 @@ use gloo_utils::document;
 use quick_play::{
     QuickPlayInputs, build_on_quick_play, build_on_stop_queuing, use_nested_queue_effect,
 };
+use spectate::{SpectateCallbacks, SpectateInputs, build_spectate_callbacks};
 use view::{AppViewProps, render_app};
 use yew::prelude::*;
 
@@ -166,6 +168,8 @@ pub fn app() -> Html {
 
     let has_match_result = reducer.has_match_result();
     let is_joined = reducer.phase == ClientPhase::Alive || has_match_result;
+    // Spectators sit on a board like players do, so menu effects leave them alone.
+    let is_on_board = is_joined || reducer.is_spectating();
     let is_queueing = reducer.queue_status.is_some();
 
     let lc_ref = use_mut_ref(|| *landing_cooldown);
@@ -191,7 +195,7 @@ pub fn app() -> Html {
         join_step.clone(),
         reducer.clone(),
         preview_default_ref,
-        is_joined,
+        is_on_board,
     );
 
     let rejoin_cooldown = use_state(CooldownSeconds::zero);
@@ -245,8 +249,19 @@ pub fn app() -> Html {
         })
     };
 
+    let SpectateCallbacks {
+        on_spectate,
+        on_menu_spectate,
+    } = build_spectate_callbacks(SpectateInputs {
+        session: focused_session.clone(),
+        player_name: player_name.clone(),
+        join_step: join_step.clone(),
+        rejoin_flow: rejoin_flow.clone(),
+        has_interacted: has_interacted.clone(),
+    });
+
     use_keyboard_shortcuts_effect(KeyboardShortcutEffectInputs {
-        is_joined,
+        is_joined: is_on_board,
         is_dead: reducer.is_dead,
         is_victory: reducer.is_victory(),
         join_step: join_step.clone(),
@@ -287,6 +302,8 @@ pub fn app() -> Html {
         on_rejoin,
         rejoin_cooldown: *rejoin_cooldown,
         on_leave: build_on_leave(leave_inputs, focused_session, focus.clone()),
+        on_spectate,
+        on_menu_spectate,
         on_quick_play,
         nested_queue,
     })
