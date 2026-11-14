@@ -37,13 +37,24 @@ impl TrailFlashes {
     /// failed themselves.
     ///
     /// Lines that vanish because their actions ran, were cleared, or are hidden while their
-    /// piece is dragged do not flash.
+    /// piece is dragged do not flash, and neither do lines of pieces that left the board;
+    /// flashes already running for such pieces stop.
     pub(super) fn observe(&mut self, projection: &Projection, now: f64) {
+        let alive = |piece_id| projection.state.pieces.contains_key(&piece_id);
+        for flash in &mut self.active {
+            flash.lines.retain(|line| alive(line.piece_id));
+            flash
+                .failed_moves
+                .retain(|failed_move| alive(failed_move.piece_id));
+        }
+        self.active.retain(|flash| !flash.lines.is_empty());
         let failed: Vec<PremoveLine> = self
             .last_lines
             .iter()
             .filter(|line| {
-                projection.failed.contains_key(&line.action) && !projection.lines.contains(line)
+                alive(line.piece_id)
+                    && projection.failed.contains_key(&line.action)
+                    && !projection.lines.contains(line)
             })
             .copied()
             .collect();

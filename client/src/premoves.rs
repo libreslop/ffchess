@@ -143,12 +143,14 @@ impl PremoveQueue {
             }
             Err(error) => {
                 let piece_id = self.items[index].piece_id;
+                // The piece left the board, so its trail vanishes without flashing.
+                let piece_gone = error == GameError::PieceNotFound;
                 let mut position = 0;
                 let mut dropped = Vec::new();
                 self.items.retain(|premove| {
                     let keep = position < index || premove.piece_id != piece_id;
                     position += 1;
-                    if !keep {
+                    if !keep && !piece_gone {
                         let failed_move = (premove.id == id).then(|| FailedMove::of(premove));
                         dropped.push((premove.id, failed_move.flatten()));
                     }

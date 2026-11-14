@@ -174,17 +174,30 @@ impl World {
         }
     }
 
-    /// Cancels the queues of pieces that left the board.
+    /// Cancels the queues of pieces that were disturbed or left the board.
+    ///
+    /// Actions of pieces that left the board fail with [`GameError::PieceNotFound`], so their
+    /// players can tell them apart from rejected actions of pieces still alive.
     pub(super) fn cancel_actions_of(&mut self, piece_ids: impl IntoIterator<Item = PieceId>) {
         for piece_id in piece_ids {
-            self.cancel_queue(piece_id);
+            let error = if self.state.pieces.contains_key(&piece_id) {
+                GameError::ActionCancelled
+            } else {
+                GameError::PieceNotFound
+            };
+            self.cancel_queue_with(piece_id, error);
         }
     }
 
     /// Cancels every queued action of `piece_id`.
     fn cancel_queue(&mut self, piece_id: PieceId) {
+        self.cancel_queue_with(piece_id, GameError::ActionCancelled);
+    }
+
+    /// Fails every queued action of `piece_id` with `error`.
+    fn cancel_queue_with(&mut self, piece_id: PieceId, error: GameError) {
         for queued in self.actions.take(piece_id) {
-            self.finish_action(queued, Err(GameError::ActionCancelled));
+            self.finish_action(queued, Err(error.clone()));
         }
     }
 
