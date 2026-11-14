@@ -84,6 +84,16 @@ pub struct FailedTrail {
     pub dark: bool,
 }
 
+/// Speed lines behind a piece that just jumped from one square to another.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MoveBlur {
+    pub piece_id: PieceId,
+    pub from: BoardCoord,
+    pub to: BoardCoord,
+    /// How far the lines have retracted towards `to`, from 0 to 1.
+    pub progress: f64,
+}
+
 /// Parameters for a single render pass.
 #[derive(Clone, Copy)]
 pub struct RenderParams<'a> {
@@ -93,7 +103,7 @@ pub struct RenderParams<'a> {
     pub dragged_piece: Option<DraggedPiece>,
     pub projection: &'a Projection,
     pub failed_trails: &'a [FailedTrail],
-    pub animated_positions: &'a HashMap<PieceId, Vec2>,
+    pub move_blurs: &'a [MoveBlur],
     pub camera_pos: Vec2,
     pub canvas_size: Vec2,
     pub zoom: f64,
@@ -103,14 +113,4 @@ pub struct RenderParams<'a> {
     pub active_shop_highlight_pos: Option<BoardCoord>,
     pub disable_fog_of_war: bool,
     pub clock_offset_ms: i64,
-}
-
-impl RenderParams<'_> {
-    /// Returns the square `piece` is drawn on, fractional while it slides.
-    pub(crate) fn displayed_square(&self, piece: &Piece) -> Vec2 {
-        self.animated_positions
-            .get(&piece.id)
-            .copied()
-            .unwrap_or_else(|| piece.position.0.as_dvec2())
-    }
 }

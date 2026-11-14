@@ -4,6 +4,7 @@ use super::color::{NPC_PIECE_COLOR, PieceIconColors, piece_icon_colors};
 use super::renderer::{ART_PIXELS_PER_TILE, ArtRect};
 use super::types::{PieceDrawParams, PieceNameDrawParams, PieceSvgKey, Renderer};
 use crate::math::vec2;
+use common::models::{GameState, Piece};
 use common::types::{PieceTypeId, TimestampMs};
 use gloo_net::http::Request;
 use wasm_bindgen::JsCast;
@@ -32,7 +33,7 @@ impl PieceDrawParams<'_> {
 impl Renderer {
     /// Draws a piece glyph and, for the local player's real pieces, its cooldown indicator.
     pub(super) fn draw_piece(&self, params: PieceDrawParams) {
-        let base_color = self.owner_color(&params);
+        let base_color = Self::team_color(params.piece, params.state);
         let colors = piece_icon_colors(&base_color);
         let svg_handle = self
             .catalog
@@ -55,17 +56,12 @@ impl Renderer {
         }
     }
 
-    fn owner_color(&self, params: &PieceDrawParams<'_>) -> String {
-        params
-            .piece
+    /// Returns the color of the team owning `piece`, or the NPC color for unowned pieces.
+    pub(super) fn team_color(piece: &Piece, state: &GameState) -> String {
+        piece
             .owner_id
-            .and_then(|owner_id| {
-                params
-                    .state
-                    .players
-                    .get(&owner_id)
-                    .map(|player| player.color.as_ref().to_string())
-            })
+            .and_then(|owner_id| state.players.get(&owner_id))
+            .map(|player| player.color.as_ref().to_string())
             .unwrap_or_else(|| NPC_PIECE_COLOR.to_string())
     }
 

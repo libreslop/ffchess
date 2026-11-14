@@ -276,6 +276,7 @@ impl Renderer {
         let hints = self.move_hints(&params);
         self.draw_quiet_hints(&hints, &geometry);
         self.draw_premove_arrows(&params, &geometry);
+        self.draw_move_blurs(&params, &geometry, &visibility);
         self.draw_pieces(&params, &geometry, &visibility);
         self.draw_shade_lines(&shades, &params, &geometry, &visibility);
         self.draw_capture_hints(&hints, &geometry);
@@ -436,7 +437,6 @@ impl Renderer {
                             ghost,
                             GHOST_ALPHA,
                             true,
-                            None,
                         ));
                     }
                     real.clone()
@@ -449,8 +449,7 @@ impl Renderer {
                 None => real.clone(),
             };
             if visibility.shows(shown.position) {
-                let animated = params.animated_positions.get(id).copied();
-                self.draw_piece(self.piece_params(params, geometry, &shown, 1.0, false, animated));
+                self.draw_piece(self.piece_params(params, geometry, &shown, 1.0, false));
             }
         }
     }
@@ -480,7 +479,7 @@ impl Renderer {
         self.ctx.set_shadow_offset_y(shadow_offset);
         self.draw_piece(PieceDrawParams {
             pos: lifted.pixel_pos(dragged.canvas_pos),
-            ..self.piece_params(params, &lifted, piece, 1.0, true, None)
+            ..self.piece_params(params, &lifted, piece, 1.0, true)
         });
         self.ctx.restore();
     }
@@ -493,9 +492,7 @@ impl Renderer {
         piece: &'a Piece,
         alpha: f64,
         is_ghost: bool,
-        animated: Option<Vec2>,
     ) -> PieceDrawParams<'a> {
-        let square = animated.unwrap_or_else(|| piece.position.0.as_dvec2());
         PieceDrawParams {
             piece,
             player_id: params.player_id,
@@ -503,7 +500,7 @@ impl Renderer {
             alpha,
             state: params.state,
             is_ghost,
-            pos: geometry.map_pos(square),
+            pos: geometry.map_pos(piece.position.0.as_dvec2()),
             clock_offset_ms: params.clock_offset_ms,
         }
     }
@@ -519,12 +516,11 @@ impl Renderer {
             if !king.piece_type.is_king() || !visibility.shows(king.position) {
                 continue;
             }
-            let square = params.displayed_square(king);
             self.draw_piece_name(PieceNameDrawParams {
                 piece: king,
                 geometry: *geometry,
                 state: params.state,
-                pos: geometry.map_pos(square),
+                pos: geometry.map_pos(king.position.0.as_dvec2()),
             });
         }
     }

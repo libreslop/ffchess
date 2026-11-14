@@ -1,11 +1,11 @@
 //! Game view module for canvas rendering and HUD overlays.
 
-mod anims;
 mod chat;
 mod component;
 mod geometry;
 mod input;
 mod loops;
+mod move_blurs;
 mod render;
 mod shop_context;
 mod tap;

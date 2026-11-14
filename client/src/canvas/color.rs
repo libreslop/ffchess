@@ -59,6 +59,11 @@ pub(crate) fn piece_icon_colors(base_hex: &str) -> PieceIconColors {
     }
 }
 
+/// Blends the hex color `hex` towards white by `amount`, from 0 (unchanged) to 1 (white).
+pub(crate) fn lighten(hex: &str, amount: f64) -> String {
+    blend_hex(parse_hex_color(hex).unwrap_or((85, 85, 85)), (255, 255, 255), amount)
+}
+
 fn parse_hex_color(hex: &str) -> Option<(u8, u8, u8)> {
     let hex = hex.trim_start_matches('#');
     if hex.len() == 6 {

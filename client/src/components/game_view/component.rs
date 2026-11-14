@@ -6,7 +6,7 @@ use super::input::{PointerContext, mouse_leave_handler};
 use super::loops::{
     CameraLoopInputs, WheelZoomInputs, use_animation_frame, use_camera_loop, use_wheel_zoom,
 };
-use super::render::{BoardFrame, use_board_render, use_piece_animations, use_trail_flashes};
+use super::render::{BoardFrame, use_board_render, use_move_blurs, use_trail_flashes};
 use super::shop_context::ActiveShopQuery;
 use super::touch::TouchContext;
 use super::types::{InputEnd, InputMove, InputStart, LatestStateSnapshot, ViewHandles};
@@ -112,7 +112,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
     }
     .resolve();
 
-    let anims = use_piece_animations(reducer);
+    let move_blurs = use_move_blurs(reducer);
     let trail_flashes = use_trail_flashes(
         &projection,
         globals.premove_fail_flashes,
@@ -122,7 +122,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
         renderer,
         reducer: reducer.clone(),
         projection: projection.clone(),
-        anims,
+        move_blurs,
         trail_flashes,
         active_shop: active_shop.clone(),
         selected: *selected,

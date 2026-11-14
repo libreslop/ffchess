@@ -1,6 +1,6 @@
 //! Drawing the board after every render.
 
-use super::anims::PieceAnimations;
+use super::move_blurs::MoveBlurs;
 use super::shop_context::ActiveShop;
 use super::trail_flashes::TrailFlashes;
 use crate::canvas::{DraggedPiece, RenderParams, Renderer};
@@ -19,7 +19,7 @@ pub(super) struct BoardFrame {
     pub(super) renderer: Option<Renderer>,
     pub(super) reducer: UseReducerHandle<GameStateReducer>,
     pub(super) projection: Rc<Projection>,
-    pub(super) anims: Rc<RefCell<PieceAnimations>>,
+    pub(super) move_blurs: Rc<RefCell<MoveBlurs>>,
     pub(super) trail_flashes: Rc<RefCell<TrailFlashes>>,
     pub(super) active_shop: Option<ActiveShop>,
     pub(super) selected: Option<PieceId>,
@@ -30,19 +30,19 @@ pub(super) struct BoardFrame {
     pub(super) tile_size_px: f64,
 }
 
-/// Starts slide animations whenever the authoritative pieces move.
+/// Starts speed lines whenever the authoritative pieces move.
 #[hook]
-pub(super) fn use_piece_animations(
+pub(super) fn use_move_blurs(
     reducer: &UseReducerHandle<GameStateReducer>,
-) -> Rc<RefCell<PieceAnimations>> {
-    let anims = use_mut_ref(PieceAnimations::default);
+) -> Rc<RefCell<MoveBlurs>> {
+    let move_blurs = use_mut_ref(MoveBlurs::default);
     {
-        let anims = anims.clone();
+        let move_blurs = move_blurs.clone();
         use_effect_with(reducer.state.pieces.clone(), move |pieces| {
-            anims.borrow_mut().observe(pieces, performance_now());
+            move_blurs.borrow_mut().observe(pieces, performance_now());
         });
     }
-    anims
+    move_blurs
 }
 
 /// Flashes premove trails that disappeared because their actions failed.
@@ -80,7 +80,7 @@ impl BoardFrame {
         let reducer = &self.reducer;
         let has_match_result = reducer.has_match_result();
         let now = performance_now();
-        let animated_positions = self.anims.borrow_mut().positions_at(now);
+        let move_blurs = self.move_blurs.borrow_mut().blurs_at(now);
         let failed_trails = self.trail_flashes.borrow_mut().trails_at(now);
         renderer.draw(RenderParams {
             state: &reducer.state,
@@ -89,7 +89,7 @@ impl BoardFrame {
             dragged_piece: self.dragged.filter(|_| !has_match_result),
             projection: &self.projection,
             failed_trails: &failed_trails,
-            animated_positions: &animated_positions,
+            move_blurs: &move_blurs,
             camera_pos: self.camera,
             canvas_size: self.canvas_size,
             zoom: self.zoom,

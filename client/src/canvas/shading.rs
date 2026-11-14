@@ -73,10 +73,7 @@ impl Renderer {
             };
             self.ctx
                 .set_fill_style_str(&paint_css(color, params.state, opacity));
-            self.fill_art_rect(
-                ArtRect::square(geometry.pos_art_origin(square)),
-                geometry,
-            );
+            self.fill_art_rect(ArtRect::square(geometry.pos_art_origin(square)), geometry);
         }
     }
 
@@ -109,7 +106,7 @@ impl Renderer {
                 continue;
             };
             let center = geometry.pos_center(square);
-            let direction = geometry.pos_center(params.displayed_square(other)) - center;
+            let direction = geometry.pos_center(other.position.0.as_dvec2()) - center;
             if direction == Vec2::ZERO {
                 continue;
             }
@@ -139,6 +136,6 @@ impl Renderer {
             .pieces
             .get(&piece)
             .filter(|piece| visibility.shows(piece.position))
-            .map(|piece| params.displayed_square(piece))
+            .map(|piece| piece.position.0.as_dvec2())
     }
 }
