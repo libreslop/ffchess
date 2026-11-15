@@ -7,7 +7,7 @@ use crate::reducer::QueueStatus;
 use crate::ui_state::{CooldownSeconds, JoinStep};
 use crate::utils::{event_targets_text_input, is_mobile};
 use common::models::{GameModeClientConfig, ModeSummary};
-use common::types::{KitId, ModeId, PLAYER_COLORS};
+use common::types::{KitId, ModeId};
 use gloo_events::EventListener;
 use gloo_net::http::Request;
 use rand::seq::SliceRandom;
@@ -62,6 +62,8 @@ pub struct JoinScreenProps {
     pub quick_play_reveal_ms: u32,
     /// Piece icons, by file stem under `assets/pieces`, that may sit beside the title.
     pub title_pieces: Vec<String>,
+    /// Player color of the title and the play button.
+    pub title_color: &'static str,
 }
 
 #[function_component(JoinScreen)]
@@ -79,6 +81,7 @@ pub fn join_screen(props: &JoinScreenProps) -> Html {
         .iter()
         .position(|mode| mode.id == props.selected_mode_id);
     let quick_play_active = props.queue_status.is_some() && !props.quick_play_modes.is_empty();
+    let play_colors = piece_icon_colors(props.title_color);
     let quick_play_highlight = use_quick_play_keys(
         quick_play_active,
         &props.quick_play_modes,
@@ -98,7 +101,7 @@ pub fn join_screen(props: &JoinScreenProps) -> Html {
                 vertical_padding, if mobile { "10px" } else { "30px" }
             )}>
                 if props.join_step.is_enter_name() {
-                    <Title pieces={props.title_pieces.clone()} pixel_px={title_pixel_px()} />
+                    <Title pieces={props.title_pieces.clone()} color={props.title_color} pixel_px={title_pixel_px()} />
                     <ModeList
                         modes={props.mode_options.clone()}
                         selected={selected_mode}
@@ -124,9 +127,9 @@ pub fn join_screen(props: &JoinScreenProps) -> Html {
                                 style="padding: 8px 20px; border-radius: 0; border: 2px solid #cbd5e1; width: 100%; box-sizing: border-box; font-size: 1.2em; outline: none; background: #fff; text-align: center;"/>
                             <div style="display: flex; gap: 8px; justify-content: center;">
                                 <button type="submit" disabled={props.landing_cooldown.is_active() || props.is_loading}
-                                    style={format!("padding: 6px 40px; background: {}; color: #fff; border: 3px solid {}; border-radius: 0; font-weight: 900; cursor: {}; font-size: 1.2em; width: auto; text-transform: uppercase; letter-spacing: 1px;",
-                                        if props.landing_cooldown.is_active() || props.is_loading { "#94a3b8" } else { "#3b82f6" },
-                                        if props.landing_cooldown.is_active() || props.is_loading { "#64748b" } else { "#1e3a8a" },
+                                    style={format!("padding: 6px 40px; background: {}; color: #fff; border: 3px solid {}; border-radius: 0; font-weight: 900; cursor: {}; font-size: 1.2em; width: auto; text-transform: uppercase; letter-spacing: 1px; text-shadow: {PLAY_TEXT_SHADOW};",
+                                        if props.landing_cooldown.is_active() || props.is_loading { "#94a3b8" } else { play_colors.secondary.as_str() },
+                                        if props.landing_cooldown.is_active() || props.is_loading { "#64748b" } else { play_colors.tertiary.as_str() },
                                         if props.landing_cooldown.is_active() || props.is_loading { "not-allowed" } else { "pointer" })}>
                                     <CountdownLabel cooldown={props.landing_cooldown} max={props.landing_cooldown_max} ready="Play!" />
                                 </button>
@@ -217,35 +220,35 @@ const PIECE_ICON_SIZE: u32 = 16;
 /// Shadow cast by the title and its piece icon.
 const TITLE_SHADOW: &str = "drop-shadow(3px 3px 0 rgba(0,0,0,0.6))";
 
+/// Shadow under the label of a play button, keeping white text legible on light player
+/// colors.
+pub(super) const PLAY_TEXT_SHADOW: &str = "2px 2px 0 rgba(0,0,0,0.35)";
+
 /// Properties for the title.
 #[derive(Properties, PartialEq)]
 struct TitleProps {
     /// Piece icons, by file stem under `assets/pieces`, one of which sits beside the title.
     pieces: Vec<String>,
+    /// Player color of the title and its icon.
+    color: &'static str,
     /// On-screen size of one title and icon pixel.
     pixel_px: u32,
 }
 
 #[function_component(Title)]
-/// Renders the title beside a random piece from `pieces`, both in one random player color.
+/// Renders the title beside a random piece from `pieces`, both in the player color `color`.
 ///
 /// The title and icon share one pixel grid, centered on each other; their heights differ by an
 /// even number of pixels, so centering keeps the grids aligned.
 fn title(props: &TitleProps) -> Html {
     let pieces = props.pieces.clone();
-    let (piece, color) = (*use_state(move || {
-        let mut rng = rand::thread_rng();
-        let piece = pieces.choose(&mut rng).cloned();
-        let color = *PLAYER_COLORS
-            .choose(&mut rng)
-            .expect("player palette is not empty");
-        (piece, color)
-    }))
-    .clone();
+    let piece = (*use_state(move || pieces.choose(&mut rand::thread_rng()).cloned())).clone();
+    let color = props.color;
     let icon_src = use_state(|| None::<String>);
     {
         let icon_src = icon_src.clone();
-        use_effect_with(piece.clone(), move |piece| {
+        use_effect_with((piece.clone(), color), move |(piece, color)| {
+            let color = *color;
             if let Some(piece) = piece.clone() {
                 spawn_local(async move {
                     let path = format!("/assets/pieces/{piece}.svg");

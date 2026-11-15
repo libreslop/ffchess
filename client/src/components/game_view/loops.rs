@@ -2,7 +2,9 @@
 
 use super::types::{FpsCounter, LatestStateSnapshot};
 use crate::app::GlobalClientConfig;
-use crate::camera::{CAMERA_STEP_MS, CameraManager, CameraUpdateParams, update_camera};
+use crate::camera::{
+    CAMERA_STEP_MS, CameraManager, CameraUpdateParams, FlightTiming, update_camera,
+};
 use crate::math::{Vec2, vec2};
 use crate::reducer::GameAction;
 use crate::utils::performance_now;
@@ -119,7 +121,11 @@ impl CameraFrameState {
                 velocity_cutoff: globals.velocity_cutoff,
                 pan_idle_ms: globals.pan_idle_ms,
                 pan_lerp_alive: globals.pan_lerp_alive,
-                pan_lerp_dead: globals.pan_lerp_dead,
+                flight_timing: FlightTiming {
+                    pan_ms: globals.focus_pan_ms,
+                    zoom_ms: globals.focus_zoom_ms,
+                    overlap_ms: globals.focus_overlap_ms,
+                },
                 tile_size_px: globals.tile_size_px,
                 death_zoom: globals.death_zoom,
                 board_rotated_180: reducer.board_rotated_180(),
@@ -183,7 +189,7 @@ pub(super) fn use_wheel_zoom(inputs: WheelZoomInputs) {
                     }
                     event.prevent_default();
                     let mut camera = camera.borrow_mut();
-                    if camera.input_locked || camera_locked {
+                    if camera.input_locked() || camera_locked {
                         return;
                     }
                     let factor = scroll_base.max(1.01).powf(-event.delta_y() / 100.0);

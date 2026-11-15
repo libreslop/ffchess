@@ -22,7 +22,8 @@ use common::types::ModeId;
 use effects::{
     KeyboardShortcutEffectInputs, PreviewDefaultRef, use_disconnected_overlay_effect,
     use_error_auto_clear_effect, use_fatal_error_reset_effect, use_joining_reset_effect,
-    use_keyboard_shortcuts_effect, use_landing_cooldown_effect, use_mode_refresh_effect,
+    use_keyboard_shortcuts_effect, use_landing_cooldown_effect, use_menu_color,
+    use_mode_refresh_effect,
     use_mode_url_navigation_effect, use_page_metadata_effect, use_player_name_sync_effect,
     use_preview_default_effect, use_rejoin_cooldown_effect, use_rejoin_flow_reset_effect,
     use_single_kit_step_reset_effect, use_ws_connection_effect,
@@ -171,6 +172,9 @@ pub fn app() -> Html {
     // Spectators sit on a board like players do, so menu effects leave them alone.
     let is_on_board = is_joined || reducer.is_spectating();
     let is_queueing = reducer.queue_status.is_some();
+    // Every screen past the name entry form can be left.
+    let on_main_menu = !is_on_board && !is_queueing && join_step.is_enter_name();
+    let menu_color = use_menu_color(on_main_menu);
 
     let lc_ref = use_mut_ref(|| *landing_cooldown);
     use_landing_cooldown_effect(
@@ -287,6 +291,8 @@ pub fn app() -> Html {
         show_disconnected: *show_disconnected,
         has_interacted: *has_interacted,
         is_joined,
+        on_main_menu,
+        menu_color,
         force_join_overlay: rejoin_flow.forces_join_overlay(has_match_result),
         player_name: (*player_name).clone(),
         join_step: *join_step,

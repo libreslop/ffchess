@@ -1,12 +1,17 @@
 //! Camera update logic for panning, zooming, and follow behavior.
 
+mod flight;
+
 use crate::math::Vec2;
 use crate::reducer::ClientPhase;
 use crate::utils::performance_now;
 use common::models::JoinCameraCenterConfig;
 use common::protocol::VictoryFocusTarget;
 use common::*;
+use flight::{CameraFlight, CameraPose};
 use yew::prelude::*;
+
+pub use flight::FlightTiming;
 
 /// Length of the step the camera tuning values are expressed per, in milliseconds.
 ///
@@ -30,8 +35,11 @@ pub struct CameraManager {
     pub velocity: Vec2,
     /// `performance.now()` of the last pan movement, used to drop stale momentum.
     pub last_pan_ms: f64,
-    pub input_locked: bool,
+    /// Scripted move in progress, which holds off player input until it lands.
+    flight: Option<CameraFlight>,
     pub was_alive: bool,
+    /// True while the menu or queue screen was showing on the last update.
+    was_in_menu: bool,
     pub last_tracked_king_id: Option<PieceId>,
     pub last_tracked_join_time: Option<TimestampMs>,
     pub last_king_grid_pos: glam::IVec2,
@@ -50,8 +58,9 @@ impl CameraManager {
             mouse_pos: Vec2::ZERO,
             velocity: Vec2::ZERO,
             last_pan_ms: 0.0,
-            input_locked: false,
+            flight: None,
             was_alive: false,
+            was_in_menu: false,
             last_tracked_king_id: None,
             last_tracked_join_time: None,
             last_king_grid_pos: glam::IVec2::ZERO,
@@ -59,6 +68,46 @@ impl CameraManager {
             last_touch_center: None,
         }
     }
+
+    /// Returns true while a scripted move is in progress and player input is ignored.
+    pub fn input_locked(&self) -> bool {
+        self.flight.is_some()
+    }
+
+    /// Returns the current pose, for squares of `tile_size_px` pixels at zoom 1.
+    fn pose(&self, tile_size_px: f64) -> CameraPose {
+        CameraPose {
+            center: self.camera / (tile_size_px * self.zoom),
+            zoom: self.zoom,
+        }
+    }
+
+    /// Jumps the camera to `pose`, leaving nothing to ease towards.
+    fn set_pose(&mut self, pose: CameraPose, tile_size_px: f64) {
+        self.camera = pose.center * tile_size_px * pose.zoom;
+        self.target_camera = self.camera;
+        self.zoom = pose.zoom;
+        self.target_zoom = pose.zoom;
+    }
+
+    /// Starts a scripted move to `target`, whose zoom is clamped to the allowed range.
+    fn fly_to(&mut self, target: CameraPose, params: &CameraUpdateParams<'_>) {
+        let target = CameraPose {
+            zoom: target.zoom.clamp(params.zoom_min, params.zoom_max),
+            ..target
+        };
+        self.flight = Some(CameraFlight::new(
+            self.pose(params.tile_size_px),
+            target,
+            params.flight_timing,
+        ));
+        self.velocity = Vec2::ZERO;
+    }
+}
+
+/// Returns the center of `square`, in squares from the board origin.
+fn square_center(square: glam::IVec2) -> Vec2 {
+    square.as_dvec2() + 0.5
 }
 
 /// Input parameters for a camera update tick.
@@ -82,7 +131,8 @@ pub struct CameraUpdateParams<'a> {
     /// Milliseconds a pan can hold still before its release stops carrying momentum.
     pub pan_idle_ms: f64,
     pub pan_lerp_alive: f64,
-    pub pan_lerp_dead: f64,
+    /// Timing of scripted moves: joining, the death or victory focus, and returning to the menu.
+    pub flight_timing: FlightTiming,
     pub tile_size_px: f64,
     pub death_zoom: f64,
     pub board_rotated_180: bool,
@@ -97,12 +147,15 @@ pub fn update_camera(manager: &mut CameraManager, params: CameraUpdateParams<'_>
     let player_id_val = params.player_id.unwrap_or_else(PlayerId::nil);
     let player = params.state.players.get(&player_id_val);
     let is_alive = params.phase == ClientPhase::Alive;
+    let in_menu = matches!(params.phase, ClientPhase::Menu | ClientPhase::Queued);
+    let entering_menu = in_menu && !manager.was_in_menu;
+    manager.was_in_menu = in_menu;
 
     manager.target_zoom = manager.target_zoom.clamp(params.zoom_min, params.zoom_max);
     manager.zoom = manager.zoom.clamp(params.zoom_min, params.zoom_max);
 
-    // 1. Zoom interpolation
-    if (manager.target_zoom - manager.zoom).abs() > 0.000001 {
+    // 1. Zoom interpolation, which a flight does itself
+    if manager.flight.is_none() && (manager.target_zoom - manager.zoom).abs() > 0.000001 {
         let factor = lerp_factor(params.zoom_lerp, params.steps);
         let old_z = manager.zoom;
         manager.zoom += (manager.target_zoom - manager.zoom) * factor;
@@ -113,7 +166,7 @@ pub fn update_camera(manager: &mut CameraManager, params: CameraUpdateParams<'_>
 
             // Mouse position relative to canvas center
             // When dead, anchor zoom to canvas center so the death focus stays accurate.
-            let mut mouse_delta = if params.phase == ClientPhase::Dead || manager.input_locked {
+            let mut mouse_delta = if params.phase == ClientPhase::Dead {
                 Vec2::ZERO
             } else {
                 Vec2::new(
@@ -136,7 +189,7 @@ pub fn update_camera(manager: &mut CameraManager, params: CameraUpdateParams<'_>
             // CameraPos' = (Zoom' / Zoom) * (Zoom * W) - (M - CanvasWidth/2)
             // CameraPos' = Ratio * (CameraPos + M - CanvasWidth/2) - (M - CanvasWidth/2)
 
-            if params.phase != ClientPhase::Dead && !manager.input_locked {
+            if params.phase != ClientPhase::Dead {
                 manager.camera = (manager.camera + mouse_delta) * ratio - mouse_delta;
                 manager.target_camera = (manager.target_camera + mouse_delta) * ratio - mouse_delta;
             }
@@ -180,21 +233,8 @@ pub fn update_camera(manager: &mut CameraManager, params: CameraUpdateParams<'_>
                 || manager.last_tracked_king_id != Some(p.king_id)
                 || manager.last_tracked_join_time != Some(p.join_time);
             if fresh_alive_entry {
-                let join_zoom = 1.0;
-                let join_tile_size = params.tile_size_px * join_zoom;
-                let join_king_pos = Vec2::new(
-                    king.position.0.x as f64 * join_tile_size + join_tile_size / 2.0,
-                    king.position.0.y as f64 * join_tile_size + join_tile_size / 2.0,
-                );
-                let join_camera =
-                    join_focus_camera_pos(&params, p.king_id, join_tile_size, join_king_pos);
-                start_camera_pan(
-                    manager,
-                    join_camera,
-                    join_zoom,
-                    params.zoom_min,
-                    params.zoom_max,
-                );
+                let center = join_focus_center(&params, p.king_id, square_center(king.position.0));
+                manager.fly_to(CameraPose { center, zoom: 1.0 }, &params);
                 manager.last_king_grid_pos = king.position.into();
                 manager.last_tracked_king_id = Some(p.king_id);
                 manager.last_tracked_join_time = Some(p.join_time);
@@ -227,7 +267,11 @@ pub fn update_camera(manager: &mut CameraManager, params: CameraUpdateParams<'_>
                 let delta = manager.camera - king_pos;
                 let dist = delta.length();
 
-                if dist > limit_radius_px && dist > 0.1 && !params.is_dragging {
+                if dist > limit_radius_px
+                    && dist > 0.1
+                    && !params.is_dragging
+                    && manager.flight.is_none()
+                {
                     // Not dragging: Smoothly interpolate back to the allowed region
                     let target_dist = limit_radius_px;
                     let ratio = target_dist / dist;
@@ -242,90 +286,78 @@ pub fn update_camera(manager: &mut CameraManager, params: CameraUpdateParams<'_>
             if params.is_victory {
                 match params.victory_focus_target {
                     VictoryFocusTarget::KeepCurrent => {
+                        manager.flight = None;
                         manager.target_camera = manager.camera;
                         manager.target_zoom = manager.zoom;
                     }
                     VictoryFocusTarget::BoardPosition(grid_pos) => {
-                        let target_zoom = params.death_zoom;
-                        let tile_size = params.tile_size_px * target_zoom;
-                        let desired_focus_x = grid_pos.0.x as f64 * tile_size + tile_size / 2.0;
-                        let desired_focus_y = grid_pos.0.y as f64 * tile_size + tile_size / 2.0;
-                        manager.target_camera = Vec2::new(desired_focus_x, desired_focus_y);
-                        manager.target_zoom = target_zoom.clamp(params.zoom_min, params.zoom_max);
+                        let focus = CameraPose {
+                            center: square_center(grid_pos.0),
+                            zoom: params.death_zoom,
+                        };
+                        manager.fly_to(focus, &params);
                     }
                 }
             } else {
                 // Just died, focus on last king position.
-                let grid_pos = manager.last_king_grid_pos;
-                let target_zoom = params.death_zoom;
-                let tile_size = params.tile_size_px * target_zoom;
-                let desired_focus_x = grid_pos.x as f64 * tile_size + tile_size / 2.0;
-                let desired_focus_y = grid_pos.y as f64 * tile_size + tile_size / 2.0;
-                manager.target_camera = Vec2::new(desired_focus_x, desired_focus_y);
-                manager.target_zoom = target_zoom.clamp(params.zoom_min, params.zoom_max);
+                let focus = CameraPose {
+                    center: square_center(manager.last_king_grid_pos),
+                    zoom: params.death_zoom,
+                };
+                manager.fly_to(focus, &params);
             }
             manager.was_alive = false;
             manager.last_tracked_king_id = None;
             manager.last_tracked_join_time = None;
             manager.velocity = Vec2::ZERO;
-            manager.input_locked = false;
             changed = true;
         }
     } else if params.phase == ClientPhase::Spectating {
         manager.was_alive = false;
         manager.last_tracked_king_id = None;
         manager.last_tracked_join_time = None;
-        manager.input_locked = false;
         // Free panning, pulled back once the view centre leaves the board.
-        if !params.is_dragging {
+        if !params.is_dragging && manager.flight.is_none() {
             let tile_size = params.tile_size_px * manager.zoom;
             let bounded = board_bounds(params.state.board_size, tile_size).clamp(manager.camera);
             if bounded != manager.camera {
                 manager.target_camera = bounded;
             }
         }
-    } else if matches!(params.phase, ClientPhase::Menu | ClientPhase::Queued) {
-        // Menu / Choose Army screen
-        // In this coordinate system, (0,0) is the center of the board
-        manager.target_camera = Vec2::ZERO;
-        manager.target_zoom = 1.0;
+    } else if in_menu {
+        // Menu / Choose Army screen, centred on the middle of the board.
+        if entering_menu {
+            let center = CameraPose {
+                center: Vec2::ZERO,
+                zoom: 1.0,
+            };
+            manager.fly_to(center, &params);
+        }
         manager.was_alive = false;
         manager.last_tracked_king_id = None;
         manager.last_tracked_join_time = None;
-        manager.input_locked = false;
         changed = true;
     } else {
         manager.was_alive = false;
         manager.last_tracked_king_id = None;
         manager.last_tracked_join_time = None;
-        manager.input_locked = false;
     }
 
-    // 5. Final interpolation for target_camera
-    if !params.is_dragging
+    // 5. Scripted flight, or easing towards target_camera
+    if let Some(flight) = &mut manager.flight {
+        let pose = flight.advance(params.steps * CAMERA_STEP_MS);
+        if flight.is_done() {
+            manager.flight = None;
+        }
+        manager.set_pose(pose, params.tile_size_px);
+        changed = true;
+    } else if !params.is_dragging
         && ((manager.target_camera.x - manager.camera.x).abs() > 0.1
             || (manager.target_camera.y - manager.camera.y).abs() > 0.1)
     {
-        let factor = if is_alive || params.phase == ClientPhase::Spectating {
-            params.pan_lerp_alive
-        } else {
-            params.pan_lerp_dead
-        }; // Slightly slower pan in menus and on end screens
-        manager.camera +=
-            (manager.target_camera - manager.camera) * lerp_factor(factor, params.steps);
+        manager.camera += (manager.target_camera - manager.camera)
+            * lerp_factor(params.pan_lerp_alive, params.steps);
         changed = true;
-    }
-
-    if manager.input_locked {
-        let delta = manager.target_camera - manager.camera;
-        let close_enough = delta.x.abs() < 1.0 && delta.y.abs() < 1.0;
-        let zoom_synced = (manager.target_zoom - manager.zoom).abs() < 0.01;
-        if close_enough && zoom_synced {
-            manager.camera = manager.target_camera;
-            manager.zoom = manager.target_zoom;
-            manager.input_locked = false;
-            changed = true;
-        }
     }
 
     changed
@@ -352,33 +384,15 @@ fn board_bounds(board_size: BoardSize, tile_size: f64) -> CameraBounds {
     }
 }
 
-fn start_camera_pan(
-    manager: &mut CameraManager,
-    target_camera: Vec2,
-    target_zoom: f64,
-    zoom_min: f64,
-    zoom_max: f64,
-) {
-    manager.target_camera = target_camera;
-    manager.target_zoom = target_zoom.clamp(zoom_min, zoom_max);
-    manager.velocity = Vec2::ZERO;
-    manager.input_locked = true;
-}
-
-fn join_focus_camera_pos(
-    params: &CameraUpdateParams<'_>,
-    king_id: PieceId,
-    tile_size: f64,
-    fallback: Vec2,
-) -> Vec2 {
+/// Returns the point, in squares, the camera centres on when the player joins: as the mode
+/// configures, or `fallback` when it names no piece the player owns.
+fn join_focus_center(params: &CameraUpdateParams<'_>, king_id: PieceId, fallback: Vec2) -> Vec2 {
     let Some(mode) = params.mode else {
         return fallback;
     };
     let focus = &mode.join_camera_center;
     match focus {
-        JoinCameraCenterConfig::Position { position } => {
-            Vec2::new(position[0] * tile_size, position[1] * tile_size)
-        }
+        JoinCameraCenterConfig::Position { position } => Vec2::new(position[0], position[1]),
         JoinCameraCenterConfig::Piece { piece_id } => {
             let player_id = params.player_id.unwrap_or_else(PlayerId::nil);
             let target_piece = params.state.pieces.get(&king_id).and_then(|king| {
@@ -391,12 +405,7 @@ fn join_focus_camera_pos(
                 }
             });
             target_piece
-                .map(|piece| {
-                    Vec2::new(
-                        piece.position.0.x as f64 * tile_size + tile_size / 2.0,
-                        piece.position.0.y as f64 * tile_size + tile_size / 2.0,
-                    )
-                })
+                .map(|piece| square_center(piece.position.0))
                 .unwrap_or(fallback)
         }
     }

@@ -1,5 +1,6 @@
 //! Data structures used by the canvas renderer.
 
+use super::fog::FogTexture;
 use super::renderer::FrameGeometry;
 use super::shading::ShadeCache;
 use crate::math::Vec2;
@@ -19,6 +20,8 @@ pub struct Renderer {
     pub(crate) catalog: Rc<Catalog>,
     pub(crate) svg_cache: Rc<RefCell<PieceSvgCache>>,
     pub(crate) shade_cache: Rc<RefCell<Option<ShadeCache>>>,
+    /// Fog painted for the current view radius.
+    pub(crate) fog_cache: Rc<RefCell<Option<FogTexture>>>,
 }
 
 /// Cached SVG templates and colored image instances for piece icons.

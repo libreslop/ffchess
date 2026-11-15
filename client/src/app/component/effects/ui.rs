@@ -5,8 +5,9 @@ use crate::reducer::{ClientPhase, DisconnectNotice, GameAction, GameStateReducer
 use crate::ui_state::{CooldownSeconds, JoinStep, RejoinFlow};
 use crate::utils::{DeathRecord, SessionStore, local_now, store_name};
 use common::protocol::ClientMessage;
-use common::types::ModeId;
+use common::types::{ModeId, PLAYER_COLORS};
 use gloo_timers::callback::{Interval, Timeout};
+use rand::seq::SliceRandom;
 use std::cell::RefCell;
 use std::rc::Rc;
 use yew::hook;
@@ -294,4 +295,38 @@ pub fn use_rejoin_cooldown_effect(
             .flatten();
         move || drop(interval)
     });
+}
+
+/// Player color of the main menu, re-rolled each time the menu opens.
+struct MenuColor {
+    /// True while the main menu showed on the last render.
+    open: bool,
+    color: &'static str,
+}
+
+impl MenuColor {
+    /// Picks a random player color.
+    fn random() -> &'static str {
+        PLAYER_COLORS
+            .choose(&mut rand::thread_rng())
+            .expect("player palette is not empty")
+    }
+}
+
+/// Returns the random player color the title and play buttons share, picked anew each time
+/// the main menu opens and kept until it next opens.
+///
+/// It changes on the render that opens the menu, so the title never shows the old color.
+#[hook]
+pub fn use_menu_color(on_main_menu: bool) -> &'static str {
+    let state = use_mut_ref(|| MenuColor {
+        open: on_main_menu,
+        color: MenuColor::random(),
+    });
+    let mut state = state.borrow_mut();
+    if on_main_menu && !state.open {
+        state.color = MenuColor::random();
+    }
+    state.open = on_main_menu;
+    state.color
 }

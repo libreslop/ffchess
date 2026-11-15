@@ -23,6 +23,10 @@ pub struct AppViewProps {
     pub show_disconnected: bool,
     pub has_interacted: bool,
     pub is_joined: bool,
+    /// True on the name entry form, the one screen that cannot be left.
+    pub on_main_menu: bool,
+    /// Random player color of the title, shared by the play buttons.
+    pub menu_color: &'static str,
     pub force_join_overlay: bool,
     pub player_name: String,
     pub join_step: JoinStep,
@@ -62,9 +66,7 @@ pub fn render_app(props: AppViewProps) -> Html {
         .is_none_or(|mode| mode.show_scoreboard);
     let victory = reducer.victory.clone();
     let is_spectating = reducer.is_spectating();
-    // Every screen past the name entry form can be left.
-    let on_main_menu =
-        !is_joined && !is_spectating && queue_status.is_none() && props.join_step.is_enter_name();
+    let on_main_menu = props.on_main_menu;
     let leaderboard = html! {
         <Leaderboard
             players={reducer.state.players.values().cloned().collect::<Vec<_>>()}
@@ -148,6 +150,7 @@ pub fn render_app(props: AppViewProps) -> Html {
                     rejoin_cooldown={props.rejoin_cooldown}
                     rejoin_cooldown_max={CooldownSeconds::from_duration(reducer.respawn_cooldown())}
                     on_spectate={props.on_spectate.reform(|_| SpectateTarget::Own)}
+                    play_color={props.menu_color}
                 />
             } else if is_spectating {
                 <div data-testid="spectator-hud">
@@ -190,6 +193,7 @@ pub fn render_app(props: AppViewProps) -> Html {
                     quick_play_modes={props.quick_play_modes.clone()}
                     quick_play_reveal_ms={global_cfg.quick_play_reveal_ms}
                     title_pieces={global_cfg.title_pieces.clone()}
+                    title_color={props.menu_color}
                     on_quick_play={props.on_quick_play.clone()}
                 />
             }

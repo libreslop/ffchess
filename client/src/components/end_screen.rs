@@ -1,7 +1,9 @@
 //! Shared end-of-match overlay for victory and defeat outcomes.
 
 use super::countdown_label::CountdownLabel;
+use super::join_screen::PLAY_TEXT_SHADOW;
 use super::pixel_font::{NATIVE_PX, title_pixel_px};
+use crate::canvas::color::piece_icon_colors;
 use crate::ui_state::CooldownSeconds;
 use crate::utils::is_mobile;
 use common::types::Score;
@@ -30,6 +32,8 @@ pub struct EndScreenProps {
     pub rejoin_cooldown_max: CooldownSeconds,
     /// Keeps watching the match just played as a spectator.
     pub on_spectate: Callback<MouseEvent>,
+    /// Player color of the main menu title, shared by the play again button.
+    pub play_color: &'static str,
 }
 
 /// Returns a `text-shadow` drawing a black outline one font pixel thick around text whose font
@@ -58,6 +62,7 @@ pub fn end_screen(props: &EndScreenProps) -> Html {
     };
     let title_color = if is_victory { "#22c55e" } else { "#ef4444" };
     let message_color = if is_victory { "#bbf7d0" } else { "#fecaca" };
+    let play_colors = piece_icon_colors(props.play_color);
 
     html! {
         <>
@@ -101,10 +106,10 @@ pub fn end_screen(props: &EndScreenProps) -> Html {
 
                     <div style="display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">
                         <button onclick={props.on_rejoin.clone()} disabled={props.rejoin_cooldown.is_active()}
-                            style={format!("padding: 8px 40px; font-size: 1.2em; cursor: {}; background: {}; color: white; border: 3px solid {}; border-radius: 0; font-weight: 900; width: auto; transition: all 0.2s; text-transform: uppercase; letter-spacing: 2px;",
+                            style={format!("padding: 8px 40px; font-size: 1.2em; cursor: {}; background: {}; color: white; border: 3px solid {}; border-radius: 0; font-weight: 900; width: auto; transition: all 0.2s; text-transform: uppercase; letter-spacing: 2px; text-shadow: {PLAY_TEXT_SHADOW};",
                                 if props.rejoin_cooldown.is_active() { "not-allowed" } else { "pointer" },
-                                if props.rejoin_cooldown.is_active() { "rgba(148, 163, 184, 0.2)" } else { "#3b82f6" },
-                                if props.rejoin_cooldown.is_active() { "#94a3b8" } else { "#1e3a8a" })}>
+                                if props.rejoin_cooldown.is_active() { "rgba(148, 163, 184, 0.2)" } else { play_colors.secondary.as_str() },
+                                if props.rejoin_cooldown.is_active() { "#94a3b8" } else { play_colors.tertiary.as_str() })}>
                             <CountdownLabel cooldown={props.rejoin_cooldown} max={props.rejoin_cooldown_max} ready="PLAY AGAIN" />
                         </button>
                         <button onclick={props.on_spectate.clone()}

@@ -1,7 +1,7 @@
 {
     "display_name": "Upgrade Forge",
     "default_uses": 3,
-    "color": "#fde047",
+    "color": "#c4923f",
     "groups": [
         {
             "applies_to": ["pawn"],

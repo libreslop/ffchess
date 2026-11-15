@@ -85,7 +85,7 @@ impl PointerContext {
 
     /// Returns true while input must be ignored: after the match or during a scripted pan.
     fn is_blocked(&self) -> bool {
-        self.reducer.has_match_result() || self.handles.camera.borrow().input_locked
+        self.reducer.has_match_result() || self.handles.camera.borrow().input_locked()
     }
 
     /// Returns the board square under a screen position.

@@ -271,7 +271,7 @@ impl Renderer {
     }
 
     /// Creates an offscreen square canvas `side` pixels across that draws without smoothing.
-    fn raster_canvas(side: u32) -> Option<(HtmlCanvasElement, CanvasRenderingContext2d)> {
+    pub(super) fn raster_canvas(side: u32) -> Option<(HtmlCanvasElement, CanvasRenderingContext2d)> {
         let canvas = web_sys::window()?
             .document()?
             .create_element("canvas")

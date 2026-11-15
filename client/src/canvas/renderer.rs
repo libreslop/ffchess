@@ -4,7 +4,7 @@ use super::types::{PieceDrawParams, PieceNameDrawParams, PieceSvgCache, RenderPa
 use crate::math::Vec2;
 use common::models::{GameModeClientConfig, Piece};
 use common::rules::Catalog;
-use common::types::{BoardCoord, ExprVars, PlayerId};
+use common::types::{BoardCoord, ExprVars};
 use glam::IVec2;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -15,11 +15,8 @@ use web_sys::HtmlCanvasElement;
 const OFF_BOARD_COLOR: &str = "#413931";
 const LIGHT_SQUARE_COLOR: &str = "#ffd5b4";
 const DARK_SQUARE_COLOR: &str = "#e0b591";
-/// Color the view fades into beyond the fog-of-war radius, the off-board color as rgb
-/// components.
-const FOG_RGB: &str = "65, 57, 49";
-const DEFAULT_SHOP_COLOR: &str = "#fde047";
-const DEFAULT_SHOP_FOCUS_COLOR: &str = "rgba(253, 224, 71, 0.35)";
+const DEFAULT_SHOP_COLOR: &str = "#c4923f";
+const DEFAULT_SHOP_FOCUS_COLOR: &str = "rgba(196, 146, 63, 0.35)";
 
 /// Size of the art pixel grid everything on the board snaps to, in art pixels per tile.
 ///
@@ -45,7 +42,8 @@ const DRAGGED_SHADOW_COLOR: &str = "rgba(15, 23, 42, 0.3)";
 /// Offset of the drop shadow down and right of a dragged piece, in art pixels.
 const DRAGGED_SHADOW_ART_PIXELS: f64 = 1.5;
 
-/// Things this many squares beyond the view radius are still drawn so they fade into the fog.
+/// Things this many squares beyond the view radius are still drawn, so they show through the
+/// translucent outer rings of the fog.
 const VIEW_MARGIN_SQUARES: i32 = 2;
 
 /// Fog radius used when no mode is known, scaled by army size.
@@ -94,16 +92,6 @@ impl FrameGeometry {
     /// Returns the center pixel of a fractional square position.
     pub(super) fn pos_center(&self, pos: Vec2) -> Vec2 {
         self.pos_origin(pos) + self.tile / 2.0
-    }
-
-    /// Returns the top-left pixel of a square.
-    fn square_origin(&self, square: BoardCoord) -> Vec2 {
-        self.map_square(square.0).as_dvec2() * self.tile + self.offset
-    }
-
-    /// Returns the center pixel of a square.
-    fn square_center(&self, square: BoardCoord) -> Vec2 {
-        self.square_origin(square) + self.tile / 2.0
     }
 
     /// Returns the top-left corner of a square, in art pixels counted from the board origin.
@@ -206,10 +194,9 @@ pub(super) struct ScreenRect {
 /// The part of the board the local player can see.
 #[derive(Clone, Copy)]
 pub(super) struct Visibility {
-    center: BoardCoord,
-    radius_squares: i32,
-    radius_px: f64,
-    fogged: bool,
+    pub(super) center: BoardCoord,
+    pub(super) radius_squares: i32,
+    pub(super) fogged: bool,
 }
 
 impl Visibility {
@@ -247,6 +234,7 @@ impl Renderer {
             catalog,
             svg_cache: Rc::new(RefCell::new(PieceSvgCache::default())),
             shade_cache: Rc::new(RefCell::new(None)),
+            fog_cache: Rc::new(RefCell::new(None)),
         })
     }
 
@@ -264,7 +252,7 @@ impl Renderer {
             },
             rotated: params.board_rotated_180,
         };
-        let visibility = self.visibility(&params, tile);
+        let visibility = self.visibility(&params);
 
         self.ctx.set_fill_style_str(OFF_BOARD_COLOR);
         self.ctx
@@ -281,12 +269,12 @@ impl Renderer {
         self.draw_shade_lines(&shades, &params, &geometry, &visibility);
         self.draw_capture_hints(&hints, &geometry);
         self.draw_king_names(&params, &geometry, &visibility);
-        self.draw_fog(&params, &geometry, &visibility);
+        self.draw_fog(params.canvas_size, &geometry, &visibility);
         self.draw_dragged_piece(&params, &geometry);
     }
 
     /// Works out what the local player sees: everything, or a fogged circle around their king.
-    fn visibility(&self, params: &RenderParams<'_>, tile: f64) -> Visibility {
+    fn visibility(&self, params: &RenderParams<'_>) -> Visibility {
         let state = params.state;
         let king = state.king_of(params.player_id);
         let fog = fog_radius(params.mode, state.pieces_of(params.player_id).count());
@@ -302,7 +290,6 @@ impl Renderer {
         Visibility {
             center: king.map_or_else(BoardCoord::default, |king| king.position),
             radius_squares,
-            radius_px: (radius_squares as f64 + 0.5) * tile,
             fogged,
         }
     }
@@ -539,34 +526,5 @@ impl Renderer {
                 pos: geometry.map_pos(king.position.0.as_dvec2()),
             });
         }
-    }
-
-    /// Fades everything outside the view radius around the local king into the off-board color.
-    fn draw_fog(
-        &self,
-        params: &RenderParams<'_>,
-        geometry: &FrameGeometry,
-        visibility: &Visibility,
-    ) {
-        if !visibility.fogged || params.player_id == PlayerId::nil() {
-            return;
-        }
-        let center = geometry.square_center(visibility.center);
-        let radius = visibility.radius_px;
-        let Ok(gradient) = self.ctx.create_radial_gradient(
-            center.x,
-            center.y,
-            radius * 0.6,
-            center.x,
-            center.y,
-            radius,
-        ) else {
-            return;
-        };
-        let _ = gradient.add_color_stop(0.0, &format!("rgba({FOG_RGB}, 0.0)"));
-        let _ = gradient.add_color_stop(1.0, &format!("rgba({FOG_RGB}, 1.0)"));
-        self.ctx.set_fill_style_canvas_gradient(&gradient);
-        self.ctx
-            .fill_rect(0.0, 0.0, params.canvas_size.x, params.canvas_size.y);
     }
 }
