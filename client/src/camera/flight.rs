@@ -1,4 +1,5 @@
-//! Scripted camera flights: a pan and a zoom eased one after the other, slightly overlapping.
+//! Scripted camera flights: a pan and a zoom keyframed together, one weighted early and the
+//! other late.
 
 use crate::math::Vec2;
 
@@ -15,96 +16,62 @@ pub struct CameraPose {
     pub zoom: f64,
 }
 
-/// Durations of the motions of a flight.
+/// How a motion's progress is spread over the flight. Every curve starts and settles gently.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct FlightTiming {
-    pub pan_ms: f64,
-    pub zoom_ms: f64,
-    /// How long the second motion starts before the first one ends.
-    pub overlap_ms: f64,
+enum Easing {
+    /// Moves fastest a third of the way in, so most of the motion happens early.
+    Early,
+    /// Moves fastest two thirds of the way in, so most of the motion happens late.
+    Late,
+    /// Moves fastest halfway, for a flight with a single motion.
+    Even,
 }
 
-/// The stretch of a flight one motion runs over, in milliseconds since the flight began.
-#[derive(Clone, Copy, Debug)]
-struct Phase {
-    start_ms: f64,
-    duration_ms: f64,
-}
-
-impl Phase {
-    /// Returns the eased progress of the motion at `elapsed_ms`: 0 before it starts and 1 once
-    /// it has ended.
-    fn progress(&self, elapsed_ms: f64) -> f64 {
-        if self.duration_ms <= 0.0 {
-            return 1.0;
+impl Easing {
+    /// Returns the progress of the motion, from 0 to 1, at the fraction `t` of the flight.
+    fn progress(self, t: f64) -> f64 {
+        let t = t.clamp(0.0, 1.0);
+        match self {
+            // Integral of the speed curve t(1 - t)², scaled to end at 1.
+            Self::Early => t * t * (6.0 - 8.0 * t + 3.0 * t * t),
+            Self::Late => 1.0 - Self::Early.progress(1.0 - t),
+            Self::Even => t * t * (3.0 - 2.0 * t),
         }
-        let t = ((elapsed_ms - self.start_ms) / self.duration_ms).clamp(0.0, 1.0);
-        // Cubic ease in and out, so each motion starts and settles gently.
-        if t < 0.5 {
-            4.0 * t * t * t
-        } else {
-            1.0 - (2.0 - 2.0 * t).powi(3) / 2.0
-        }
-    }
-
-    /// Returns when the motion ends, in milliseconds since the flight began.
-    fn end_ms(&self) -> f64 {
-        self.start_ms + self.duration_ms
     }
 }
 
 /// A camera move from one pose to another.
 ///
-/// Zooming in pans first, while the view is still wide, then zooms in on the target; zooming
-/// out widens the view first, then pans. The second motion starts slightly before the first
-/// ends, so the camera never stops in between.
+/// The pan and the zoom run over the whole flight at once. Zooming in pans mostly early, while
+/// the view is still wide, and zooms mostly late; zooming out widens the view mostly early and
+/// pans mostly late.
 #[derive(Clone, Debug)]
 pub struct CameraFlight {
     from: CameraPose,
     to: CameraPose,
-    pan: Phase,
-    zoom: Phase,
+    pan: Easing,
+    zoom: Easing,
+    duration_ms: f64,
     elapsed_ms: f64,
 }
 
 impl CameraFlight {
-    /// Plans a flight from `from` to `to`, skipping a motion that would barely move.
-    pub fn new(from: CameraPose, to: CameraPose, timing: FlightTiming) -> Self {
+    /// Plans a flight from `from` to `to` lasting `duration_ms`. A motion that would barely
+    /// move leaves the other one to ease evenly on its own.
+    pub fn new(from: CameraPose, to: CameraPose, duration_ms: f64) -> Self {
         let pans = (to.center - from.center).length() > MIN_PAN_SQUARES;
         let zooms = (to.zoom / from.zoom).ln().abs() > MIN_ZOOM_LOG;
-        let pan_ms = if pans { timing.pan_ms.max(0.0) } else { 0.0 };
-        let zoom_ms = if zooms { timing.zoom_ms.max(0.0) } else { 0.0 };
-        let overlap_ms = if pans && zooms {
-            timing.overlap_ms.clamp(0.0, pan_ms.min(zoom_ms))
-        } else {
-            0.0
-        };
-        let (pan, zoom) = if to.zoom >= from.zoom {
-            let pan = Phase {
-                start_ms: 0.0,
-                duration_ms: pan_ms,
-            };
-            let zoom = Phase {
-                start_ms: pan.end_ms() - overlap_ms,
-                duration_ms: zoom_ms,
-            };
-            (pan, zoom)
-        } else {
-            let zoom = Phase {
-                start_ms: 0.0,
-                duration_ms: zoom_ms,
-            };
-            let pan = Phase {
-                start_ms: zoom.end_ms() - overlap_ms,
-                duration_ms: pan_ms,
-            };
-            (pan, zoom)
+        let (pan, zoom) = match (pans && zooms, to.zoom >= from.zoom) {
+            (false, _) => (Easing::Even, Easing::Even),
+            (true, true) => (Easing::Early, Easing::Late),
+            (true, false) => (Easing::Late, Easing::Early),
         };
         Self {
             from,
             to,
             pan,
             zoom,
+            duration_ms: duration_ms.max(0.0),
             elapsed_ms: 0.0,
         }
     }
@@ -115,18 +82,17 @@ impl CameraFlight {
         if self.is_done() {
             return self.to;
         }
-        let pan = self.pan.progress(self.elapsed_ms);
-        let zoom = self.zoom.progress(self.elapsed_ms);
+        let t = self.elapsed_ms / self.duration_ms;
         CameraPose {
-            center: self.from.center.lerp(self.to.center, pan),
+            center: self.from.center.lerp(self.to.center, self.pan.progress(t)),
             // Zoom is eased by factor rather than linearly, so it feels equally fast at every
             // level.
-            zoom: self.from.zoom * (self.to.zoom / self.from.zoom).powf(zoom),
+            zoom: self.from.zoom * (self.to.zoom / self.from.zoom).powf(self.zoom.progress(t)),
         }
     }
 
-    /// Returns true once both motions have ended.
+    /// Returns true once the flight has reached its target.
     pub fn is_done(&self) -> bool {
-        self.elapsed_ms >= self.pan.end_ms().max(self.zoom.end_ms())
+        self.elapsed_ms >= self.duration_ms
     }
 }

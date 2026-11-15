@@ -11,8 +11,6 @@ use common::*;
 use flight::{CameraFlight, CameraPose};
 use yew::prelude::*;
 
-pub use flight::FlightTiming;
-
 /// Length of the step the camera tuning values are expressed per, in milliseconds.
 ///
 /// The camera advances once per displayed frame, scaling its smoothing by how many of these
@@ -99,7 +97,7 @@ impl CameraManager {
         self.flight = Some(CameraFlight::new(
             self.pose(params.tile_size_px),
             target,
-            params.flight_timing,
+            params.flight_ms,
         ));
         self.velocity = Vec2::ZERO;
     }
@@ -131,8 +129,9 @@ pub struct CameraUpdateParams<'a> {
     /// Milliseconds a pan can hold still before its release stops carrying momentum.
     pub pan_idle_ms: f64,
     pub pan_lerp_alive: f64,
-    /// Timing of scripted moves: joining, the death or victory focus, and returning to the menu.
-    pub flight_timing: FlightTiming,
+    /// Duration of scripted moves: joining, the death or victory focus, and returning to the
+    /// menu.
+    pub flight_ms: f64,
     pub tile_size_px: f64,
     pub death_zoom: f64,
     pub board_rotated_180: bool,

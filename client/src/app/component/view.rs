@@ -25,7 +25,7 @@ pub struct AppViewProps {
     pub is_joined: bool,
     /// True on the name entry form, the one screen that cannot be left.
     pub on_main_menu: bool,
-    /// Random player color of the title, shared by the play buttons.
+    /// Random player color of the title, shared by the play button.
     pub menu_color: &'static str,
     pub force_join_overlay: bool,
     pub player_name: String,
@@ -150,7 +150,6 @@ pub fn render_app(props: AppViewProps) -> Html {
                     rejoin_cooldown={props.rejoin_cooldown}
                     rejoin_cooldown_max={CooldownSeconds::from_duration(reducer.respawn_cooldown())}
                     on_spectate={props.on_spectate.reform(|_| SpectateTarget::Own)}
-                    play_color={props.menu_color}
                 />
             } else if is_spectating {
                 <div data-testid="spectator-hud">

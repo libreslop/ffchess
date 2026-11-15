@@ -7,22 +7,14 @@ use wasm_bindgen::JsCast;
 use web_sys::{HtmlInputElement, HtmlTextAreaElement, KeyboardEvent};
 use yew::prelude::*;
 
-/// Wood-brown palette of the shop menu, drawn from the board's colors.
+/// Wood-brown palette of the shop menu.
 mod palette {
-    /// Dark brown of the menu's outlines and its name plate, the off-board color.
-    pub(super) const FRAME: &str = "#413931";
-    /// Text on the name plate, the light square color.
-    pub(super) const PLATE_TEXT: &str = "#ffd5b4";
-    /// Background of an offer the player can afford, the light square color.
-    pub(super) const OFFER: &str = "#ffd5b4";
-    /// Text of an offer the player can afford.
-    pub(super) const OFFER_TEXT: &str = "#2b241e";
-    /// Background of an offer the player cannot afford.
-    pub(super) const OFFER_LOCKED: &str = "#cdb49c";
-    /// Text and outline of an offer the player cannot afford.
-    pub(super) const OFFER_LOCKED_TEXT: &str = "#8a7562";
-    /// Hotkey number in the corner of an offer.
-    pub(super) const HOTKEY: &str = "#8a6d55";
+    /// Dark wood of the outlines of the name plate and the offers.
+    pub(super) const FRAME: &str = "#6b4a2b";
+    /// Background of the name plate and the offers.
+    pub(super) const PLATE: &str = "#a87545";
+    /// Text on the name plate and the offers.
+    pub(super) const PLATE_TEXT: &str = "#fff1e0";
 }
 
 /// Properties for the shop overlay UI.
@@ -117,7 +109,7 @@ pub fn shop_ui(props: &ShopUIProps) -> Html {
 
     html! {
         <div data-shop-ui="true" data-ui-exempt="true" style="position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 8px; z-index: 50; width: 95%; max-width: 800px; pointer-events: none;">
-            <span style={format!("font-weight: 800; color: {}; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.15em; pointer-events: auto; background: {}; padding: 2px 8px; border: 2px solid {};", palette::PLATE_TEXT, palette::FRAME, palette::FRAME)}>
+            <span style={format!("font-weight: 800; color: {}; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.15em; pointer-events: auto; background: {}; padding: 2px 8px; border: 2px solid {};", palette::PLATE_TEXT, palette::PLATE, palette::FRAME)}>
                 { &props.shop_config.display_name }
             </span>
             <div style="display: flex; gap: 4px; flex-wrap: wrap; justify-content: center; pointer-events: auto;">
@@ -134,21 +126,23 @@ pub fn shop_ui(props: &ShopUIProps) -> Html {
                                 onclick={on_buy}
                                 disabled={!can_afford}
                                 style={format!(
-                                    "position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; width: 70px; height: 70px; padding: 2px; cursor: {}; border-radius: 0; border: 2px solid {}; background: {}; color: {}; transition: all 0.1s; aspect-ratio: 1/1;",
+                                    "position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; width: 70px; height: 70px; padding: 2px; cursor: {}; border-radius: 0; border: 2px solid {}; background: {}; color: {}; filter: {}; transition: all 0.1s; aspect-ratio: 1/1;",
                                     if can_afford { "pointer" } else { "not-allowed" },
-                                    if can_afford { palette::FRAME } else { palette::OFFER_LOCKED_TEXT },
-                                    if can_afford { palette::OFFER } else { palette::OFFER_LOCKED },
-                                    if can_afford { palette::OFFER_TEXT } else { palette::OFFER_LOCKED_TEXT }
+                                    palette::FRAME,
+                                    palette::PLATE,
+                                    palette::PLATE_TEXT,
+                                    // Offers the player cannot afford are dimmed out.
+                                    if can_afford { "none" } else { "brightness(0.7)" }
                                 )}
                             >
-                                <span style={format!("position: absolute; top: 2px; left: 4px; font-size: 0.65rem; font-family: monospace; font-weight: 800; color: {};", palette::HOTKEY)}>
+                                <span style="position: absolute; top: 2px; left: 4px; font-size: 0.65rem; font-weight: 800; opacity: 0.7;">
                                     { (idx + 1).to_string() }
                                 </span>
                                 <span style="font-size: 0.7rem; font-weight: 900; line-height: 1.1; text-align: center; margin-bottom: 2px; text-transform: uppercase;">
                                     { offer.name }
                                 </span>
                                 if offer.shows_price {
-                                    <span style="font-size: 0.65rem; font-family: monospace; font-weight: 600;">
+                                    <span style="font-size: 0.65rem; font-weight: 600;">
                                         { offer.price.to_string() }
                                     </span>
                                 }

@@ -48,15 +48,9 @@ pub struct GlobalClientConfig {
     pub pan_idle_ms: f64,
     #[educe(Default = 0.15)]
     pub pan_lerp_alive: f64,
-    /// How long a scripted camera move takes to pan to its target.
-    #[educe(Default = 550.0)]
-    pub focus_pan_ms: f64,
-    /// How long a scripted camera move takes to zoom to its target.
-    #[educe(Default = 550.0)]
-    pub focus_zoom_ms: f64,
-    /// How long a scripted camera move's zoom and pan overlap.
-    #[educe(Default = 150.0)]
-    pub focus_overlap_ms: f64,
+    /// How long a scripted camera move takes to pan and zoom to its target.
+    #[educe(Default = 900.0)]
+    pub focus_flight_ms: f64,
     #[educe(Default = 40.0)]
     pub tile_size_px: f64,
     /// How far, in squares, a piece dropped on a square it cannot move to may be from the

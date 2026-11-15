@@ -3,7 +3,7 @@
 use super::types::{FpsCounter, LatestStateSnapshot};
 use crate::app::GlobalClientConfig;
 use crate::camera::{
-    CAMERA_STEP_MS, CameraManager, CameraUpdateParams, FlightTiming, update_camera,
+    CAMERA_STEP_MS, CameraManager, CameraUpdateParams, update_camera,
 };
 use crate::math::{Vec2, vec2};
 use crate::reducer::GameAction;
@@ -121,11 +121,7 @@ impl CameraFrameState {
                 velocity_cutoff: globals.velocity_cutoff,
                 pan_idle_ms: globals.pan_idle_ms,
                 pan_lerp_alive: globals.pan_lerp_alive,
-                flight_timing: FlightTiming {
-                    pan_ms: globals.focus_pan_ms,
-                    zoom_ms: globals.focus_zoom_ms,
-                    overlap_ms: globals.focus_overlap_ms,
-                },
+                flight_ms: globals.focus_flight_ms,
                 tile_size_px: globals.tile_size_px,
                 death_zoom: globals.death_zoom,
                 board_rotated_180: reducer.board_rotated_180(),

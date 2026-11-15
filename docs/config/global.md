@@ -83,9 +83,7 @@ This file is injected into the landing page and deserialized by the Yew client a
 | `velocity_cutoff` | float | No | `0.1` | Velocity threshold, in pixels per 16 ms, below which inertial camera panning stops. |
 | `pan_idle_ms` | float | No | `50.0` | How long, in milliseconds, a pan can hold still before releasing it no longer carries momentum. |
 | `pan_lerp_alive` | float | No | `0.15` | Fraction of the remaining distance to the camera target covered every 16 ms while the local player is alive or spectating. |
-| `focus_pan_ms` | float | No | `550.0` | Duration, in milliseconds, of the pan of a scripted camera move: joining, the death or victory focus, and returning to the menu. |
-| `focus_zoom_ms` | float | No | `550.0` | Duration, in milliseconds, of the zoom of a scripted camera move. Zooming in pans first and then zooms; zooming out zooms first and then pans. |
-| `focus_overlap_ms` | float | No | `150.0` | How long, in milliseconds, the second motion of a scripted camera move starts before the first one ends. |
+| `focus_flight_ms` | float | No | `900.0` | Duration, in milliseconds, of a scripted camera move: joining, the death or victory focus, and returning to the menu. The pan and zoom run together, both easing in and out; zooming in does most of the panning early and most of the zooming late, and zooming out the reverse. |
 | `tile_size_px` | float | No | `40.0` | Base world-tile size before zoom is applied. |
 | `death_zoom` | float | No | `1.3` | Target zoom when the death or victory camera takes over. |
 | `scroll_zoom_base` | float | No | `1.2` | Exponential base used for wheel zoom scaling. Values above `1.0` make zoom responsive without going unstable. |
@@ -118,9 +116,7 @@ This file is injected into the landing page and deserialized by the Yew client a
   "velocity_cutoff": 0.1,
   "pan_idle_ms": 50.0,
   "pan_lerp_alive": 0.15,
-  "focus_pan_ms": 550.0,
-  "focus_zoom_ms": 550.0,
-  "focus_overlap_ms": 150.0,
+  "focus_flight_ms": 900.0,
   "tile_size_px": 40.0,
   "death_zoom": 1.3,
   "scroll_zoom_base": 1.2,

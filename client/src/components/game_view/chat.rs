@@ -27,8 +27,9 @@ pub struct GameChatProps {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct ChatTheme {
     message_color: &'static str,
-    message_shadow: &'static str,
     link_color: &'static str,
+    /// Color of system lines, such as players joining or being killed.
+    system_color: &'static str,
     /// Stacking layer that keeps the chat beneath every other UI element.
     ///
     /// In game the chat sits below the HUD (shop, stats and leaderboard start at 50). Over a
@@ -40,26 +41,16 @@ struct ChatTheme {
 impl ChatTheme {
     /// Returns the chat theme for one backdrop.
     fn for_backdrop(backdrop: Backdrop) -> Self {
-        let (link_color, z_index) = match backdrop {
-            Backdrop::LightBoard => ("#1d4ed8", 40),
-            Backdrop::DarkOverlay => ("#93c5fd", 95),
+        let (link_color, system_color, z_index) = match backdrop {
+            Backdrop::LightBoard => ("#1d4ed8", "#a16207", 40),
+            Backdrop::DarkOverlay => ("#93c5fd", "#facc15", 95),
         };
         Self {
             message_color: backdrop.foreground(),
-            message_shadow: backdrop.foreground_shadow(),
             link_color,
+            system_color,
             z_index,
         }
-    }
-
-    /// Returns the link drop-shadow color for this theme.
-    fn link_shadow(self) -> String {
-        shift_color_darker(self.link_color)
-    }
-
-    /// Returns the sender-name drop-shadow color for this theme.
-    fn sender_shadow(self, sender_color: &str) -> String {
-        shift_color_darker(sender_color)
     }
 }
 
@@ -273,9 +264,8 @@ pub fn game_chat(props: &GameChatProps) -> Html {
         >
             <style>
                 {format!(
-                    ".ff-chat-input::placeholder {{ color: {}; text-shadow: 1px 1px 0 {}; opacity: 1; }}",
-                    theme.message_color,
-                    theme.message_shadow
+                    ".ff-chat-input::placeholder {{ color: {}; opacity: 1; }}",
+                    theme.message_color
                 )}
             </style>
             <div
@@ -290,14 +280,8 @@ pub fn game_chat(props: &GameChatProps) -> Html {
                             let is_expired = expired_line_keys.contains(&key);
                             let sender_color =
                                 display_sender_color(line.sender_color.as_ref(), backdrop);
-                            let sender_shadow = theme.sender_shadow(sender_color);
-                            let link_shadow = theme.link_shadow();
-                            let system_color = "#facc15";
-                            let system_shadow = shift_color_darker(system_color);
-                            let effective_sender_color = if line.is_system { system_color } else { sender_color };
-                            let effective_sender_shadow = if line.is_system { system_shadow.as_str() } else { sender_shadow.as_str() };
-                            let effective_message_color = if line.is_system { system_color } else { theme.message_color };
-                            let effective_message_shadow = if line.is_system { system_shadow.as_str() } else { theme.message_shadow };
+                            let effective_sender_color = if line.is_system { theme.system_color } else { sender_color };
+                            let effective_message_color = if line.is_system { theme.system_color } else { theme.message_color };
                             html! {
                                 <div
                                     key={key.0.clone()}
@@ -310,8 +294,8 @@ pub fn game_chat(props: &GameChatProps) -> Html {
                                     {
                                         if line.is_system {
                                             html! {
-                                                <span style={format!("color: {}; text-shadow: 1px 1px 0 {};", effective_message_color, effective_message_shadow)}>
-                                                    {render_chat_message_with_links(&line.message, theme.link_color, &link_shadow)}
+                                                <span style={format!("color: {};", effective_message_color)}>
+                                                    {render_chat_message_with_links(&line.message, theme.link_color)}
                                                 </span>
                                             }
                                         } else {
@@ -319,11 +303,11 @@ pub fn game_chat(props: &GameChatProps) -> Html {
                                                 <>
                                                     // Name and message are isolated so right-to-left text in
                                                     // either cannot swap their order around the colon.
-                                                    <span style={format!("color: {}; text-shadow: 1px 1px 0 {};", effective_sender_color, effective_sender_shadow)}>
+                                                    <span style={format!("color: {};", effective_sender_color)}>
                                                         <bdi>{line.sender_name.clone()}</bdi>
                                                     </span>
-                                                    <span style={format!("color: {}; text-shadow: 1px 1px 0 {};", effective_message_color, effective_message_shadow)}>
-                                                        {" : "}<bdi>{render_chat_message_with_links(&line.message, theme.link_color, &link_shadow)}</bdi>
+                                                    <span style={format!("color: {};", effective_message_color)}>
+                                                        {" : "}<bdi>{render_chat_message_with_links(&line.message, theme.link_color)}</bdi>
                                                     </span>
                                                 </>
                                             }
@@ -350,9 +334,8 @@ pub fn game_chat(props: &GameChatProps) -> Html {
                         maxlength={chat_max_chars.to_string()}
                         placeholder="Write a message"
                         style={format!(
-                            "width: 100%; border: 0; background: transparent; color: {}; text-shadow: 1px 1px 0 {}; caret-color: {}; font-size: 12px; line-height: 1; min-height: 1em; padding: 0; padding-right: 68px; outline: none;",
+                            "width: 100%; border: 0; background: transparent; color: {}; caret-color: {}; font-size: 12px; line-height: 1; min-height: 1em; padding: 0; padding-right: 68px; outline: none;",
                             theme.message_color,
-                            theme.message_shadow,
                             theme.message_color
                         )}
                         autocomplete="off"
@@ -363,9 +346,8 @@ pub fn game_chat(props: &GameChatProps) -> Html {
                                 <span
                                     data-chat-ui="true"
                                     style={format!(
-                                        "position: absolute; right: 0; top: 0; font-size: 12px; line-height: 1; color: {}; text-shadow: 1px 1px 0 {}; pointer-events: none;",
-                                        theme.message_color,
-                                        theme.message_shadow
+                                        "position: absolute; right: 0; top: 0; font-size: 12px; line-height: 1; color: {}; pointer-events: none;",
+                                        theme.message_color
                                     )}
                                 >
                                     {format!("{}/{}", chat_char_count, chat_max_chars)}
@@ -414,23 +396,7 @@ fn clamp_timeout_ms(delay_ms: i64) -> u32 {
     delay_ms.clamp(0, u32::MAX as i64) as u32
 }
 
-fn shift_color_darker(hex: &str) -> String {
-    let hex = hex.trim();
-    if hex.len() == 7
-        && hex.starts_with('#')
-        && let (Ok(r), Ok(g), Ok(b)) = (
-            u8::from_str_radix(&hex[1..3], 16),
-            u8::from_str_radix(&hex[3..5], 16),
-            u8::from_str_radix(&hex[5..7], 16),
-        )
-    {
-        let convert = |v: u8| ((v as f32 * 0.45).round() as u8).max(10);
-        return format!("#{:02x}{:02x}{:02x}", convert(r), convert(g), convert(b));
-    }
-    "#111827".to_string()
-}
-
-fn render_chat_message_with_links(message: &str, link_color: &str, link_shadow: &str) -> Html {
+fn render_chat_message_with_links(message: &str, link_color: &str) -> Html {
     let mut nodes: Vec<Html> = Vec::new();
     for (i, token) in message.split(' ').enumerate() {
         if i > 0 {
@@ -444,11 +410,7 @@ fn render_chat_message_with_links(message: &str, link_color: &str, link_shadow: 
                     target="_blank"
                     rel="noopener noreferrer"
                     data-chat-ui="true"
-                    style={format!(
-                        "color: {}; text-shadow: 1px 1px 0 {}; text-decoration: underline;",
-                        link_color,
-                        link_shadow
-                    )}
+                    style={format!("color: {link_color}; text-decoration: underline;")}
                 >
                     {core}
                 </a>
