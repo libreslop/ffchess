@@ -30,7 +30,7 @@
     "velocity_cutoff": 0.1,
     "pan_idle_ms": 100.0,
     "pan_lerp_alive": 0.15,
-    "focus_flight_ms": 900.0,
+    "focus_flight_ms": 1500.0,
     "tile_size_px": 40.0,
     "drag_snap_squares": 0.25,
     "premove_fail_flashes": 3,

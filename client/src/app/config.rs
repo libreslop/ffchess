@@ -49,7 +49,7 @@ pub struct GlobalClientConfig {
     #[educe(Default = 0.15)]
     pub pan_lerp_alive: f64,
     /// How long a scripted camera move takes to pan and zoom to its target.
-    #[educe(Default = 900.0)]
+    #[educe(Default = 1500.0)]
     pub focus_flight_ms: f64,
     #[educe(Default = 40.0)]
     pub tile_size_px: f64,
