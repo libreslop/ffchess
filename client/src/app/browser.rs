@@ -2,6 +2,7 @@
 
 use crate::canvas::color::NPC_PIECE_COLOR;
 use crate::canvas::color::piece_icon_colors;
+use crate::utils::svg_data_url;
 
 const APP_TITLE: &str = "FFChess";
 const KING_FAVICON_TEMPLATE: &str = include_str!("../../../assets/pieces/king.svg");
@@ -87,8 +88,5 @@ fn king_favicon_data_url(team_color: &str) -> String {
         .replace("${secondary}", &colors.secondary)
         .replace("${tertiary}", &colors.tertiary)
         .replace("shape-rendering=\"crispEdges\"", "shape-rendering=\"auto\"");
-    let encoded = js_sys::encode_uri_component(&tinted_svg)
-        .as_string()
-        .unwrap_or_default();
-    format!("data:image/svg+xml;utf8,{encoded}")
+    svg_data_url(&tinted_svg)
 }

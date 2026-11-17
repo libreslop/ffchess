@@ -1,6 +1,6 @@
 //! Server entrypoint wiring routes, state, and the game loop.
 
-use axum::{Router, routing::get};
+use axum::{Extension, Router, routing::get};
 use server::state::ServerState;
 use std::sync::Arc;
 use std::time::Duration;
@@ -18,6 +18,7 @@ async fn main() {
     tracing_subscriber::fmt::init();
 
     let state = Arc::new(ServerState::new());
+    let menu = server::handlers::MenuSnapshot::render(&state).await;
 
     let ticking_state = state.clone();
     tokio::spawn(async move {
@@ -41,6 +42,7 @@ async fn main() {
         .route("/", get(server::handlers::index_html))
         .fallback_service(ServeDir::new(server::paths::client_dist_dir()))
         .with_state(state)
+        .layer(Extension(menu))
         .layer(TraceLayer::new_for_http());
 
     let port = std::env::var("PORT")

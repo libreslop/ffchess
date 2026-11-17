@@ -4,6 +4,7 @@ use super::color::{NPC_PIECE_COLOR, PieceIconColors, piece_icon_colors};
 use super::renderer::{ART_PIXELS_PER_TILE, ArtRect};
 use super::types::{PieceDrawParams, PieceNameDrawParams, PieceSvgKey, Renderer};
 use crate::math::vec2;
+use crate::utils::svg_data_url;
 use common::models::{GameState, Piece};
 use common::types::{PieceTypeId, TimestampMs};
 use gloo_net::http::Request;
@@ -168,7 +169,7 @@ impl Renderer {
             .replace("${primary}", &colors.primary)
             .replace("${secondary}", &colors.secondary)
             .replace("${tertiary}", &colors.tertiary);
-        let data_url = Self::svg_data_url(&tinted);
+        let data_url = svg_data_url(&tinted);
         let image = HtmlImageElement::new().ok()?;
         image.set_src(&data_url);
         cache.images.insert(key.clone(), image.clone());
@@ -287,12 +288,6 @@ impl Renderer {
             .ok()?;
         ctx.set_image_smoothing_enabled(false);
         Some((canvas, ctx))
-    }
-
-    fn svg_data_url(svg: &str) -> String {
-        let encoded = js_sys::encode_uri_component(svg);
-        let encoded = encoded.as_string().unwrap_or_default();
-        format!("data:image/svg+xml;utf8,{encoded}")
     }
 }
 

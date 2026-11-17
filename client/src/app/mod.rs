@@ -8,3 +8,5 @@ mod ws;
 
 pub use component::App;
 pub use config::GlobalClientConfig;
+#[cfg(feature = "ssr")]
+pub use config::order_modes;

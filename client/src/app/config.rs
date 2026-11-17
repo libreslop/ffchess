@@ -80,14 +80,19 @@ pub struct GlobalClientConfig {
 ///
 /// Returns the parsed `GlobalClientConfig`, falling back to defaults on error.
 pub fn load_global_config() -> GlobalClientConfig {
-    let doc = document();
-    if let Some(el) = doc.get_element_by_id("initial-global")
-        && let Some(text) = el.text_content()
-        && let Ok(cfg) = serde_json::from_str::<GlobalClientConfig>(&text)
-    {
-        return cfg;
+    document()
+        .get_element_by_id("initial-global")
+        .and_then(|el| el.text_content())
+        .map(|text| GlobalClientConfig::from_json(&text))
+        .unwrap_or_default()
+}
+
+impl GlobalClientConfig {
+    /// Parses the config from the server's client config JSON, falling back to defaults on
+    /// error.
+    pub fn from_json(json: &str) -> Self {
+        serde_json::from_str(json).unwrap_or_default()
     }
-    GlobalClientConfig::default()
 }
 
 /// Picks the configured quick-play modes out of the mode list, in configured order.

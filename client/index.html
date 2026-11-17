@@ -45,6 +45,18 @@
             input, button, select, textarea {
                 font-family: inherit;
             }
+            /* Covers the app until it shows a screen of its own. */
+            #boot-screen {
+                position: fixed;
+                inset: 0;
+                z-index: 1000;
+                /* The off-board color, which the menu darkens like the board behind it. */
+                background-color: #413931;
+            }
+            /* Playing and spectating wait for the app. */
+            #boot-screen form button {
+                cursor: wait !important;
+            }
         </style>
         <script>
             // Keep browser-level pinch/gesture zoom disabled; in-game zoom is handled in app logic.
@@ -58,5 +70,61 @@
             }, { passive: false });
         </script>
     </head>
-    <body></body>
+    <body>
+        <div id="app"></div>
+        <!-- The main menu, prerendered by the server, until the app takes over. -->
+        <div id="boot-screen">
+            __MENU_HTML__
+            <script>
+                // Lets the prerendered menu take a name and pick a mode before the app loads;
+                // playing waits for the app. The mode goes in the URL hash, where the app looks
+                // for it, and the app takes the typed name over when it removes this menu.
+                (() => {
+                    const boot = document.getElementById("boot-screen");
+                    const input = boot.querySelector("input[name=player_name]");
+                    const rows = [...boot.querySelectorAll("[data-mode-id]")];
+                    if (!input || rows.length === 0) {
+                        return;
+                    }
+                    // The server renders the first row selected, and the rest alike.
+                    const selectedLook = rows[0].style.background;
+                    const idleLook = rows[1]?.style.background;
+                    const selectedIndex = () => Math.max(
+                        0,
+                        rows.findIndex((row) => `#${row.dataset.modeId}` === location.hash),
+                    );
+                    const highlight = () => {
+                        const selected = rows[selectedIndex()];
+                        for (const row of rows) {
+                            row.style.background = row === selected ? selectedLook : idleLook;
+                        }
+                        selected.scrollIntoView({ block: "nearest" });
+                    };
+                    const select = (index) => {
+                        if (rows[index]) {
+                            location.hash = rows[index].dataset.modeId;
+                        }
+                    };
+
+                    // The name the app last stored, under its NAME_KEY in client/src/utils.rs.
+                    try {
+                        input.value = localStorage.getItem("ffchess_name") ?? "";
+                    } catch {}
+                    rows.forEach((row, index) => row.addEventListener("click", () => select(index)));
+                    // Clicking a row leaves the focus in the name input, as in the app.
+                    boot.querySelector(".ff-mode-list")
+                        .addEventListener("mousedown", (e) => e.preventDefault());
+                    input.addEventListener("keydown", (e) => {
+                        if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+                            e.preventDefault();
+                            select(selectedIndex() + (e.key === "ArrowUp" ? -1 : 1));
+                        }
+                    });
+                    boot.querySelector("form").addEventListener("submit", (e) => e.preventDefault());
+                    addEventListener("hashchange", highlight);
+                    highlight();
+                })();
+            </script>
+        </div>
+    </body>
 </html>

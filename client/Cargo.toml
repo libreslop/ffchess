@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2024"
 license.workspace = true
 
+[features]
+# Renders the main menu natively, for the server to show while the app loads.
+ssr = ["yew/ssr"]
+
 [dependencies]
 common = { path = "../common" }
 yew = { version = "0.21", features = ["csr"] }

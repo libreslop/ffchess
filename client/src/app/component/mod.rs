@@ -20,13 +20,13 @@ use callbacks::{
 use common::models::{GameModeClientConfig, ModeSummary};
 use common::types::{ModeId, ReplayId};
 use effects::{
-    KeyboardShortcutEffectInputs, PreviewDefaultRef, use_disconnected_overlay_effect,
-    use_error_auto_clear_effect, use_fatal_error_reset_effect, use_joining_reset_effect,
-    use_keyboard_shortcuts_effect, use_landing_cooldown_effect, use_menu_color,
-    use_mode_refresh_effect,
-    use_mode_url_navigation_effect, use_page_metadata_effect, use_player_name_sync_effect,
-    use_preview_default_effect, use_rejoin_cooldown_effect, use_rejoin_flow_reset_effect,
-    use_single_kit_step_reset_effect, use_ws_connection_effect,
+    KeyboardShortcutEffectInputs, PreviewDefaultRef, use_boot_screen_effect,
+    use_disconnected_overlay_effect, use_error_auto_clear_effect, use_fatal_error_reset_effect,
+    use_joining_reset_effect, use_keyboard_shortcuts_effect, use_landing_cooldown_effect,
+    use_menu_color, use_mode_refresh_effect, use_mode_url_navigation_effect,
+    use_page_metadata_effect, use_player_name_sync_effect, use_preview_default_effect,
+    use_rejoin_cooldown_effect, use_rejoin_flow_reset_effect, use_single_kit_step_reset_effect,
+    use_ws_connection_effect,
 };
 use gloo_utils::document;
 use quick_play::{
@@ -284,7 +284,7 @@ pub fn app() -> Html {
         rc_ref,
     });
 
-    render_app(AppViewProps {
+    let view_props = AppViewProps {
         global_cfg: (*global_cfg).clone(),
         slot: focused_slot,
         reducer: reducer.clone(),
@@ -297,7 +297,7 @@ pub fn app() -> Html {
         force_join_overlay: rejoin_flow.forces_join_overlay(has_match_result),
         player_name: (*player_name).clone(),
         join_step: *join_step,
-        on_name_input: build_on_name_input(player_name),
+        on_name_input: build_on_name_input(player_name.clone()),
         on_name_submit,
         on_join,
         landing_cooldown: *landing_cooldown,
@@ -320,7 +320,9 @@ pub fn app() -> Html {
             Callback::from(move |replay_id| open_replay.set(Some(replay_id)))
         },
         on_close_replay: Callback::from(move |_| open_replay.set(None)),
-    })
+    };
+    use_boot_screen_effect(view_props.shows_own_screen(), player_name);
+    render_app(view_props)
 }
 
 /// Returns the session of `slot`.

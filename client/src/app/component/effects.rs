@@ -5,7 +5,7 @@ mod connection;
 mod keyboard;
 mod ui;
 
-pub use browser::use_page_metadata_effect;
+pub use browser::{use_boot_screen_effect, use_page_metadata_effect};
 pub use connection::{
     use_mode_refresh_effect, use_mode_url_navigation_effect, use_ws_connection_effect,
 };

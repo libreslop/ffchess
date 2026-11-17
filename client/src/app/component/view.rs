@@ -54,8 +54,22 @@ pub struct AppViewProps {
     pub on_close_replay: Callback<()>,
 }
 
+impl AppViewProps {
+    /// Returns true while the app waits for its first connection with nothing to show.
+    fn shows_connecting(&self) -> bool {
+        self.tx.is_none() && (!self.show_disconnected || !self.has_interacted)
+    }
+
+    /// Returns true once the app shows a screen of its own: anything but the connecting
+    /// screen, or a replay over it.
+    pub fn shows_own_screen(&self) -> bool {
+        !self.shows_connecting() || self.open_replay.is_some()
+    }
+}
+
 /// Renders the root application UI.
 pub fn render_app(props: AppViewProps) -> Html {
+    let shows_connecting = props.shows_connecting();
     let global_cfg = props.global_cfg;
     let reducer = props.reducer;
     let tx = props.tx;
@@ -130,7 +144,7 @@ pub fn render_app(props: AppViewProps) -> Html {
                     globals={global_cfg.clone()}
                     player_name={props.player_name.clone()}
                 />
-            } else if !props.show_disconnected || !props.has_interacted {
+            } else if shows_connecting {
                 <div style="position: absolute; inset: 0; background: #f0f2f5; display: flex; align-items: center; justify-content: center; z-index: 200;">
                     <div style="text-align: center;">
                         <h2 style="color: #64748b;">{"Connecting to server..."}</h2>

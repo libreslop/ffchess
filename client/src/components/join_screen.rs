@@ -5,7 +5,7 @@ use super::pixel_font::{NATIVE_PX, title_pixel_px};
 use crate::canvas::color::piece_icon_colors;
 use crate::reducer::QueueStatus;
 use crate::ui_state::{CooldownSeconds, JoinStep};
-use crate::utils::{event_targets_text_input, is_mobile};
+use crate::utils::{event_targets_text_input, is_mobile, svg_data_url};
 use common::models::{GameModeClientConfig, ModeSummary};
 use common::types::{KitId, ModeId};
 use gloo_events::EventListener;
@@ -300,14 +300,6 @@ fn tinted_piece_data_url(template: &str, color: &str) -> String {
     )
 }
 
-/// Returns a data URL holding `svg`.
-fn svg_data_url(svg: &str) -> String {
-    let encoded = js_sys::encode_uri_component(svg)
-        .as_string()
-        .unwrap_or_default();
-    format!("data:image/svg+xml;utf8,{encoded}")
-}
-
 /// Properties for a scrolling list of modes.
 #[derive(Properties, PartialEq)]
 struct ModeListProps {
@@ -431,9 +423,11 @@ fn mode_row(mode: &ModeSummary, selected: bool, on_select: &Callback<ModeId>) ->
     let id = mode.id.clone();
     let on_click = on_select.reform(move |_: MouseEvent| id.clone());
     html! {
+        // The mode id lets the prerendered menu select rows before the app loads.
         <button
             onclick={on_click}
             tabindex="-1"
+            data-mode-id={mode.id.to_string()}
             style={format!(
                 "display: flex; width: 100%; justify-content: space-between; align-items: center; text-align: left; box-sizing: border-box; height: {}px; padding: 0 12px; border: none; border-bottom: 1px solid rgba(255,255,255,0.08); background: {}; color: #fff; font-weight: 500; cursor: pointer;",
                 MODE_ROW_HEIGHT_PX,

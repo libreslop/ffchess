@@ -1,6 +1,7 @@
 //! Browser storage and environment helpers for the client.
 
 use common::types::{DurationMs, ModeId, PlayerId, SessionSecret, TimestampMs};
+use std::fmt::Write;
 use js_sys::{Function, Reflect};
 use uuid::Uuid;
 use wasm_bindgen::{JsCast, JsValue};
@@ -107,8 +108,32 @@ pub fn local_now() -> TimestampMs {
     TimestampMs::from_millis(js_sys::Date::now() as i64)
 }
 
+/// Punctuation `encodeURIComponent` leaves unescaped, besides ASCII letters and digits.
+const URI_UNRESERVED_MARKS: &[u8] = b"-_.!~*'()";
+
+/// Returns a data URL holding `svg`.
+///
+/// Escapes like `encodeURIComponent`, but without calling into JavaScript, so the server can
+/// prerender images too.
+pub fn svg_data_url(svg: &str) -> String {
+    svg.bytes()
+        .fold(String::from("data:image/svg+xml;utf8,"), |mut url, byte| {
+            if byte.is_ascii_alphanumeric() || URI_UNRESERVED_MARKS.contains(&byte) {
+                url.push(char::from(byte));
+            } else {
+                let _ = write!(url, "%{byte:02X}");
+            }
+            url
+        })
+}
+
 /// Detects whether the current user agent is a mobile device.
+///
+/// Prerendering on the server has no browser, so it lays the menu out for desktop.
 pub fn is_mobile() -> bool {
+    if cfg!(not(target_arch = "wasm32")) {
+        return false;
+    }
     let user_agent = web_sys::window()
         .and_then(|window| window.navigator().user_agent().ok())
         .unwrap_or_default()
