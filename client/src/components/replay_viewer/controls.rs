@@ -34,11 +34,13 @@ fn percent(time: DurationMs, duration: DurationMs) -> f64 {
     (time.as_i64() as f64 / duration.as_i64() as f64 * 100.0).clamp(0.0, 100.0)
 }
 
-/// Style shared by the square control buttons.
-const BUTTON_STYLE: &str = "flex: none; min-width: 44px; height: 36px; padding: 0 10px; background: #1e293b; color: #fff; border: 3px solid #0f172a; border-radius: 0; font-weight: 900; font-size: 0.95em; cursor: pointer; text-transform: uppercase; letter-spacing: 1px;";
+/// Layout shared by the control buttons, which take their colors from the `replay-button`
+/// class.
+const BUTTON_STYLE: &str = "flex: none; min-width: 44px; padding: 0 10px;";
 
 #[function_component(ReplayControls)]
-/// Renders the playback bar along the bottom of the replay viewer.
+/// Renders the playback bar along the bottom of the replay panel: the scrub bar over a row
+/// of play and pause, the time and the speed.
 pub(super) fn replay_controls(props: &ReplayControlsProps) -> Html {
     let on_input = props.on_seek.reform(|event: InputEvent| {
         let value = event
@@ -61,20 +63,12 @@ pub(super) fn replay_controls(props: &ReplayControlsProps) -> Html {
         <div
             data-testid="replay-controls"
             data-ui-exempt="true"
-            style="position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); width: min(720px, calc(100% - 32px)); box-sizing: border-box; display: flex; align-items: center; gap: 10px; padding: 8px; background: rgba(255, 255, 255, 0.92); border: 3px solid #0f172a; box-shadow: 4px 4px 0 rgba(15, 23, 42, 0.25); z-index: 120; font-family: monospace;"
+            style="flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 4px 8px 8px; border-top: 3px solid var(--wood-frame);"
         >
-            <button
-                data-testid="replay-toggle"
-                title={if props.playing { "Pause (Space)" } else { "Play (Space)" }}
-                onclick={props.on_toggle.reform(|_| ())}
-                style={BUTTON_STYLE}
-            >
-                {if props.playing { "❚❚" } else { "▶" }}
-            </button>
-            <div style="position: relative; flex: 1; min-width: 0; height: 36px; display: flex; align-items: center;">
+            <div style="position: relative; flex: 1 0 100%; height: 36px; display: flex; align-items: center;">
                 // The track is drawn behind a transparent range input so capture marks show.
-                <div style="position: absolute; left: 0; right: 0; height: 10px; background: #cbd5e1; border: 2px solid #0f172a; box-sizing: border-box; pointer-events: none;">
-                    <div style={format!("position: absolute; left: 0; top: 0; bottom: 0; width: {filled:.3}%; background: #334155;")}></div>
+                <div style="position: absolute; left: 0; right: 0; height: 10px; background: rgba(0, 0, 0, 0.3); border: 2px solid var(--wood-frame); box-sizing: border-box; pointer-events: none;">
+                    <div style={format!("position: absolute; left: 0; top: 0; bottom: 0; width: {filled:.3}%; background: var(--wood-plate);")}></div>
                     { for markers }
                 </div>
                 <input
@@ -90,13 +84,23 @@ pub(super) fn replay_controls(props: &ReplayControlsProps) -> Html {
                     style="position: relative; width: 100%; height: 36px; margin: 0; background: transparent; cursor: pointer;"
                 />
             </div>
-            <span style="flex: none; font-size: 0.85em; font-weight: bold; color: #0f172a; white-space: nowrap; font-variant-numeric: tabular-nums;">
+            <button
+                data-testid="replay-toggle"
+                title={if props.playing { "Pause (Space)" } else { "Play (Space)" }}
+                onclick={props.on_toggle.reform(|_| ())}
+                class="replay-button"
+                style={BUTTON_STYLE}
+            >
+                {if props.playing { "❚❚" } else { "▶" }}
+            </button>
+            <span style="flex: 1; font-size: 20px; text-align: center; white-space: nowrap;">
                 {format!("{} / {}", clock_label(props.elapsed), clock_label(props.duration))}
             </span>
             <button
                 data-testid="replay-speed"
                 title="Playback speed"
                 onclick={props.on_speed.reform(|_| ())}
+                class="replay-button"
                 style={BUTTON_STYLE}
             >
                 {props.speed_label.clone()}
@@ -104,13 +108,3 @@ pub(super) fn replay_controls(props: &ReplayControlsProps) -> Html {
         </div>
     }
 }
-
-/// Styles the scrub bar thumb, which inline styles cannot reach.
-pub(super) const SCRUBBER_CSS: &str = "
-    .replay-scrubber { -webkit-appearance: none; appearance: none; }
-    .replay-scrubber::-webkit-slider-runnable-track { background: transparent; height: 36px; }
-    .replay-scrubber::-moz-range-track { background: transparent; height: 36px; }
-    .replay-scrubber::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 24px; margin-top: 6px; background: #fff; border: 3px solid #0f172a; border-radius: 0; }
-    .replay-scrubber::-moz-range-thumb { width: 8px; height: 18px; background: #fff; border: 3px solid #0f172a; border-radius: 0; }
-";
-

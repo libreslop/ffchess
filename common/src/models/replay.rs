@@ -96,6 +96,8 @@ impl ReplayFrame {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Replay {
     pub header: ReplayHeader,
+    /// Server time moves were unlocked, after the countdown; the board before is a wait.
+    pub started_at: TimestampMs,
     /// Server time the match finished.
     pub ended_at: TimestampMs,
     /// Frames in the order they were recorded.

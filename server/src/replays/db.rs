@@ -13,6 +13,7 @@ const SCHEMA: &str = "
     CREATE TABLE IF NOT EXISTS replays (
         id TEXT PRIMARY KEY,
         header TEXT NOT NULL,
+        -- When the recording began, replaced by when moves were unlocked once it is saved.
         started_at INTEGER NOT NULL,
         -- When the match finished and the replay was saved; NULL while it is still recorded.
         saved_at INTEGER
@@ -43,6 +44,7 @@ impl FrameSeq {
 #[derive(Serialize)]
 struct StoredReplay {
     header: Box<RawValue>,
+    started_at: TimestampMs,
     ended_at: TimestampMs,
     frames: Vec<Box<RawValue>>,
 }
@@ -97,10 +99,21 @@ impl ReplayDb {
     }
 
     /// Saves a recording as complete at `ended_at`, which makes it viewable.
-    pub(super) fn finish(&self, id: ReplayId, ended_at: TimestampMs) -> rusqlite::Result<()> {
+    ///
+    /// `started_at` is when the match started, or `None` to keep the start of the recording.
+    pub(super) fn finish(
+        &self,
+        id: ReplayId,
+        started_at: Option<TimestampMs>,
+        ended_at: TimestampMs,
+    ) -> rusqlite::Result<()> {
         self.conn.execute(
-            "UPDATE replays SET saved_at = ?2 WHERE id = ?1",
-            params![id.to_string(), ended_at.as_i64()],
+            "UPDATE replays SET saved_at = ?2, started_at = COALESCE(?3, started_at) WHERE id = ?1",
+            params![
+                id.to_string(),
+                ended_at.as_i64(),
+                started_at.map(TimestampMs::as_i64)
+            ],
         )?;
         Ok(())
     }
@@ -127,12 +140,18 @@ impl ReplayDb {
         cutoff: TimestampMs,
     ) -> rusqlite::Result<Option<String>> {
         let key = id.to_string();
-        let Some((header, ended_at)) = self
+        let Some((header, started_at, ended_at)) = self
             .conn
             .query_row(
-                "SELECT header, saved_at FROM replays WHERE id = ?1 AND saved_at >= ?2",
+                "SELECT header, started_at, saved_at FROM replays WHERE id = ?1 AND saved_at >= ?2",
                 params![key, cutoff.as_i64()],
-                |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)),
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, i64>(1)?,
+                        row.get::<_, i64>(2)?,
+                    ))
+                },
             )
             .optional()?
         else {
@@ -151,6 +170,7 @@ impl ReplayDb {
             .zip(frames.into_iter().map(raw).collect::<Option<Vec<_>>>())
             .map(|(header, frames)| StoredReplay {
                 header,
+                started_at: TimestampMs::from_millis(started_at),
                 ended_at: TimestampMs::from_millis(ended_at),
                 frames,
             });
@@ -173,7 +193,7 @@ mod tests {
         let at = TimestampMs::from_millis(saved_at);
         db.begin(id, "{}", at).expect("begin");
         db.append(id, FrameSeq(0), "{\"at\":0}").expect("frame");
-        db.finish(id, at).expect("finish");
+        db.finish(id, None, at).expect("finish");
         id
     }
 

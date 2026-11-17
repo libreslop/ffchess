@@ -69,6 +69,7 @@ fn keyframes_rebuild_each_board() {
             mode: GameModeClientConfig::default(),
             catalog: Catalog::default(),
         },
+        started_at: TimestampMs(10),
         ended_at: TimestampMs(30),
         frames,
     };

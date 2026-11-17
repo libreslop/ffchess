@@ -67,10 +67,14 @@ impl ReplayRecorder {
     }
 
     /// Completes the recording at `now`, making it viewable, and returns its id.
-    pub fn finish(mut self, now: TimestampMs) -> ReplayId {
+    ///
+    /// `started_at` is when moves were unlocked, or `None` when the match had no countdown and
+    /// started as the recording began.
+    pub fn finish(mut self, started_at: Option<TimestampMs>, now: TimestampMs) -> ReplayId {
         self.finished = true;
         self.send(WriteCommand::Finish {
             id: self.id,
+            started_at,
             ended_at: now,
         });
         self.id

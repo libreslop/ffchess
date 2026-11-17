@@ -39,7 +39,11 @@ impl World {
             return;
         }
         self.status = MatchStatus::Finished { at: now };
-        let replay = self.replay.take().map(|recorder| recorder.finish(now));
+        let started_at = self.clock.move_unlock_at;
+        let replay = self
+            .replay
+            .take()
+            .map(|recorder| recorder.finish(started_at, now));
         self.outbox
             .broadcast(&ServerMessage::MatchFinished { replay });
         self.release_spectators();

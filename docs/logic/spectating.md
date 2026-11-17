@@ -89,10 +89,29 @@ or for unknown ids. Replays are deleted 24 hours after they were saved: overdue 
 up when the server starts and every minute while it runs. Recordings of matches that never
 finished (such as those cut off by a server restart) are deleted too.
 
+A saved replay also records when the match started: the time its countdown unlocked moves, or
+the start of the recording for modes without a countdown. Viewers start playback there, so the
+countdown is skipped, and the board as it stood then is the first entry of the move history.
+
 The replay viewer downloads the replay, rebuilds the board after every frame, and plays it back
-on a read-only board watched like a spectator watches a live match. Its scrub bar marks every
-capture; Space plays and pauses, the arrow keys jump five seconds, the speed button cycles 1x, 2x,
-4x and 8x, and Escape or the top-left button closes it.
+on a read-only board watched like a spectator watches a live match. The board fills the screen
+as in a match, shifted left to make room for a panel floating on the right (or shifted up, with
+the panel along the bottom, on narrow screens). The panel holds:
+
+- the **move history**: one row per second of the match, labelled with the second it ends at,
+  holding an entry for every tick in that second in which pieces moved. An entry is one box
+  that wraps its moves inside it, so a tick of many moves stays one highlight. Seconds without moves
+  are left out, and row 0 holds only the start. Moves are written
+  in chess notation (files from the left, ranks from the bottom, a figurine for non-pawns, `x`
+  for captures) next to a swatch of the owner's color. The entry shown is highlighted and kept
+  in view; clicking an entry shows it,
+- buttons stepping through the history: ◀ and ▶ (or the left and right arrow keys) move one
+  entry, ▲ and ▼ (or the up and down arrow keys) move to the nearest entry before or after that
+  ends a row. Stepping pauses playback at the tick of the entry,
+- the playback bar: play and pause (Space), a scrub bar marking every capture, and a speed button
+  cycling 1x, 2x, 4x and 8x.
+
+Escape or the top-left button closes the viewer.
 
 ## Client Camera
 

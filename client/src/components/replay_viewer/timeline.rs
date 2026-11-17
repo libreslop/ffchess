@@ -4,9 +4,12 @@ use common::models::{GameState, Replay, ReplayKeyframe};
 use common::types::{DurationMs, TimestampMs};
 
 /// Every board of a replay, ready to be shown at any moment of it.
+///
+/// The replay starts when moves were unlocked, skipping the countdown before.
 #[derive(Debug, PartialEq)]
 pub(super) struct ReplayTimeline {
     keyframes: Vec<ReplayKeyframe>,
+    start: TimestampMs,
     end: TimestampMs,
     /// Moments a piece left the board, marked on the scrub bar.
     captures: Vec<TimestampMs>,
@@ -16,22 +19,27 @@ impl ReplayTimeline {
     /// Builds the timeline of a replay, or `None` when it recorded no board.
     pub(super) fn new(replay: &Replay) -> Option<Self> {
         let keyframes = replay.keyframes();
-        let start = keyframes.first()?.at;
+        let first = keyframes.first()?.at;
+        let end = replay.ended_at.max(first);
+        // A match that finished during its countdown starts as late as it ends.
+        let start = replay.started_at.clamp(first, end);
         let captures = keyframes
             .windows(2)
+            .filter(|pair| pair[1].at > start)
             .filter(|pair| pair[1].state.pieces.len() < pair[0].state.pieces.len())
             .map(|pair| pair[1].at)
             .collect();
         Some(Self {
-            end: replay.ended_at.max(start),
             keyframes,
+            start,
+            end,
             captures,
         })
     }
 
-    /// Returns the moment of the first recorded board.
+    /// Returns the moment moves were unlocked.
     pub(super) fn start(&self) -> TimestampMs {
-        self.keyframes[0].at
+        self.start
     }
 
     /// Returns the moment the match finished.
@@ -64,6 +72,11 @@ impl ReplayTimeline {
         self.keyframes
             .partition_point(|keyframe| keyframe.at <= at)
             .saturating_sub(1)
+    }
+
+    /// Returns the boards from the start of the replay on, the first as it stood at the start.
+    pub(super) fn keyframes_from_start(&self) -> &[ReplayKeyframe] {
+        &self.keyframes[self.index_at(self.start)..]
     }
 
     /// Returns the board with the given index.

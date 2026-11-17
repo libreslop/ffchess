@@ -1,5 +1,6 @@
 //! Playback of a replay: where it is, how fast it goes, and the commands that move it.
 
+use super::history::{EntryIndex, HistoryStep, MoveHistory};
 use super::timeline::ReplayTimeline;
 use crate::utils::performance_now;
 use common::types::{DurationMs, TimestampMs};
@@ -103,15 +104,14 @@ impl Playback {
         self.anchored(timeline.clamp(at), now_local_ms, self.playing)
     }
 
-    /// Jumps by `offset` from the current position.
-    pub(super) fn skipped(
+    /// Stops at `at`.
+    pub(super) fn shown(
         self,
         timeline: &ReplayTimeline,
-        offset: DurationMs,
+        at: TimestampMs,
         now_local_ms: f64,
     ) -> Self {
-        let at = self.position(timeline, now_local_ms) + offset;
-        self.seeked(timeline, at, now_local_ms)
+        self.anchored(timeline.clamp(at), now_local_ms, false)
     }
 
     /// Stops at the current position.
@@ -145,8 +145,10 @@ pub(super) enum PlaybackCommand {
     Toggle,
     /// Jumps to a time into the replay.
     Seek(DurationMs),
-    /// Jumps forward, or back for a negative offset.
-    Skip(DurationMs),
+    /// Stops at an entry picked from the history.
+    Show(EntryIndex),
+    /// Stops at the move of the history a step away from the one shown.
+    Step(HistoryStep),
     NextSpeed,
     /// Pauses; sent once playing reached the end.
     Pause,
@@ -156,16 +158,34 @@ pub(super) enum PlaybackCommand {
 #[derive(Debug, PartialEq)]
 pub(super) struct PlaybackState {
     pub(super) timeline: Rc<ReplayTimeline>,
+    pub(super) history: Rc<MoveHistory>,
     pub(super) playback: Playback,
 }
 
 impl PlaybackState {
     /// Starts playing `timeline` from its beginning.
-    pub(super) fn new(timeline: Rc<ReplayTimeline>) -> Self {
+    pub(super) fn new(timeline: Rc<ReplayTimeline>, history: Rc<MoveHistory>) -> Self {
         Self {
             playback: Playback::playing_from(timeline.start(), performance_now()),
             timeline,
+            history,
         }
+    }
+
+    /// Returns the replay time shown at local time `now_local_ms`.
+    pub(super) fn position(&self, now_local_ms: f64) -> TimestampMs {
+        self.playback.position(&self.timeline, now_local_ms)
+    }
+
+    /// Returns the move of the history shown at local time `now_local_ms`.
+    pub(super) fn current_entry(&self, now_local_ms: f64) -> EntryIndex {
+        self.history.entry_at(self.position(now_local_ms))
+    }
+
+    /// Returns the playback stopped on the entry `index` of the history.
+    fn shown_entry(&self, index: EntryIndex, now_local_ms: f64) -> Playback {
+        let at = self.history.entries()[index].at;
+        self.playback.shown(&self.timeline, at, now_local_ms)
     }
 }
 
@@ -182,12 +202,16 @@ impl Reducible for PlaybackState {
             PlaybackCommand::Seek(elapsed) => {
                 playback.seeked(timeline, timeline.start() + elapsed, now)
             }
-            PlaybackCommand::Skip(offset) => playback.skipped(timeline, offset, now),
+            PlaybackCommand::Show(index) => self.shown_entry(index, now),
+            PlaybackCommand::Step(step) => {
+                self.shown_entry(self.history.step(self.current_entry(now), step), now)
+            }
             PlaybackCommand::NextSpeed => playback.sped_up(timeline, now),
             PlaybackCommand::Pause => playback.paused(timeline, now),
         };
         Rc::new(Self {
             timeline: self.timeline.clone(),
+            history: self.history.clone(),
             playback,
         })
     }

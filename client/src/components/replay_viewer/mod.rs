@@ -1,14 +1,19 @@
 //! Replay viewer: plays a finished match back with a scrubbable timeline.
 
 mod controls;
+mod history;
+mod move_list;
 mod playback;
 mod player;
+mod style;
 mod timeline;
 
 use crate::app::GlobalClientConfig;
 use common::models::Replay;
 use common::types::ReplayId;
 use gloo_net::http::Request;
+use history::MoveHistory;
+use move_list::SharedHistory;
 use player::{LoadedReplay, ReplayPlayer, SharedReplay};
 use std::rc::Rc;
 use timeline::ReplayTimeline;
@@ -49,6 +54,10 @@ impl ReplayLoad {
         };
         match ReplayTimeline::new(&replay) {
             Some(timeline) => Self::Ready(SharedReplay(Rc::new(LoadedReplay {
+                history: SharedHistory(Rc::new(MoveHistory::new(
+                    &timeline,
+                    &replay.header.catalog,
+                ))),
                 header: replay.header,
                 timeline: Rc::new(timeline),
             }))),

@@ -1,7 +1,10 @@
 //! Playback of a loaded replay on its own board.
 
-use super::controls::{ReplayControls, SCRUBBER_CSS};
+use super::controls::ReplayControls;
+use super::history::HistoryStep;
+use super::move_list::{MoveList, SharedHistory};
 use super::playback::{PlaybackCommand, PlaybackState};
+use super::style::REPLAY_CSS;
 use super::timeline::ReplayTimeline;
 use crate::app::GlobalClientConfig;
 use crate::components::{GameView, Leaderboard, LeaveButton};
@@ -9,7 +12,7 @@ use crate::reducer::{GameAction, GameStateReducer, InitPayload};
 use crate::ui_state::Backdrop;
 use crate::utils::performance_now;
 use common::models::ReplayHeader;
-use common::types::{DurationMs, PlayerId, SessionSecret};
+use common::types::{PlayerId, SessionSecret};
 use gloo_events::{EventListener, EventListenerOptions};
 use gloo_timers::callback::Interval;
 use std::rc::Rc;
@@ -19,13 +22,11 @@ use yew::prelude::*;
 /// How often the scrub bar follows a playing replay, in milliseconds.
 const FOLLOW_INTERVAL_MS: u32 = 50;
 
-/// How far the arrow keys jump.
-const ARROW_SKIP: DurationMs = DurationMs(5000);
-
 /// A replay ready to be played back.
 pub(super) struct LoadedReplay {
     pub(super) header: ReplayHeader,
     pub(super) timeline: Rc<ReplayTimeline>,
+    pub(super) history: SharedHistory,
 }
 
 /// Shared handle to a loaded replay, compared by identity so re-renders stay cheap.
@@ -53,13 +54,14 @@ pub(super) fn replay_player(props: &ReplayPlayerProps) -> Html {
     let board = use_reducer(GameStateReducer::default);
     let playback = {
         let timeline = replay.timeline.clone();
-        use_reducer(move || PlaybackState::new(timeline))
+        let history = replay.history.0.clone();
+        use_reducer(move || PlaybackState::new(timeline, history))
     };
     let now_local = use_state(performance_now);
 
     use_replay_board(&board, &replay);
     let timeline = &replay.timeline;
-    let position = playback.playback.position(timeline, *now_local);
+    let position = playback.position(*now_local);
     let index = timeline.index_at(position);
     {
         let board = board.clone();
@@ -90,40 +92,63 @@ pub(super) fn replay_player(props: &ReplayPlayerProps) -> Html {
         let playback = playback.dispatcher();
         Callback::from(move |elapsed| playback.dispatch(PlaybackCommand::Seek(elapsed)))
     };
+    // Kept across renders, so the move list only re-renders when the shown move changes.
+    let on_show = {
+        let playback = playback.dispatcher();
+        use_callback((), move |index, _| {
+            playback.dispatch(PlaybackCommand::Show(index))
+        })
+    };
+    let on_step = {
+        let playback = playback.dispatcher();
+        use_callback((), move |step, _| {
+            playback.dispatch(PlaybackCommand::Step(step))
+        })
+    };
 
     html! {
-        <div data-testid="replay-viewer" style="position: fixed; inset: 0; z-index: 300; background: #f0f2f5; overflow: hidden;">
-            <style>{SCRUBBER_CSS}</style>
-            <GameView
-                reducer={board.clone()}
-                tx={None}
-                globals={props.globals.clone()}
-                player_name={String::new()}
-            />
-            <Leaderboard
-                players={board.state.players.values().cloned().collect::<Vec<_>>()}
-                self_id={PlayerId::nil()}
-                show_scores={show_scores}
-                spectators={Vec::<String>::new()}
-            />
-            <LeaveButton
-                on_leave={props.on_close.reform(|_| ())}
-                backdrop={Backdrop::LightBoard}
-                title="Close replay"
-            />
-            <div style="position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 110; padding: 2px 10px; background: #0f172a; color: #fff; font-weight: 900; letter-spacing: 3px; text-transform: uppercase; pointer-events: none;">
-                {"Replay"}
+        <div data-testid="replay-viewer" class="replay-layout">
+            <style>{REPLAY_CSS}</style>
+            <div class="replay-board">
+                <GameView
+                    reducer={board.clone()}
+                    tx={None}
+                    globals={props.globals.clone()}
+                    player_name={String::new()}
+                />
             </div>
-            <ReplayControls
-                elapsed={timeline.elapsed(position)}
-                duration={timeline.duration()}
-                captures={timeline.capture_times()}
-                playing={playback.playback.is_playing()}
-                speed_label={playback.playback.speed().label()}
-                on_toggle={on_command(|| PlaybackCommand::Toggle)}
-                on_seek={on_seek}
-                on_speed={on_command(|| PlaybackCommand::NextSpeed)}
-            />
+            <div class="replay-hud">
+                <Leaderboard
+                    players={board.state.players.values().cloned().collect::<Vec<_>>()}
+                    self_id={PlayerId::nil()}
+                    show_scores={show_scores}
+                    spectators={Vec::<String>::new()}
+                />
+                <LeaveButton
+                    on_leave={props.on_close.reform(|_| ())}
+                    backdrop={Backdrop::LightBoard}
+                    title="Close replay"
+                />
+            </div>
+            <div class="replay-panel" data-ui-exempt="true">
+                <div class="replay-title">{format!("Replay · {}", replay.header.mode.display_name)}</div>
+                <MoveList
+                    history={replay.history.clone()}
+                    current={playback.current_entry(*now_local)}
+                    on_show={on_show}
+                    on_step={on_step}
+                />
+                <ReplayControls
+                    elapsed={timeline.elapsed(position)}
+                    duration={timeline.duration()}
+                    captures={timeline.capture_times()}
+                    playing={playback.playback.is_playing()}
+                    speed_label={playback.playback.speed().label()}
+                    on_toggle={on_command(|| PlaybackCommand::Toggle)}
+                    on_seek={on_seek}
+                    on_speed={on_command(|| PlaybackCommand::NextSpeed)}
+                />
+            </div>
         </div>
     }
 }
@@ -153,15 +178,14 @@ fn use_replay_board(board: &UseReducerHandle<GameStateReducer>, replay: &Rc<Load
 fn use_follow_playback(playing: bool, now_local: UseStateHandle<f64>) {
     use_effect_with(playing, move |&playing| {
         now_local.set(performance_now());
-        let interval = playing.then(|| {
-            Interval::new(FOLLOW_INTERVAL_MS, move || now_local.set(performance_now()))
-        });
+        let interval = playing
+            .then(|| Interval::new(FOLLOW_INTERVAL_MS, move || now_local.set(performance_now())));
         move || drop(interval)
     });
 }
 
-/// Controls playback with the keyboard: Space plays and pauses, the arrows jump, and Escape
-/// closes the viewer.
+/// Controls playback with the keyboard: Space plays and pauses, the arrows step through the
+/// move history, and Escape closes the viewer.
 ///
 /// The listener runs before any other and keeps every key to itself, so the screens beneath
 /// the viewer do not react to keys meant for it.
@@ -177,8 +201,10 @@ fn use_playback_keys(playback: UseReducerDispatcher<PlaybackState>, on_close: Ca
             event.stop_propagation();
             let command = match event.key().as_str() {
                 " " => Some(PlaybackCommand::Toggle),
-                "ArrowLeft" => Some(PlaybackCommand::Skip(DurationMs::zero() - ARROW_SKIP)),
-                "ArrowRight" => Some(PlaybackCommand::Skip(ARROW_SKIP)),
+                "ArrowLeft" => Some(PlaybackCommand::Step(HistoryStep::PreviousMove)),
+                "ArrowRight" => Some(PlaybackCommand::Step(HistoryStep::NextMove)),
+                "ArrowUp" => Some(PlaybackCommand::Step(HistoryStep::PreviousRow)),
+                "ArrowDown" => Some(PlaybackCommand::Step(HistoryStep::NextRow)),
                 "Escape" => {
                     on_close.emit(());
                     None

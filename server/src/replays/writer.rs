@@ -27,6 +27,8 @@ pub(super) enum WriteCommand {
     },
     Finish {
         id: ReplayId,
+        /// When moves were unlocked, if later than the start of the recording.
+        started_at: Option<TimestampMs>,
         ended_at: TimestampMs,
     },
     Discard {
@@ -44,7 +46,11 @@ impl WriteCommand {
                 started_at,
             } => db.begin(*id, header, *started_at),
             Self::Frame { id, seq, frame } => db.append(*id, *seq, frame),
-            Self::Finish { id, ended_at } => db.finish(*id, *ended_at),
+            Self::Finish {
+                id,
+                started_at,
+                ended_at,
+            } => db.finish(*id, *started_at, *ended_at),
             Self::Discard { id } => db.discard(*id),
         }
     }

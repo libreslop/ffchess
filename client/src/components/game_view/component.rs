@@ -19,7 +19,7 @@ use crate::reducer::{GameAction, GameStateReducer, MsgSender};
 use common::models::{PieceAction, ShopItemIndex};
 use common::types::{DurationMs, PieceId, Score};
 use gloo_events::EventListener;
-use web_sys::HtmlCanvasElement;
+use web_sys::{Element, HtmlCanvasElement};
 use yew::prelude::*;
 
 /// Properties for the main game viewport.
@@ -39,6 +39,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
     let globals = &props.globals;
     let has_match_result = reducer.has_match_result();
 
+    let root_ref = use_node_ref();
     let canvas_ref = use_node_ref();
     let selected = use_state(|| None::<PieceId>);
     let drag_start = use_state(|| None);
@@ -63,7 +64,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
         last_tap: use_mut_ref(|| None),
         held: use_mut_ref(|| None),
     };
-    let window_size = use_window_size();
+    let view_size = use_view_size(&root_ref);
     use_animation_frame();
 
     let renderer = use_renderer(&canvas_ref, reducer);
@@ -130,7 +131,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
         dragged: handles.dragged_piece(),
         camera,
         zoom: *handles.zoom_state,
-        canvas_size: window_size,
+        canvas_size: view_size,
         tile_size_px: globals.tile_size_px,
     });
 
@@ -211,7 +212,9 @@ pub fn game_view(props: &GameViewProps) -> Html {
         .map(|remaining| remaining.as_u64().div_ceil(1000));
 
     html! {
-        <div class="fixed inset-0 bg-slate-100 overflow-hidden touch-none"
+        <div ref={root_ref}
+             class="fixed inset-0 bg-slate-100 overflow-hidden touch-none"
+             style="position: absolute; inset: 0; overflow: hidden;"
              onmousedown={unless_exempt(on_mouse_down)}
              onmousemove={unless_exempt(on_mouse_move)}
              onmouseup={unless_exempt(on_mouse_up)}
@@ -223,10 +226,10 @@ pub fn game_view(props: &GameViewProps) -> Html {
         >
             <canvas
                 ref={canvas_ref}
-                width={window_size.x.to_string()}
-                height={window_size.y.to_string()}
+                width={view_size.x.to_string()}
+                height={view_size.y.to_string()}
                 class="block w-full h-full"
-                style={format!("cursor: {cursor};")}
+                style={format!("display: block; cursor: {cursor};")}
             />
 
             if let Some(remaining_secs) = countdown_secs {
@@ -263,16 +266,28 @@ pub fn game_view(props: &GameViewProps) -> Html {
     }
 }
 
-/// Tracks the browser window size.
+/// Tracks the size of the view, which fills the element it is placed in, such as the whole
+/// window or the board area of the replay viewer.
+///
+/// The size is the window's until the view is mounted and can be measured.
 #[hook]
-fn use_window_size() -> Vec2 {
+fn use_view_size(root_ref: &NodeRef) -> Vec2 {
     let size = use_state(read_window_size);
     {
         let size = size.clone();
+        let root_ref = root_ref.clone();
         use_effect_with((), move |_| {
+            let measure = move || {
+                if let Some(root) = root_ref.cast::<Element>() {
+                    size.set(vec2(
+                        root.client_width() as f64,
+                        root.client_height() as f64,
+                    ));
+                }
+            };
+            measure();
             let window = web_sys::window().expect("window available");
-            let listener =
-                EventListener::new(&window, "resize", move |_| size.set(read_window_size()));
+            let listener = EventListener::new(&window, "resize", move |_| measure());
             || drop(listener)
         });
     }
