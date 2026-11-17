@@ -90,6 +90,8 @@ impl<'a> Simulation<'a> {
     }
 
     /// Applies one action to `piece_id`, ignoring cooldowns.
+    ///
+    /// A guard is applied as the move it makes once it fires.
     pub fn apply(
         &mut self,
         piece_id: PieceId,
@@ -97,8 +99,27 @@ impl<'a> Simulation<'a> {
     ) -> Result<ActionEffects, GameError> {
         match action {
             PieceAction::Move { target } => self.apply_move(piece_id, target),
+            PieceAction::Guard { target } => self.apply_guard(piece_id, target),
             PieceAction::Buy { item } => self.apply_purchase(piece_id, item),
         }
+    }
+
+    /// Fires the guard of `piece_id` on `target`, which only ever captures: it fails unless a
+    /// piece of another owner stands on `target`.
+    fn apply_guard(
+        &mut self,
+        piece_id: PieceId,
+        target: BoardCoord,
+    ) -> Result<ActionEffects, GameError> {
+        let guard = self.piece(piece_id)?;
+        let takes_enemy = self
+            .state
+            .piece_at(target)
+            .is_some_and(|occupant| occupant.owner_id != guard.owner_id);
+        if !takes_enemy {
+            return Err(GameError::InvalidMove);
+        }
+        self.apply_move(piece_id, target)
     }
 
     /// Moves a piece, resolving captures, rewards, special moves, and automatic shop upgrades.

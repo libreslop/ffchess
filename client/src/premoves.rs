@@ -65,19 +65,16 @@ pub struct FailedMove {
 
 impl FailedMove {
     /// Returns the failed move of `premove` blamed on `culprits`, or on its target when the
-    /// server named none; `None` when it is not a move.
+    /// server named none; `None` when it is a purchase.
     fn of(premove: &Premove, culprits: Vec<BoardCoord>) -> Option<Self> {
-        match premove.action {
-            PieceAction::Move { target } => Some(Self {
-                piece_id: premove.piece_id,
-                culprits: if culprits.is_empty() {
-                    vec![target]
-                } else {
-                    culprits
-                },
-            }),
-            PieceAction::Buy { .. } => None,
-        }
+        premove.action.move_target().map(|target| Self {
+            piece_id: premove.piece_id,
+            culprits: if culprits.is_empty() {
+                vec![target]
+            } else {
+                culprits
+            },
+        })
     }
 }
 
@@ -221,12 +218,32 @@ impl PremoveQueue {
     /// skipped here; the server checks them when the action runs. A move predicted to fail
     /// anyway (another piece in the way) is still shown, moving the piece straight to its
     /// target, so the trail stays until the server rejects it.
+    ///
+    /// A guard waits for its square to free up, so it leaves its piece in place and only
+    /// draws its line; a guard superseded by a later action of its piece is not shown.
     pub fn project(&self, state: &GameState, catalog: &Catalog) -> Projection {
         let mut projected = state.clone();
         let mut lines = Vec::new();
         let mut queued = HashSet::new();
         for premove in &self.items {
             queued.insert(premove.piece_id);
+            if let PieceAction::Guard { target } = premove.action {
+                let standing = self
+                    .last_of(premove.piece_id)
+                    .is_some_and(|last| last.id == premove.id);
+                let guard_line = projected
+                    .pieces
+                    .get(&premove.piece_id)
+                    .filter(|_| standing)
+                    .map(|piece| PremoveLine {
+                        action: premove.id,
+                        piece_id: premove.piece_id,
+                        start: piece.position,
+                        target,
+                    });
+                lines.extend(guard_line);
+                continue;
+            }
             // Move timestamps of predicted pieces are never shown, so any clock value works.
             let applied = Simulation::new(catalog, &mut projected, TimestampMs::default())
                 .with_timing(MoveTiming::Premove)

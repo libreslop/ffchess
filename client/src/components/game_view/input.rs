@@ -10,7 +10,6 @@ use crate::math::Vec2;
 use crate::premoves::Projection;
 use crate::reducer::{GameAction, GameStateReducer, MsgSender};
 use crate::utils::performance_now;
-use common::models::PieceAction;
 use common::types::{BoardCoord, PieceId};
 use std::rc::Rc;
 use web_sys::HtmlCanvasElement;
@@ -258,8 +257,8 @@ impl PointerContext {
     }
 
     /// Drops a dragged piece at `pos`, moving it there as if that square was tapped with the
-    /// piece selected, or to a legal square close enough to snap to; other drops leave it
-    /// selected in place.
+    /// piece selected, guarding another of your pieces standing there, or moving to a legal
+    /// square close enough to snap to; other drops leave it selected in place.
     ///
     /// A piece picked up from where it stands now moves from there, replacing its queued
     /// actions.
@@ -275,9 +274,9 @@ impl PointerContext {
                 .project(&self.reducer.state, &self.reducer.catalog)
         });
         let projection = replaced.as_ref().unwrap_or(&self.projection);
-        let Some(target) = self
+        let Some(action) = self
             .tap_context_with(projection, Some(piece_id))
-            .drop_target(piece_id, point, self.drag_snap_squares)
+            .drop_action(piece_id, point, self.drag_snap_squares)
         else {
             return;
         };
@@ -287,7 +286,7 @@ impl PointerContext {
                 tx: self.tx.clone(),
             });
         }
-        self.apply_tap(TapOutcome::Move { piece_id, target });
+        self.apply_tap(TapOutcome::Queue { piece_id, action });
     }
 
     /// Carries out the outcome of a tap.
@@ -301,10 +300,10 @@ impl PointerContext {
                 });
                 self.handles.selected.set(select);
             }
-            TapOutcome::Move { piece_id, target } => {
+            TapOutcome::Queue { piece_id, action } => {
                 self.reducer.dispatch(GameAction::QueueAction {
                     piece_id,
-                    action: PieceAction::Move { target },
+                    action,
                     tx: self.tx.clone(),
                 });
             }

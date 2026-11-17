@@ -415,6 +415,27 @@ impl Catalog {
             .map(|plan| plan.kind())
     }
 
+    /// Checks whether `mover` may guard the other piece of its own owner standing on `end`.
+    ///
+    /// One of the mover's capture paths must reach `end` over empty squares, so it can take
+    /// the square back once the guarded piece is captured. Destination requirements are
+    /// checked only when the guard fires.
+    pub fn check_guard(
+        &self,
+        state: &GameState,
+        mover: &Piece,
+        end: BoardCoord,
+    ) -> Result<(), GameError> {
+        let config = self.piece(&mover.piece_type)?;
+        let guards_own = state
+            .piece_at(end)
+            .is_some_and(|guarded| guarded.id != mover.id && guarded.owner_id == mover.owner_id);
+        if !guards_own {
+            return Err(GameError::InvalidMove);
+        }
+        config.reaches(state, mover.position, end, MoveKind::Capture)
+    }
+
     /// Lists every legal move of `mover` made with `timing`.
     pub fn legal_moves(
         &self,

@@ -21,6 +21,13 @@ impl fmt::Display for ShopItemIndex {
 pub enum PieceAction {
     /// Move (or capture) to `target`.
     Move { target: BoardCoord },
+    /// Guard the piece of the same owner standing on `target`: the capture of `target` waits
+    /// until no piece of that owner stands there, so the guard takes back the square as soon
+    /// as the guarded piece is captured. The guard fails once the square is left empty.
+    ///
+    /// A guard only stands while it is the last action of its piece; queuing anything after
+    /// it supersedes it.
+    Guard { target: BoardCoord },
     /// Buy an item from the shop the piece is standing on.
     Buy { item: ShopItemIndex },
 }
@@ -28,6 +35,14 @@ pub enum PieceAction {
 impl PieceAction {
     /// Returns true when the action must wait for the piece's movement cooldown.
     pub fn needs_cooldown(&self) -> bool {
-        matches!(self, Self::Move { .. })
+        self.move_target().is_some()
+    }
+
+    /// Returns the square the action moves its piece to, if it is a move or a guard.
+    pub fn move_target(&self) -> Option<BoardCoord> {
+        match self {
+            Self::Move { target } | Self::Guard { target } => Some(*target),
+            Self::Buy { .. } => None,
+        }
     }
 }

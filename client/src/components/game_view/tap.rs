@@ -3,7 +3,7 @@
 use super::geometry::grid_square;
 use crate::math::Vec2;
 use crate::premoves::{PremoveQueue, Projection};
-use common::models::GameState;
+use common::models::{GameState, PieceAction};
 use common::rules::Catalog;
 use common::types::{BoardCoord, PieceId, PlayerId, TimestampMs};
 
@@ -17,10 +17,10 @@ pub(super) enum TapOutcome {
         piece_id: PieceId,
         select: Option<PieceId>,
     },
-    /// Queue a move of the selected piece to the tapped square.
-    Move {
+    /// Queue an action of the selected or dropped piece.
+    Queue {
         piece_id: PieceId,
-        target: BoardCoord,
+        action: PieceAction,
     },
     /// Leave everything as it is.
     Ignore,
@@ -71,9 +71,11 @@ impl TapContext<'_> {
         if target == selected_piece.position {
             TapOutcome::Select(None)
         } else if let Some(move_target) = self.move_target(selected, target) {
-            TapOutcome::Move {
+            TapOutcome::Queue {
                 piece_id: selected,
-                target: move_target,
+                action: PieceAction::Move {
+                    target: move_target,
+                },
             }
         } else if let Some(piece_id) = own_piece_at_target {
             TapOutcome::Select(Some(piece_id))
@@ -84,20 +86,24 @@ impl TapContext<'_> {
         }
     }
 
-    /// Returns where the dragged `piece_id` lands when dropped at `point`, in grid units: the
-    /// move tapping the square under `point` would queue with the piece selected.
+    /// Returns the action the dragged `piece_id` queues when dropped at `point`, in grid
+    /// units: the move tapping the square under `point` would queue with the piece selected.
     ///
-    /// When that square selects no legal move, the drop snaps to the nearest square that
-    /// does, if one is within `snap_squares` of `point`.
-    pub(super) fn drop_target(
+    /// When that square selects no legal move but holds another of your pieces the dragged
+    /// one could capture on, the drop guards that piece. Otherwise the drop snaps to the nearest
+    /// square that selects a move, if one is within `snap_squares` of `point`.
+    pub(super) fn drop_action(
         &self,
         piece_id: PieceId,
         point: Vec2,
         snap_squares: f64,
-    ) -> Option<BoardCoord> {
+    ) -> Option<PieceAction> {
         let square = grid_square(point);
         if let Some(target) = self.move_target(piece_id, square) {
-            return Some(target);
+            return Some(PieceAction::Move { target });
+        }
+        if self.can_guard(piece_id, square) {
+            return Some(PieceAction::Guard { target: square });
         }
         let reach = snap_squares.max(0.0).ceil() as i32;
         (-reach..=reach)
@@ -109,7 +115,17 @@ impl TapContext<'_> {
                 Some((self.move_target(piece_id, candidate)?, distance))
             })
             .min_by(|(_, a), (_, b)| a.total_cmp(b))
-            .map(|(target, _)| target)
+            .map(|(target, _)| PieceAction::Move { target })
+    }
+
+    /// Returns true when `piece_id`, from its predicted square, can guard the other piece of
+    /// yours predicted to stand on `square`.
+    fn can_guard(&self, piece_id: PieceId, square: BoardCoord) -> bool {
+        let predicted = &self.projection.state;
+        predicted
+            .pieces
+            .get(&piece_id)
+            .is_some_and(|piece| self.catalog.check_guard(predicted, piece, square).is_ok())
     }
 
     /// Returns the local player's piece a press on `target` picks up, and whether it is picked

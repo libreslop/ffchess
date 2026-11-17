@@ -12,6 +12,9 @@ const HOUSEKEEPING_EVERY_TICKS: u64 = 600;
 
 impl World {
     /// Runs one tick: actions, NPCs, board resizing, hooks, then a snapshot broadcast.
+    ///
+    /// Actions run again after the NPCs moved, so guards take back squares NPCs captured
+    /// within the same tick.
     pub(super) fn tick(&mut self, now: TimestampMs) {
         if !self.outbox.is_empty() {
             self.clock.last_viewed_at = now;
@@ -20,6 +23,7 @@ impl World {
             self.process_actions(now);
             self.spawn_npcs(now);
             self.tick_npcs(now);
+            self.process_actions(now);
         }
 
         if self.clock.ticks.is_multiple_of(HOUSEKEEPING_EVERY_TICKS) {
