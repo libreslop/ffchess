@@ -2,7 +2,7 @@
 
 use super::actions::{DisconnectNotice, GameAction};
 use super::types::{
-    ClientPhase, ErrorNotice, GameStateReducer, MatchStats, SpectateStatus, Victory,
+    ClientPhase, ErrorNotice, FinishedMatch, GameStateReducer, MatchStats, SpectateStatus, Victory,
 };
 use common::protocol::{ChatLine, ClientMessage, GameError};
 use common::types::{PlayerId, TimestampMs};
@@ -140,7 +140,15 @@ impl Reducible for GameStateReducer {
                 next.spectate = Some(SpectateStatus::Ended);
                 next.spectators.clear();
             }
+            GameAction::MatchFinished(replay) => {
+                next.finished_match = Some(FinishedMatch { replay });
+            }
             GameAction::SetMatchList(matches) => next.match_list = Some(matches),
+            GameAction::LoadReplay(payload) => {
+                next.apply_init(*payload);
+                next.spectate = Some(SpectateStatus::Watching);
+            }
+            GameAction::ShowReplayFrame(state) => next.state = *state,
         }
         next.phase = compute_phase(&next);
         next.into()
@@ -207,6 +215,7 @@ impl GameStateReducer {
         self.is_dead = false;
         self.clear_victory_state();
         self.queue_status = None;
+        self.finished_match = None;
     }
 
     /// Clears reconnect/disconnect UI details while keeping fatal flags untouched.

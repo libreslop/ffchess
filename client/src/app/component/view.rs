@@ -4,13 +4,14 @@ use crate::app::GlobalClientConfig;
 use crate::app::focus::Slot;
 use crate::components::{
     DisconnectedScreen, EndScreen, EndScreenKind, ErrorToast, FatalNotification, GameView,
-    JoinScreen, Leaderboard, LeaveButton, MatchBrowser, NestedQueue, QueueBanner, SpectateEnded,
+    JoinScreen, Leaderboard, LeaveButton, MatchBrowser, NestedQueue, QueueBanner, ReplayViewer,
+    SpectateEnded,
 };
 use crate::reducer::{GameStateReducer, MsgSender};
 use crate::ui_state::{Backdrop, CooldownSeconds, JoinStep};
 use common::models::ModeSummary;
 use common::protocol::SpectateTarget;
-use common::types::{KitId, ModeId};
+use common::types::{KitId, ModeId, ReplayId};
 use yew::prelude::*;
 
 /// Render inputs for the root application view.
@@ -47,6 +48,10 @@ pub struct AppViewProps {
     pub quick_play_modes: Vec<ModeSummary>,
     pub on_quick_play: Callback<ModeId>,
     pub nested_queue: Option<NestedQueue>,
+    /// Replay shown over everything else, while one is open.
+    pub open_replay: Option<ReplayId>,
+    pub on_view_replay: Callback<ReplayId>,
+    pub on_close_replay: Callback<()>,
 }
 
 /// Renders the root application UI.
@@ -67,6 +72,12 @@ pub fn render_app(props: AppViewProps) -> Html {
     let victory = reducer.victory.clone();
     let is_spectating = reducer.is_spectating();
     let on_main_menu = props.on_main_menu;
+    // A finished match cannot be spectated anymore, but its replay may be watched.
+    let on_spectate_own = (!reducer.match_finished())
+        .then(|| props.on_spectate.reform(|_| SpectateTarget::Own));
+    let on_view_replay = reducer
+        .replay_id()
+        .map(|replay_id| props.on_view_replay.reform(move |_| replay_id));
     let leaderboard = html! {
         <Leaderboard
             players={reducer.state.players.values().cloned().collect::<Vec<_>>()}
@@ -115,7 +126,7 @@ pub fn render_app(props: AppViewProps) -> Html {
                 <GameView
                     key={props.slot.as_str()}
                     reducer={reducer.clone()}
-                    tx={sender}
+                    tx={Some(sender)}
                     globals={global_cfg.clone()}
                     player_name={props.player_name.clone()}
                 />
@@ -149,14 +160,15 @@ pub fn render_app(props: AppViewProps) -> Html {
                     on_rejoin={props.on_rejoin.clone()}
                     rejoin_cooldown={props.rejoin_cooldown}
                     rejoin_cooldown_max={CooldownSeconds::from_duration(reducer.respawn_cooldown())}
-                    on_spectate={props.on_spectate.reform(|_| SpectateTarget::Own)}
+                    on_spectate={on_spectate_own}
+                    on_view_replay={on_view_replay.clone()}
                 />
             } else if is_spectating {
                 <div data-testid="spectator-hud">
                     { leaderboard.clone() }
                     { stats_overlay.clone() }
                     if reducer.spectate_ended() {
-                        <SpectateEnded on_return={props.on_leave.clone()} />
+                        <SpectateEnded on_return={props.on_leave.clone()} on_view_replay={on_view_replay} />
                     }
                 </div>
             } else if is_joined && !force_join_overlay {
@@ -218,6 +230,14 @@ pub fn render_app(props: AppViewProps) -> Html {
                     }
                 }
             </div>
+
+            if let Some(replay_id) = props.open_replay {
+                <ReplayViewer
+                    replay_id={replay_id}
+                    globals={global_cfg.clone()}
+                    on_close={props.on_close_replay.clone()}
+                />
+            }
         </div>
     }
 }

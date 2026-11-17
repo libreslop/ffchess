@@ -18,7 +18,7 @@ The documents below are written from the current code and config files in this r
 - [logic/npcs.md](logic/npcs.md): spawn rules and autonomous NPC movement.
 - [logic/world.md](logic/world.md): board sizing, spawn heuristics, shop spawning, and pruning.
 - [logic/matchmaking.md](logic/matchmaking.md): queue modes, preview boards, private matches, and connection binding.
-- [logic/spectating.md](logic/spectating.md): named spectators, the match browser, and spectating ending with a match.
+- [logic/spectating.md](logic/spectating.md): named spectators, the match browser, matches finishing, and replays.
 - [logic/chat.md](logic/chat.md): room selection, sender identity, retention, fade rules, and client rendering behavior.
 
 ## Reading Order

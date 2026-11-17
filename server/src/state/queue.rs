@@ -84,6 +84,7 @@ impl Lobby {
             template,
             self.config.catalog.clone(),
             self.config.global.chat_ttl(),
+            self.replays.as_deref(),
         ));
         instance.start_countdown();
         instance.spawn_initial_shops();

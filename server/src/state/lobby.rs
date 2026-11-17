@@ -6,6 +6,7 @@ use super::queue::QueueEntry;
 use crate::config::ConfigManager;
 use crate::instance::GameInstance;
 use crate::outbound::ClientTx;
+use crate::replays::ReplayStore;
 use crate::types::ConnectionId;
 use common::models::GameModeConfig;
 use common::types::{ModeId, PlayerId, SessionSecret};
@@ -21,11 +22,13 @@ pub(super) struct Lobby {
     pub(super) previews: HashMap<ModeId, PreviewWatchers>,
     /// Boards that named spectators watch.
     pub(super) spectators: HashMap<ConnectionId, Arc<GameInstance>>,
+    /// Database new private matches record their replays into.
+    pub(super) replays: Option<Arc<ReplayStore>>,
 }
 
 impl Lobby {
     /// Creates the lobby with one public instance per configured mode.
-    pub(super) fn new(config: Arc<ConfigManager>) -> Self {
+    pub(super) fn new(config: Arc<ConfigManager>, replays: Option<Arc<ReplayStore>>) -> Self {
         let games = config
             .modes
             .iter()
@@ -45,6 +48,7 @@ impl Lobby {
             queues: HashMap::new(),
             previews: HashMap::new(),
             spectators: HashMap::new(),
+            replays,
         }
     }
 

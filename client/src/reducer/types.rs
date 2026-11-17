@@ -6,7 +6,7 @@ use common::models::{GameModeClientConfig, GameState, MatchSummary, Player};
 use common::protocol::{ChatLine, ClientMessage, GameError, VictoryFocusTarget};
 use common::rules::Catalog;
 use common::types::{
-    DurationMs, PlayerCount, PlayerId, QueuePosition, Score, SessionSecret, TimestampMs,
+    DurationMs, PlayerCount, PlayerId, QueuePosition, ReplayId, Score, SessionSecret, TimestampMs,
 };
 use std::rc::Rc;
 
@@ -94,6 +94,13 @@ pub struct Victory {
     pub focus_target: VictoryFocusTarget,
 }
 
+/// The match on screen finished; it can no longer be spectated.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct FinishedMatch {
+    /// The recording of the match, when its mode allows replays.
+    pub replay: Option<ReplayId>,
+}
+
 /// An error shown to the player, numbered so repeated errors show again.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct ErrorNotice {
@@ -139,6 +146,8 @@ pub struct GameStateReducer {
     pub spectators: Vec<String>,
     /// Running matches offered for spectating, once the server listed them.
     pub match_list: Option<Vec<MatchSummary>>,
+    /// Set once the match on screen finished.
+    pub finished_match: Option<FinishedMatch>,
 }
 
 impl GameStateReducer {
@@ -179,6 +188,16 @@ impl GameStateReducer {
     /// Returns true once the spectated match ended.
     pub fn spectate_ended(&self) -> bool {
         self.spectate == Some(SpectateStatus::Ended)
+    }
+
+    /// Returns true once the match on screen finished, so it can no longer be spectated.
+    pub fn match_finished(&self) -> bool {
+        self.finished_match.is_some()
+    }
+
+    /// Returns the replay of the finished match on screen, if it was recorded.
+    pub fn replay_id(&self) -> Option<ReplayId> {
+        self.finished_match.and_then(|finished| finished.replay)
     }
 
     /// Returns true when the mode matches players through a queue of separate matches.

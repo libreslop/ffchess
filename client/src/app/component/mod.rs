@@ -18,7 +18,7 @@ use callbacks::{
     build_on_leave, build_on_name_input, build_on_name_submit, build_on_rejoin,
 };
 use common::models::{GameModeClientConfig, ModeSummary};
-use common::types::ModeId;
+use common::types::{ModeId, ReplayId};
 use effects::{
     KeyboardShortcutEffectInputs, PreviewDefaultRef, use_disconnected_overlay_effect,
     use_error_auto_clear_effect, use_fatal_error_reset_effect, use_joining_reset_effect,
@@ -59,6 +59,7 @@ pub fn app() -> Html {
     let has_interacted = use_state(|| false);
     let show_disconnected = use_state(|| false);
     let preview_default_ref: PreviewDefaultRef = use_mut_ref(|| None);
+    let open_replay = use_state(|| None::<ReplayId>);
 
     let injected_modes = use_memo((), |_| injected_modes());
     let injected_mode_info = injected_modes.first().cloned();
@@ -313,6 +314,12 @@ pub fn app() -> Html {
         on_menu_spectate,
         on_quick_play,
         nested_queue,
+        open_replay: *open_replay,
+        on_view_replay: {
+            let open_replay = open_replay.clone();
+            Callback::from(move |replay_id| open_replay.set(Some(replay_id)))
+        },
+        on_close_replay: Callback::from(move |_| open_replay.set(None)),
     })
 }
 

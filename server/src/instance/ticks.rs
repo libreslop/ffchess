@@ -37,7 +37,8 @@ impl World {
 
         self.shrink_board();
         self.resolve_hooks(now);
-        self.release_spectators_if_finished();
+        self.record_replay_frame(now);
+        self.finish_if_over(now);
         // Encoded once here, so every connection writes the same text without re-encoding it.
         if let Some(update) = EncodedUpdate::encode(&self.update_message()) {
             self.outbox.publish(&update);

@@ -175,6 +175,7 @@ fn to_action(message: ServerMessage, mode_id: &ModeId) -> GameAction {
         ServerMessage::Pong(sent_at, server_time) => GameAction::Pong(sent_at, server_time),
         ServerMessage::Chat { line } => GameAction::PushChatLine(line),
         ServerMessage::MatchList { matches } => GameAction::SetMatchList(matches),
+        ServerMessage::MatchFinished { replay } => GameAction::MatchFinished(replay),
         ServerMessage::SpectateEnded => GameAction::SpectateEnded,
     }
 }

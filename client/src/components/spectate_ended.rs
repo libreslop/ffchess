@@ -1,5 +1,6 @@
 //! Overlay shown once the spectated match is over.
 
+use super::end_screen::SECONDARY_BUTTON_STYLE;
 use super::pixel_font::{NATIVE_PX, title_pixel_px};
 use yew::prelude::*;
 
@@ -7,10 +8,12 @@ use yew::prelude::*;
 #[derive(Properties, PartialEq)]
 pub struct SpectateEndedProps {
     pub on_return: Callback<MouseEvent>,
+    /// Opens the replay of the finished match, when it was recorded.
+    pub on_view_replay: Option<Callback<MouseEvent>>,
 }
 
 #[function_component(SpectateEnded)]
-/// Renders "game ended" over the final board with a button back to the menu.
+/// Renders "game ended" over the final board with buttons back to the menu and to the replay.
 pub fn spectate_ended(props: &SpectateEndedProps) -> Html {
     // One step below the end screen titles keeps the longer title on one line on phones.
     let pixel_px = title_pixel_px().saturating_sub(1).max(1);
@@ -24,10 +27,17 @@ pub fn spectate_ended(props: &SpectateEndedProps) -> Html {
                         "color: #e2e8f0; margin: 0 0 24px; font-size: {}px; font-weight: normal; line-height: 1; white-space: nowrap; filter: drop-shadow(3px 3px 0 rgba(0,0,0,0.6)); text-transform: uppercase;",
                         pixel_px * NATIVE_PX,
                     )}>{"Game ended"}</h1>
-                    <button onclick={props.on_return.clone()}
-                        style="padding: 8px 40px; font-size: 1.2em; cursor: pointer; background: rgba(30, 41, 59, 0.4); color: white; border: 3px solid #fff; border-radius: 0; font-weight: 900; text-transform: uppercase; letter-spacing: 2px;">
-                        {"Return to menu"}
-                    </button>
+                    <div style="display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">
+                        <button onclick={props.on_return.clone()}
+                            style="padding: 8px 40px; font-size: 1.2em; cursor: pointer; background: rgba(30, 41, 59, 0.4); color: white; border: 3px solid #fff; border-radius: 0; font-weight: 900; text-transform: uppercase; letter-spacing: 2px;">
+                            {"Return to menu"}
+                        </button>
+                        if let Some(on_view_replay) = props.on_view_replay.clone() {
+                            <button data-testid="view-replay" onclick={on_view_replay} style={SECONDARY_BUTTON_STYLE}>
+                                {"View replay"}
+                            </button>
+                        }
+                    </div>
                 </div>
             </div>
         </>

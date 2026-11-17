@@ -6,6 +6,7 @@ pub mod handlers;
 pub mod instance;
 pub mod outbound;
 pub mod paths;
+pub mod replays;
 pub mod spawning;
 pub mod state;
 pub mod text;

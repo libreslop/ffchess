@@ -28,7 +28,11 @@ they describe.
 5. Refresh color activity for currently connected players.
 6. Recalculate the target board size and shrink only if no player-owned piece would fall outside the new boundary.
 7. Resolve the hook events collected since the previous tick.
-8. Encode a full `UpdateState` snapshot once and publish it to active players and passive viewers.
+8. If the match is recorded for replays, queue the board changes since the last recorded tick
+   (see [spectating.md](spectating.md#replays)).
+9. Finish a private match once no competing player remains: mark it finished, save its replay,
+   send `MatchFinished`, and release its spectators.
+10. Encode a full `UpdateState` snapshot once and publish it to active players and passive viewers.
 
 ## Why NPCs Pause When Unwatched
 
@@ -92,5 +96,7 @@ flowchart TD
     I --> J[refresh color activity]
     J --> K[attempt safe board shrink]
     K --> L[resolve hooks]
-    L --> M[broadcast UpdateState]
+    L --> R[record replay frame]
+    R --> S[finish match if nobody competes]
+    S --> M[broadcast UpdateState]
 ```

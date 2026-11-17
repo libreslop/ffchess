@@ -31,6 +31,7 @@ impl GameStateReducer {
         };
         self.premoves.clear();
         self.error = None;
+        self.finished_match = None;
         self.clear_disconnect_ui();
         self.clear_victory_state();
         // A missing player right after Init is a race with the first update, not a death.

@@ -7,6 +7,7 @@ use common::types::{
 };
 use server::instance::{GameInstance, JoinRequest};
 use server::outbound::ClientTx;
+use server::replays::ReplayStore;
 use server::state::ServerState;
 use server::time::now_ms;
 use std::sync::Arc;
@@ -15,7 +16,7 @@ type Inbox = server::outbound::ClientFeed;
 
 /// Returns the public instance of `mode`.
 fn instance_of(mode: &str) -> Arc<GameInstance> {
-    ServerState::new()
+    ServerState::with_replays(Some(ReplayStore::in_memory()))
         .public_instance(&ModeId::from(mode))
         .expect("mode exists")
 }
@@ -373,7 +374,7 @@ async fn rejoin_with_wrong_secret_gets_fresh_id() {
 /// Verifies a preview request arriving right after a queue join does not pull the player out of
 /// the match that join started.
 async fn preview_request_after_matchmaking_keeps_player_in_match() {
-    let state = ServerState::new();
+    let state = ServerState::with_replays(Some(ReplayStore::in_memory()));
     let mode = ModeId::from("bullet");
     let mut inboxes = Vec::new();
     for name in ["P1", "P2"] {

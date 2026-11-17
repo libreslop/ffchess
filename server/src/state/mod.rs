@@ -19,27 +19,44 @@ pub use connection::Connection;
 use crate::config::ConfigManager;
 use crate::instance::GameInstance;
 use crate::outbound::ClientTx;
+use crate::replays::ReplayStore;
 use crate::time::now_ms;
 use common::models::ModeSummary;
 use common::protocol::{ClientMessage, ServerMessage};
-use common::types::ModeId;
+use common::types::{ModeId, ReplayId};
 use lobby::Lobby;
 use requests::JoinForm;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
-/// Shared server state: configuration plus the lobby of live instances.
+/// Shared server state: configuration, the lobby of live instances, and the replays.
 pub struct ServerState {
     config: Arc<ConfigManager>,
     lobby: Mutex<Lobby>,
+    /// Replay database, unless it could not be opened.
+    replays: Option<Arc<ReplayStore>>,
 }
 
 impl ServerState {
-    /// Loads configuration and creates one public instance per configured mode.
+    /// Loads configuration, opens the replay database in the data directory, and creates one
+    /// public instance per configured mode.
+    ///
+    /// A replay database that cannot be opened disables replays instead of the server.
     pub fn new() -> Self {
+        let replays = ReplayStore::open(&crate::paths::data_dir())
+            .inspect_err(|error| tracing::error!("Replays are disabled: {error}"))
+            .ok();
+        Self::with_replays(replays)
+    }
+
+    /// Loads configuration and creates one public instance per configured mode, recording
+    /// replays into `replays`.
+    pub fn with_replays(replays: Option<ReplayStore>) -> Self {
         let config = Arc::new(ConfigManager::load(&crate::paths::config_dir()));
+        let replays = replays.map(Arc::new);
         Self {
-            lobby: Mutex::new(Lobby::new(config.clone())),
+            lobby: Mutex::new(Lobby::new(config.clone(), replays.clone())),
             config,
+            replays,
         }
     }
 
@@ -56,6 +73,13 @@ impl ServerState {
     /// Returns the public instance of a mode.
     pub fn public_instance(&self, mode_id: &ModeId) -> Option<Arc<GameInstance>> {
         self.lobby().public_instance(mode_id).cloned()
+    }
+
+    /// Returns the JSON of a replay that can still be viewed.
+    ///
+    /// Blocks on the replay database; call it off the async runtime.
+    pub fn finished_replay(&self, id: ReplayId) -> Option<String> {
+        self.replays.as_ref()?.finished_replay(id)
     }
 
     /// Returns the current status of every public mode.

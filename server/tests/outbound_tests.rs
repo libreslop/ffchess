@@ -3,6 +3,7 @@
 use common::protocol::{ChatLine, ClientMessage, GameError, ServerMessage, SpectateTarget};
 use common::types::{ColorHex, KitId, ModeId, PlayerId, TimestampMs};
 use server::outbound::{ClientFeed, ClientTx, EncodedUpdate};
+use server::replays::ReplayStore;
 use server::state::ServerState;
 use server::text::UserText;
 
@@ -102,7 +103,7 @@ fn joined_player(messages: &[ServerMessage]) -> Option<PlayerId> {
 #[tokio::test]
 /// Verifies a client cannot spectate a game it plays in from another tab.
 async fn spectating_own_active_game_is_refused() {
-    let state = ServerState::new();
+    let state = ServerState::with_replays(Some(ReplayStore::in_memory()));
     let (player, mut player_feed) = connect(&state, "ffa");
     state.handle_message(
         &player,
@@ -143,7 +144,7 @@ async fn spectating_own_active_game_is_refused() {
 #[tokio::test]
 /// Verifies joining a game ends spectating it from another tab.
 async fn joining_ends_spectating_in_another_tab() {
-    let state = ServerState::new();
+    let state = ServerState::with_replays(Some(ReplayStore::in_memory()));
     let player_id = PlayerId::new();
     let (watcher, mut watcher_feed) = connect(&state, "ffa");
     state.handle_message(

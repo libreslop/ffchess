@@ -273,6 +273,10 @@ pub struct GameModeConfig {
     pub disable_camera_movement: bool,
     #[educe(Default = DurationMs::zero())]
     pub respawn_cooldown_ms: DurationMs,
+    /// Records private matches so their players and spectators can watch them back once they
+    /// finish.
+    #[educe(Default = false)]
+    pub allow_replays: bool,
     pub npc_limits: Vec<NpcLimitConfig>,
     pub shop_counts: Vec<ShopCountConfig>,
     pub fixed_shops: Vec<FixedShopConfig>,

@@ -3,6 +3,7 @@
 mod action;
 mod config;
 mod hook;
+mod replay;
 mod shading;
 mod special_move;
 mod state;
@@ -11,6 +12,7 @@ mod summary;
 pub use action::*;
 pub use config::*;
 pub use hook::*;
+pub use replay::*;
 pub use shading::*;
 pub use special_move::*;
 pub use state::*;

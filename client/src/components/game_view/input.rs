@@ -24,7 +24,8 @@ const MIN_PAN_SAMPLE_MS: f64 = 2.0;
 pub(super) struct PointerContext {
     pub(super) handles: ViewHandles,
     pub(super) reducer: UseReducerHandle<GameStateReducer>,
-    pub(super) tx: MsgSender,
+    /// Connection moves are sent on, or `None` on a board that cannot be played on.
+    pub(super) tx: Option<MsgSender>,
     pub(super) projection: Rc<Projection>,
     pub(super) tile_size_px: f64,
     pub(super) drag_snap_squares: f64,
@@ -281,10 +282,7 @@ impl PointerContext {
             return;
         };
         if held.replaces_actions {
-            self.reducer.dispatch(GameAction::ClearActions {
-                piece_id,
-                tx: self.tx.clone(),
-            });
+            self.send_action(|tx| GameAction::ClearActions { piece_id, tx });
         }
         self.apply_tap(TapOutcome::Queue { piece_id, action });
     }
@@ -294,20 +292,24 @@ impl PointerContext {
         match outcome {
             TapOutcome::Select(piece_id) => self.handles.selected.set(piece_id),
             TapOutcome::ClearActions { piece_id, select } => {
-                self.reducer.dispatch(GameAction::ClearActions {
-                    piece_id,
-                    tx: self.tx.clone(),
-                });
+                self.send_action(|tx| GameAction::ClearActions { piece_id, tx });
                 self.handles.selected.set(select);
             }
             TapOutcome::Queue { piece_id, action } => {
-                self.reducer.dispatch(GameAction::QueueAction {
+                self.send_action(|tx| GameAction::QueueAction {
                     piece_id,
                     action,
-                    tx: self.tx.clone(),
+                    tx,
                 });
             }
             TapOutcome::Ignore => {}
+        }
+    }
+
+    /// Dispatches an action that tells the server, unless the board cannot be played on.
+    fn send_action(&self, action: impl FnOnce(MsgSender) -> GameAction) {
+        if let Some(tx) = &self.tx {
+            self.reducer.dispatch(action(tx.clone()));
         }
     }
 }

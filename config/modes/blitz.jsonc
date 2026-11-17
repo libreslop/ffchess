@@ -11,6 +11,7 @@
     "disable_camera_movement": true,
     "join_camera_center": { "position": [0, 0] },
     "respawn_cooldown_ms": 0,
+    "allow_replays": true,
     "npc_limits": [],
     "shop_counts": [],
     "fixed_shops": [

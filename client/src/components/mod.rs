@@ -12,6 +12,7 @@ pub mod leave_button;
 pub mod match_browser;
 mod pixel_font;
 pub mod queue_banner;
+pub mod replay_viewer;
 pub mod shop_ui;
 pub mod spectate_ended;
 
@@ -25,4 +26,5 @@ pub use leaderboard::Leaderboard;
 pub use leave_button::LeaveButton;
 pub use match_browser::MatchBrowser;
 pub use queue_banner::{NestedQueue, QueueBanner};
+pub use replay_viewer::ReplayViewer;
 pub use spectate_ended::SpectateEnded;

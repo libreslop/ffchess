@@ -9,6 +9,9 @@ pub struct LeaveButtonProps {
     pub on_leave: Callback<MouseEvent>,
     /// What sits behind the button, which picks the icon color like it does for chat text.
     pub backdrop: Backdrop,
+    /// Tooltip and accessible name of the button.
+    #[prop_or(AttrValue::Static("Leave game"))]
+    pub title: AttrValue,
 }
 
 #[function_component(LeaveButton)]
@@ -19,8 +22,8 @@ pub fn leave_button(props: &LeaveButtonProps) -> Html {
         <button
             data-testid="leave-button"
             data-ui-exempt="true"
-            title="Leave game"
-            aria-label="Leave game"
+            title={props.title.clone()}
+            aria-label={props.title.clone()}
             onclick={props.on_leave.clone()}
             style={format!(
                 "position: absolute; top: 12px; left: 12px; z-index: 110; padding: 0; background: transparent; border: none; cursor: pointer; display: block; filter: drop-shadow(1px 1px 0 {});",

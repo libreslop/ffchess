@@ -5,7 +5,7 @@ use crate::protocol::error::GameError;
 use crate::rules::Catalog;
 use crate::types::{
     ActionId, BoardCoord, BoardSize, ColorHex, KitId, ModeId, PieceId, PlayerCount, PlayerId,
-    QueuePosition, Score, SessionSecret, TimestampMs,
+    QueuePosition, ReplayId, Score, SessionSecret, TimestampMs,
 };
 use serde::{Deserialize, Serialize};
 
@@ -142,6 +142,13 @@ pub enum ServerMessage {
     /// Running matches of the connection's queue mode, newest first.
     MatchList {
         matches: Vec<MatchSummary>,
+    },
+    /// The match finished: nobody competes in it anymore and it can no longer be spectated.
+    ///
+    /// Sent to everyone still on the board, before spectators get [`Self::SpectateEnded`].
+    MatchFinished {
+        /// The recording of the match, when its mode allows replays.
+        replay: Option<ReplayId>,
     },
     /// The spectated match ended, or was already over; the connection no longer spectates it.
     SpectateEnded,

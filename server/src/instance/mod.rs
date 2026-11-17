@@ -14,13 +14,16 @@ mod sessions;
 mod setup;
 mod shops;
 mod spectators;
+mod status;
 mod ticks;
 mod world;
 
 pub use players::JoinRequest;
 pub use spectators::Spectator;
+pub use status::MatchStatus;
 
 use crate::outbound::ClientTx;
+use crate::replays::ReplayStore;
 use crate::time::now_ms;
 use crate::types::ConnectionId;
 use common::models::{GameModeConfig, GameState, MatchPlayer, MatchSummary};
@@ -44,23 +47,37 @@ pub struct GameInstance {
 impl GameInstance {
     /// Creates the shared public instance of `mode`.
     pub fn public(mode: GameModeConfig, catalog: Arc<Catalog>, chat_ttl: DurationMs) -> Self {
-        Self::with_setup(InstanceSetup::public(mode, catalog), chat_ttl)
+        Self::with_setup(InstanceSetup::public(mode, catalog), chat_ttl, None)
     }
 
     /// Creates a private match of the queue mode `template`.
+    ///
+    /// The match is recorded into `replays` when its mode allows replays.
     pub fn private_match(
         template: &GameModeConfig,
         catalog: Arc<Catalog>,
         chat_ttl: DurationMs,
+        replays: Option<&ReplayStore>,
     ) -> Self {
-        Self::with_setup(InstanceSetup::private_match(template, catalog), chat_ttl)
+        Self::with_setup(
+            InstanceSetup::private_match(template, catalog),
+            chat_ttl,
+            replays,
+        )
     }
 
     /// Creates an instance from its setup.
-    fn with_setup(setup: InstanceSetup, chat_ttl: DurationMs) -> Self {
+    fn with_setup(
+        setup: InstanceSetup,
+        chat_ttl: DurationMs,
+        replays: Option<&ReplayStore>,
+    ) -> Self {
         let setup = Arc::new(setup);
+        let recorder = replays
+            .filter(|_| setup.records_replays())
+            .map(|store| store.record(&setup.replay_header()));
         Self {
-            world: Mutex::new(World::new(setup.clone(), chat_ttl, now_ms())),
+            world: Mutex::new(World::new(setup.clone(), chat_ttl, recorder, now_ms())),
             setup,
         }
     }
@@ -188,9 +205,14 @@ impl GameInstance {
         self.world().spectators.name_of(conn_id).map(str::to_string)
     }
 
-    /// Returns true once a private match has no competing player left.
+    /// Returns whether the match is still played.
+    pub fn status(&self) -> MatchStatus {
+        self.world().status
+    }
+
+    /// Returns true once the match finished.
     pub fn is_finished(&self) -> bool {
-        self.world().is_finished()
+        self.status().is_finished()
     }
 
     /// Describes this match for the list of spectatable matches.

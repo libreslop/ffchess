@@ -22,6 +22,7 @@ The filename stem becomes the runtime `GameModeConfig.id`.
 | `join_camera_center` | `JoinCameraCenter` | No | `{ "piece_id": "king" }` | Initial camera focus when entering `Alive` (first spawn/rejoin). |
 | `disable_camera_movement` | boolean | No | `false` | Disables player-controlled camera drag and zoom input. Automatic camera focus and scripted panning still run. |
 | `respawn_cooldown_ms` | integer (`i64`) | Yes | none | Time after elimination before the same stored player id may respawn. |
+| `allow_replays` | boolean | No | `false` | Records each private match so its players and spectators can watch it back after it finishes. Replays are kept for 24 hours. Only queue modes have matches that finish, so it has no effect on public modes. See [spectating.md](../logic/spectating.md#replays). |
 | `npc_limits` | `NpcLimit[]` | Yes | none | Per-piece NPC cap formulas. |
 | `shop_counts` | `ShopCount[]` | Yes | none | Randomly spawned shops for the mode. |
 | `fixed_shops` | `FixedShop[]` | No | `[]` | Absolute shop placements that always spawn at the configured coordinates. |

@@ -3,6 +3,7 @@ members = [
     "common",
     "server",
     "client",
+    "loadtest",
 ]
 resolver = "2"
 

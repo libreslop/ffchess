@@ -3,5 +3,5 @@
 mod http;
 mod ws;
 
-pub use http::{index_html, list_modes};
+pub use http::{get_replay, index_html, list_modes};
 pub use ws::ws_handler;

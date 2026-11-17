@@ -99,6 +99,10 @@ uuid_id!(
     /// Private session token used to authenticate re-joins.
     SessionSecret
 );
+uuid_id!(
+    /// Identifier of the recorded replay of a finished match.
+    ReplayId
+);
 
 string_id!(
     /// Identifier for a piece type defined in config (e.g., "pawn").

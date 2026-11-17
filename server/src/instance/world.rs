@@ -7,7 +7,9 @@ use super::outbox::Outbox;
 use super::sessions::SessionBook;
 use super::setup::InstanceSetup;
 use super::spectators::SpectatorRoster;
+use super::status::MatchStatus;
 use crate::colors::ColorManager;
+use crate::replays::ReplayRecorder;
 use common::models::GameState;
 use common::protocol::{ChatLine, ServerMessage};
 use common::rules::ActionEffects;
@@ -58,11 +60,19 @@ pub(super) struct World {
     /// Players that already won and only remain to view the final board.
     pub(super) victors: HashSet<PlayerId>,
     pub(super) clock: InstanceClock,
+    pub(super) status: MatchStatus,
+    /// Recording of the match, until it finishes.
+    pub(super) replay: Option<ReplayRecorder>,
 }
 
 impl World {
-    /// Creates an empty world sized for zero players.
-    pub(super) fn new(setup: Arc<InstanceSetup>, chat_ttl: DurationMs, now: TimestampMs) -> Self {
+    /// Creates an empty world sized for zero players, recording into `replay` when given.
+    pub(super) fn new(
+        setup: Arc<InstanceSetup>,
+        chat_ttl: DurationMs,
+        replay: Option<ReplayRecorder>,
+        now: TimestampMs,
+    ) -> Self {
         let state = GameState {
             board_size: setup.mode.board_size_for(0),
             mode_id: setup.mode.id.clone(),
@@ -80,6 +90,8 @@ impl World {
             spectators: SpectatorRoster::default(),
             victors: HashSet::new(),
             clock: InstanceClock::new(now),
+            status: MatchStatus::Running,
+            replay,
         }
     }
 

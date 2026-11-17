@@ -1,6 +1,6 @@
 //! Immutable configuration of one game instance.
 
-use common::models::{GameModeClientConfig, GameModeConfig};
+use common::models::{GameModeClientConfig, GameModeConfig, ReplayHeader};
 use common::rules::Catalog;
 use common::types::{ModeId, PlayerCount};
 use std::sync::Arc;
@@ -42,6 +42,21 @@ impl InstanceSetup {
             client_mode: template.to_client_config(),
             catalog,
             is_private: true,
+        }
+    }
+
+    /// Returns true when the matches of this setup are recorded for replays.
+    ///
+    /// Only private matches finish, so only they can be replayed.
+    pub(super) fn records_replays(&self) -> bool {
+        self.is_private && self.mode.allow_replays
+    }
+
+    /// Returns the rules a replay of this instance is played back with.
+    pub(super) fn replay_header(&self) -> ReplayHeader {
+        ReplayHeader {
+            mode: self.client_mode.clone(),
+            catalog: (*self.catalog).clone(),
         }
     }
 

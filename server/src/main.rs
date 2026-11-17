@@ -35,7 +35,8 @@ async fn main() {
             "/api",
             Router::new()
                 .route("/ws/:mode_id", get(server::handlers::ws_handler))
-                .route("/modes", get(server::handlers::list_modes)),
+                .route("/modes", get(server::handlers::list_modes))
+                .route("/replays/:id", get(server::handlers::get_replay)),
         )
         .route("/", get(server::handlers::index_html))
         .fallback_service(ServeDir::new(server::paths::client_dist_dir()))

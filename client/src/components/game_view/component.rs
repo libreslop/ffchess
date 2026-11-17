@@ -26,7 +26,8 @@ use yew::prelude::*;
 #[derive(Properties, PartialEq)]
 pub struct GameViewProps {
     pub reducer: UseReducerHandle<GameStateReducer>,
-    pub tx: MsgSender,
+    /// Connection to the server, or `None` for a board nobody plays on, such as a replay.
+    pub tx: Option<MsgSender>,
     pub globals: GlobalClientConfig,
     pub player_name: String,
 }
@@ -180,7 +181,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
         let tx = props.tx.clone();
         let piece_id = active_shop.as_ref().map(|shop| shop.piece.id);
         Callback::from(move |item: usize| {
-            if let Some(piece_id) = piece_id {
+            if let (Some(piece_id), Some(tx)) = (piece_id, &tx) {
                 reducer.dispatch(GameAction::QueueAction {
                     piece_id,
                     action: PieceAction::Buy {
@@ -250,12 +251,14 @@ pub fn game_view(props: &GameViewProps) -> Html {
 
             { shop_menu.unwrap_or_default() }
 
-            <GameChat
-                reducer={reducer.clone()}
-                tx={props.tx.clone()}
-                globals={globals.clone()}
-                player_name={props.player_name.clone()}
-            />
+            if let Some(tx) = props.tx.clone() {
+                <GameChat
+                    reducer={reducer.clone()}
+                    tx={tx}
+                    globals={globals.clone()}
+                    player_name={props.player_name.clone()}
+                />
+            }
         </div>
     }
 }

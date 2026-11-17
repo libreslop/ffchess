@@ -7,7 +7,7 @@ use common::models::{
 use common::protocol::{ChatLine, GameError, GameOverStats, VictoryFocusTarget};
 use common::rules::Catalog;
 use common::types::{
-    ActionId, BoardCoord, BoardSize, PieceId, PlayerId, SessionSecret, TimestampMs,
+    ActionId, BoardCoord, BoardSize, PieceId, PlayerId, ReplayId, SessionSecret, TimestampMs,
 };
 
 /// Initial game snapshot payload delivered on connect.
@@ -119,5 +119,11 @@ pub enum GameAction {
     BeginSpectate,
     /// The spectated match ended.
     SpectateEnded,
+    /// The match on screen finished, recorded as the given replay if its mode allows replays.
+    MatchFinished(Option<ReplayId>),
     SetMatchList(Vec<MatchSummary>),
+    /// Shows the start of a replay, watched like a spectator watches a live board.
+    LoadReplay(Box<InitPayload>),
+    /// Shows the board of a replay at one moment.
+    ShowReplayFrame(Box<GameState>),
 }

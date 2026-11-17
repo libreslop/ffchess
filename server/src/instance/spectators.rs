@@ -111,19 +111,8 @@ impl World {
         }
     }
 
-    /// Returns true when a private match has no competing player left.
-    ///
-    /// Shared worlds never finish.
-    pub(super) fn is_finished(&self) -> bool {
-        self.setup.is_private && self.active_player_count() == 0
-    }
-
-    /// Tells the spectators of a finished match it ended and detaches them, so watching never
-    /// keeps a finished match alive.
-    pub(super) fn release_spectators_if_finished(&mut self) {
-        if !self.is_finished() {
-            return;
-        }
+    /// Tells every spectator the match ended and detaches them.
+    pub(super) fn release_spectators(&mut self) {
         for conn_id in self.spectators.drain() {
             self.outbox
                 .send_to_viewer(conn_id, ServerMessage::SpectateEnded);

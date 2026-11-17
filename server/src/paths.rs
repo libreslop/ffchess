@@ -31,3 +31,12 @@ pub fn assets_dir() -> PathBuf {
 pub fn config_dir() -> PathBuf {
     resolve_data_dir("config")
 }
+
+/// Returns the directory the server keeps its own data in, `~/.local/share/ffchess`.
+///
+/// Falls back to the working directory when the home directory is unknown.
+pub fn data_dir() -> PathBuf {
+    std::env::home_dir()
+        .unwrap_or_default()
+        .join(".local/share/ffchess")
+}

@@ -61,12 +61,38 @@ board also stops spectating.
 
 ## End Of A Private Match
 
-A private match is finished once no competing player remains (everyone left, lost, or won). At the
-end of every tick, a finished match sends `SpectateEnded` to all its spectators and drops them, so
-spectators never keep a finished match alive. The lobby forgets them on the next server tick.
+Every instance has a `MatchStatus`: `Running`, or `Finished { at }`. A private match becomes
+finished once no competing player remains (everyone left, lost, or won), for example when one side
+of a duel wins, and stays finished. Public worlds never finish.
+
+In the tick a match finishes, it sends `ServerMessage::MatchFinished { replay }` to everyone still
+on its board (winners, eliminated players watching their end screen, and spectators), then sends
+`SpectateEnded` to all its spectators and drops them, so spectators never keep a finished match
+alive. The lobby forgets them on the next server tick. A finished match no longer appears in the
+match browser and can no longer be spectated.
 
 The client keeps the last board on screen and shows "Game ended" with a Return To Menu button,
-which sends `Leave`. Public worlds never finish.
+which sends `Leave`. The victory and defeat screens hide their Spectate button once the match
+finished. Both screens show a View Replay button when `MatchFinished` named a replay.
+
+## Replays
+
+A queue mode with `"allow_replays": true` records each of its private matches. Every tick, the
+match compares its board with the last recorded one and queues a `ReplayFrame` holding only what
+changed (board size, players, shops, changed and removed pieces); the first frame holds the whole
+board. Frames go to a background writer thread that stores them in a SQLite database at
+`~/.local/share/ffchess/replays.sqlite3`, so a recording does not build up in server memory.
+
+When the match finishes, the replay is saved with its `saved_at` time and becomes viewable through
+`GET /api/replays/<replay id>`, which answers 404 while the match runs, after the replay expired,
+or for unknown ids. Replays are deleted 24 hours after they were saved: overdue replays are cleaned
+up when the server starts and every minute while it runs. Recordings of matches that never
+finished (such as those cut off by a server restart) are deleted too.
+
+The replay viewer downloads the replay, rebuilds the board after every frame, and plays it back
+on a read-only board watched like a spectator watches a live match. Its scrub bar marks every
+capture; Space plays and pauses, the arrow keys jump five seconds, the speed button cycles 1x, 2x,
+4x and 8x, and Escape or the top-left button closes it.
 
 ## Client Camera
 
