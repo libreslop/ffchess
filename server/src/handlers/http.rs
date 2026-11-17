@@ -13,8 +13,8 @@ use std::sync::Arc;
 pub struct MenuSnapshot(Arc<str>);
 
 impl MenuSnapshot {
-    /// Prerenders the main menu of the configured modes, as the client would render it with
-    /// no players online.
+    /// Prerenders the main menu of the configured modes, as the client would render it before
+    /// it knows how many players are online.
     pub async fn render(state: &ServerState) -> Self {
         let html = client::render_menu_snapshot(
             state.mode_summaries(),

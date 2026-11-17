@@ -64,6 +64,9 @@ pub struct JoinScreenProps {
     pub title_pieces: Vec<String>,
     /// Player color of the title and the play button.
     pub title_color: &'static str,
+    /// Whether mode rows show their player counts, which the prerendered menu cannot know.
+    #[prop_or(true)]
+    pub show_population: bool,
 }
 
 #[function_component(JoinScreen)]
@@ -106,6 +109,7 @@ pub fn join_screen(props: &JoinScreenProps) -> Html {
                         modes={props.mode_options.clone()}
                         selected={selected_mode}
                         on_select={props.on_select_mode.clone()}
+                        show_population={props.show_population}
                         style={format!("flex: 0 1 auto; min-height: {mode_list_min_height}px; margin-bottom: 12px; max-height: 220px; overflow-y: auto; border: 2px solid #cbd5e1; background: transparent;")}
                     />
                     <form style="flex-shrink: 0;" onsubmit={props.on_name_submit.clone()}>
@@ -307,6 +311,9 @@ struct ModeListProps {
     /// Index of the highlighted row, kept fully scrolled into view.
     selected: Option<usize>,
     on_select: Callback<ModeId>,
+    /// Whether rows show their player counts.
+    #[prop_or(true)]
+    show_population: bool,
     style: AttrValue,
 }
 
@@ -328,7 +335,7 @@ fn mode_list(props: &ModeListProps) -> Html {
         <div ref={list_ref} class="ff-mode-list" tabindex="-1" style={props.style.clone()}
             onmousedown={Callback::from(|e: MouseEvent| e.prevent_default())}>
             { for props.modes.iter().enumerate().map(|(index, mode)| {
-                mode_row(mode, props.selected == Some(index), &props.on_select)
+                mode_row(mode, props.selected == Some(index), props.show_population, &props.on_select)
             })}
         </div>
     }
@@ -418,8 +425,14 @@ fn step_highlight(current: usize, up: bool, len: usize) -> usize {
     }
 }
 
-/// Renders one row of a mode list, emitting the mode id to `on_select` when clicked.
-fn mode_row(mode: &ModeSummary, selected: bool, on_select: &Callback<ModeId>) -> Html {
+/// Renders one row of a mode list, with its player count when `show_population`, emitting the
+/// mode id to `on_select` when clicked.
+fn mode_row(
+    mode: &ModeSummary,
+    selected: bool,
+    show_population: bool,
+    on_select: &Callback<ModeId>,
+) -> Html {
     let id = mode.id.clone();
     let on_click = on_select.reform(move |_: MouseEvent| id.clone());
     html! {
@@ -435,12 +448,14 @@ fn mode_row(mode: &ModeSummary, selected: bool, on_select: &Callback<ModeId>) ->
             )}
         >
             <span>{ mode.display_name.clone() }</span>
-            <span style={format!(
-                "font-variant-numeric: tabular-nums; color: {};",
-                if mode.players.as_u32() >= 1 { "#22c55e" } else { "rgba(255,255,255,0.8)" }
-            )}>
-                { mode_population_label(mode) }
-            </span>
+            if show_population {
+                <span style={format!(
+                    "font-variant-numeric: tabular-nums; color: {};",
+                    if mode.players.as_u32() >= 1 { "#22c55e" } else { "rgba(255,255,255,0.8)" }
+                )}>
+                    { mode_population_label(mode) }
+                </span>
+            }
         </button>
     }
 }

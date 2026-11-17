@@ -4,7 +4,7 @@ use crate::app::{GlobalClientConfig, order_modes};
 use crate::components::JoinScreen;
 use crate::ui_state::{CooldownSeconds, JoinStep};
 use common::models::ModeSummary;
-use common::types::{ModeId, PlayerCount};
+use common::types::ModeId;
 use yew::ServerRenderer;
 use yew::prelude::*;
 
@@ -49,24 +49,18 @@ fn menu_snapshot(props: &MenuSnapshotProps) -> Html {
             title_pieces={props.globals.title_pieces.clone()}
             title_color={PENDING_COLOR}
             on_quick_play={Callback::noop()}
+            show_population={false}
         />
     }
 }
 
 /// Renders the main menu as HTML, before anything about the live server is known.
 ///
-/// `modes` are listed in the order `global_json`, the client config JSON, gives them, with no
-/// players online.
+/// `modes` are listed in the order `global_json`, the client config JSON, gives them, without
+/// their player counts.
 pub async fn render_menu_snapshot(modes: Vec<ModeSummary>, global_json: &str) -> String {
     let globals = GlobalClientConfig::from_json(global_json);
-    let offline = modes
-        .into_iter()
-        .map(|mode| ModeSummary {
-            players: PlayerCount::zero(),
-            ..mode
-        })
-        .collect();
-    let modes = order_modes(offline, &globals.game_order);
+    let modes = order_modes(modes, &globals.game_order);
     ServerRenderer::<MenuSnapshot>::with_props(move || MenuSnapshotProps { modes, globals })
         .hydratable(false)
         .render()
