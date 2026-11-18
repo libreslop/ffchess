@@ -1,6 +1,7 @@
 //! Core domain models shared between server logic and client rendering.
 
 mod action;
+mod camera;
 mod config;
 mod hook;
 mod replay;
@@ -10,6 +11,7 @@ mod state;
 mod summary;
 
 pub use action::*;
+pub use camera::*;
 pub use config::*;
 pub use hook::*;
 pub use replay::*;

@@ -1,4 +1,5 @@
-use crate::types::PieceTypeId;
+use crate::models::camera::{CameraCue, SetCameraConfig};
+use crate::types::{BoardCoord, PieceTypeId};
 use serde::{Deserialize, Serialize};
 
 /// Trigger-action hook for game events.
@@ -39,15 +40,6 @@ pub enum HookAction {
     SystemChatMessage,
 }
 
-/// Camera focus policy for victory overlays produced by hooks.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-pub enum HookVictoryFocus {
-    #[serde(rename = "CaptureSquare")]
-    CaptureSquare,
-    #[serde(rename = "KeepCurrent")]
-    KeepCurrent,
-}
-
 /// Supported hook behaviors understood by the runtime.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SupportedHook {
@@ -77,8 +69,10 @@ pub struct HookConfig {
     pub title: Option<String>,
     #[serde(default)]
     pub message: Option<String>,
+    /// Camera move made for the player the hook affects when a piece dies; read by
+    /// `EliminateOwner` for the eliminated player and `WinCapturer` for the winner.
     #[serde(default)]
-    pub victory_focus: Option<HookVictoryFocus>,
+    pub set_camera: Option<SetCameraConfig>,
 }
 
 impl HookConfig {
@@ -140,19 +134,19 @@ impl HookConfig {
             .unwrap_or_else(|| default_message.to_string())
     }
 
-    /// Returns the configured victory focus policy, or the default for `supported_hook`.
-    pub fn victory_focus_or_default(&self, supported_hook: SupportedHook) -> HookVictoryFocus {
-        self.victory_focus.unwrap_or(match supported_hook {
-            SupportedHook::WinCapturerOnActiveCapture => HookVictoryFocus::CaptureSquare,
-            SupportedHook::WinRemainingOnPlayerLeave => HookVictoryFocus::KeepCurrent,
-            SupportedHook::EliminateOwnerOnCapture => HookVictoryFocus::KeepCurrent,
-            SupportedHook::SystemChatOnPlayerJoin
-            | SupportedHook::SystemChatOnPlayerDisconnect
-            | SupportedHook::SystemChatOnPlayerKilled
-            | SupportedHook::SystemChatOnQueueCountdown
-            | SupportedHook::SystemChatOnGameStart
-            | SupportedHook::SystemChatOnSpectatorJoin
-            | SupportedHook::SystemChatOnSpectatorLeave => HookVictoryFocus::KeepCurrent,
+    /// Returns the camera move this hook makes when a piece died on `death_square`, if any.
+    pub fn camera_cue(&self, death_square: BoardCoord) -> Option<CameraCue> {
+        self.set_camera.clone().map(|camera| CameraCue {
+            camera,
+            death_square,
         })
+    }
+
+    /// Checks the camera expressions of this hook.
+    pub(crate) fn validate(&self) -> Result<(), String> {
+        self.set_camera
+            .as_ref()
+            .map_or(Ok(()), SetCameraConfig::validate)
+            .map_err(|error| format!("{:?} hook: {error}", self.trigger))
     }
 }

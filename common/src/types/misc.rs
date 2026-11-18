@@ -1,8 +1,9 @@
 use super::MoveCount;
 use evalexpr::{
     ContextWithMutableVariables, DefaultNumericTypes, HashMapContext, Value,
-    eval_boolean_with_context, eval_number_with_context,
+    eval_boolean_with_context, eval_number_with_context, eval_tuple_with_context,
 };
+use glam::DVec2;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
@@ -10,7 +11,8 @@ use std::fmt;
 /// Expression written in config files and evaluated at runtime with [`evalexpr`].
 ///
 /// Numeric fields such as prices and board sizes evaluate it with [`ExprString::evaluate`];
-/// conditions such as those of special moves evaluate it with [`ExprString::holds`].
+/// conditions such as those of special moves evaluate it with [`ExprString::holds`]; points
+/// such as camera positions, written as `(x, y)` tuples, with [`ExprString::evaluate_point`].
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct ExprString(pub String);
@@ -32,6 +34,18 @@ impl ExprString {
         eval_boolean_with_context(&self.0, &vars.context()).unwrap_or(false)
     }
 
+    /// Evaluates the expression as an `(x, y)` tuple of numbers with the provided bindings.
+    ///
+    /// Returns `None` when the expression is malformed, references unknown variables, or does
+    /// not produce a pair of numbers.
+    pub fn evaluate_point(&self, vars: &ExprVars) -> Option<DVec2> {
+        let tuple = eval_tuple_with_context(&self.0, &vars.context()).ok()?;
+        match tuple.as_slice() {
+            [x, y] => Some(DVec2::new(x.as_number().ok()?, y.as_number().ok()?)),
+            _ => None,
+        }
+    }
+
     /// Returns true when `condition` is unset or holds for `vars`.
     pub fn holds_if_set(condition: Option<&Self>, vars: &ExprVars) -> bool {
         condition.is_none_or(|condition| condition.holds(vars))
@@ -46,6 +60,23 @@ impl ExprString {
         eval_boolean_with_context(&self.0, &sample.context())
             .map(drop)
             .map_err(|error| format!("invalid condition `{}`: {error}", self.0))
+    }
+
+    /// Checks that the expression is a valid number when its variables hold `sample`.
+    pub fn check_number(&self, sample: &ExprVars) -> Result<(), String> {
+        eval_number_with_context(&self.0, &sample.context())
+            .map(drop)
+            .map_err(|error| format!("invalid number `{}`: {error}", self.0))
+    }
+
+    /// Checks that the expression is a valid `(x, y)` point when its variables hold `sample`.
+    pub fn check_point(&self, sample: &ExprVars) -> Result<(), String> {
+        self.evaluate_point(sample).map(drop).ok_or_else(|| {
+            format!(
+                "invalid point `{}`: expected an (x, y) tuple of numbers",
+                self.0
+            )
+        })
     }
 }
 
@@ -82,6 +113,8 @@ pub enum ExprValue {
     Int(i64),
     Float(f64),
     Bool(bool),
+    /// A point, bound as an `(x, y)` tuple.
+    Point(DVec2),
 }
 
 impl From<bool> for ExprValue {
@@ -114,12 +147,21 @@ impl From<f64> for ExprValue {
     }
 }
 
+impl From<DVec2> for ExprValue {
+    fn from(value: DVec2) -> Self {
+        Self::Point(value)
+    }
+}
+
 impl From<ExprValue> for Value<DefaultNumericTypes> {
     fn from(value: ExprValue) -> Self {
         match value {
             ExprValue::Int(int) => Value::Int(int),
             ExprValue::Float(float) => Value::Float(float),
             ExprValue::Bool(boolean) => Value::Boolean(boolean),
+            ExprValue::Point(point) => {
+                Value::Tuple(vec![Value::Float(point.x), Value::Float(point.y)])
+            }
         }
     }
 }

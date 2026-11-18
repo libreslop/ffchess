@@ -41,7 +41,8 @@
         {
             "trigger": "OnCapture",
             "target_piece_id": "king",
-            "action": "EliminateOwner"
+            "action": "EliminateOwner",
+            "set_camera": { "position": "death_position", "zoom": "1.3" }
         },
         {
             "trigger": "OnPlayerJoin",

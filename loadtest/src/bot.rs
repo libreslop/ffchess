@@ -365,7 +365,9 @@ impl Session {
                 }
                 self.sleep_for(Duration::from_secs(5));
             }
-            ServerMessage::QueueState { .. } | ServerMessage::Chat { .. } => {}
+            ServerMessage::QueueState { .. }
+            | ServerMessage::Chat { .. }
+            | ServerMessage::SetCamera(_) => {}
             ServerMessage::UpdateState { .. } => unreachable!("decoded lazily"),
         }
     }

@@ -2,9 +2,9 @@
 
 use crate::reducer::types::{MsgSender, QueueStatus};
 use common::models::{
-    GameModeClientConfig, GameState, MatchSummary, Piece, PieceAction, Player, Shop,
+    CameraCue, GameModeClientConfig, GameState, MatchSummary, Piece, PieceAction, Player, Shop,
 };
-use common::protocol::{ChatLine, GameError, GameOverStats, VictoryFocusTarget};
+use common::protocol::{ChatLine, GameError, GameOverStats};
 use common::rules::Catalog;
 use common::types::{
     ActionId, BoardCoord, BoardSize, PieceId, PlayerId, ReplayId, SessionSecret, TimestampMs,
@@ -105,8 +105,9 @@ pub enum GameAction {
     SetVictory {
         title: String,
         msg: String,
-        focus_target: VictoryFocusTarget,
     },
+    /// Camera move a hook made for the local player.
+    SetCamera(CameraCue),
     GameOver(GameOverStats),
     Pong(u64, TimestampMs),
     SetFPS(u32),

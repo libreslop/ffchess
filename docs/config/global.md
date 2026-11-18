@@ -76,8 +76,8 @@ This file is injected into the landing page and deserialized by the Yew client a
 | `tick_interval_ms` | integer (`u32`) | No | `50` | Loaded into config, but currently unused by the runtime. |
 | `disconnected_hide_ms` | integer (`u32`) | No | `300` | Loaded into config, but currently unused. The disconnect overlay hide delay is hard-coded separately. |
 | `fatal_auto_hide_ms` | integer (`u32`) | No | `5000` | Loaded into config, but currently unused. Fatal reset timing is hard-coded separately. |
-| `camera_zoom_min` | float | No | `0.2` | Minimum allowed zoom after wheel and pinch input. |
-| `camera_zoom_max` | float | No | `2.0` | Maximum allowed zoom after wheel and pinch input. |
+| `camera_zoom_min` | float | No | `0.2` | Minimum allowed zoom after wheel and pinch input. Widened to reach the zoom fitting the whole board on screen. |
+| `camera_zoom_max` | float | No | `2.0` | Maximum allowed zoom after wheel and pinch input. Widened to reach the zoom fitting the whole board on screen. |
 | `zoom_lerp` | float | No | `0.15` | Fraction of the remaining distance to `target_zoom` covered every 16 ms. The camera steps once per displayed frame and scales this by the time elapsed, so it zooms at the same speed on any refresh rate. |
 | `inertia_decay` | float | No | `0.94` | Decay applied to camera velocity every 16 ms after panning stops. |
 | `velocity_cutoff` | float | No | `0.1` | Velocity threshold, in pixels per 16 ms, below which inertial camera panning stops. |
@@ -85,7 +85,6 @@ This file is injected into the landing page and deserialized by the Yew client a
 | `pan_lerp_alive` | float | No | `0.15` | Fraction of the remaining distance to the camera target covered every 16 ms while the local player is alive or spectating. |
 | `focus_flight_ms` | float | No | `1500.0` | Duration, in milliseconds, of a scripted camera move: joining, the death or victory focus, and returning to the menu. The pan and zoom run together, each starting at full speed and slowing down until it stops at the end; the pan slows down more sharply, so it crosses most of the distance early while the zoom is spread more evenly. |
 | `tile_size_px` | float | No | `40.0` | Base world-tile size before zoom is applied. |
-| `death_zoom` | float | No | `1.3` | Target zoom when the death or victory camera takes over. |
 | `scroll_zoom_base` | float | No | `1.2` | Exponential base used for wheel zoom scaling. Values above `1.0` make zoom responsive without going unstable. |
 | `chat_message_ttl_ms` | integer (`u32`) | No | `10000` | Client-side chat display lifetime before the fade-out starts. This should match the server value for consistent room history. |
 | `chat_message_max_chars` | integer (`u32`) | No | `150` | Input `maxlength` applied in the chat UI. Keep this aligned with the server maximum. |
@@ -118,7 +117,6 @@ This file is injected into the landing page and deserialized by the Yew client a
   "pan_lerp_alive": 0.15,
   "focus_flight_ms": 1500.0,
   "tile_size_px": 40.0,
-  "death_zoom": 1.3,
   "scroll_zoom_base": 1.2,
 
   // Chat UI timing and validation. Match server.jsonc where applicable.

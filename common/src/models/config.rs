@@ -1,3 +1,4 @@
+use crate::models::camera::StartingCameraConfig;
 use crate::models::hook::HookConfig;
 use crate::models::shading::ShadingRule;
 use crate::models::special_move::SpecialMove;
@@ -232,14 +233,6 @@ pub struct QueuePresetLayoutConfig {
     pub players: Vec<QueuePresetPlayerConfig>,
 }
 
-/// Join-time camera focus target for a mode.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(untagged)]
-pub enum JoinCameraCenterConfig {
-    Piece { piece_id: PieceTypeId },
-    Position { position: [f64; 2] },
-}
-
 /// Full server mode configuration.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Educe)]
 #[serde(default)]
@@ -265,10 +258,7 @@ pub struct GameModeConfig {
     pub fog_of_war_radius: Option<ExprString>,
     #[educe(Default = true)]
     pub show_scoreboard: bool,
-    #[educe(Default = JoinCameraCenterConfig::Piece {
-        piece_id: PieceTypeId::from("king")
-    })]
-    pub join_camera_center: JoinCameraCenterConfig,
+    pub starting_camera: StartingCameraConfig,
     #[educe(Default = false)]
     pub disable_camera_movement: bool,
     #[educe(Default = DurationMs::zero())]
@@ -302,6 +292,14 @@ impl GameModeConfig {
         self.kits.iter().find(|kit| &kit.name == name)
     }
 
+    /// Checks the camera expressions of the mode and its hooks.
+    ///
+    /// Returns a message naming the offending entry otherwise.
+    pub fn validate(&self) -> Result<(), String> {
+        self.starting_camera.validate()?;
+        self.hooks.iter().try_for_each(HookConfig::validate)
+    }
+
     /// Builds a client-safe projection of this mode configuration.
     pub fn to_client_config(&self) -> GameModeClientConfig {
         GameModeClientConfig {
@@ -312,7 +310,7 @@ impl GameModeConfig {
             camera_pan_limit: self.camera_pan_limit.clone(),
             fog_of_war_radius: self.fog_of_war_radius.clone(),
             show_scoreboard: self.show_scoreboard,
-            join_camera_center: self.join_camera_center.clone(),
+            starting_camera: self.starting_camera.clone(),
             disable_camera_movement: self.disable_camera_movement,
             respawn_cooldown_ms: self.respawn_cooldown_ms,
             kits: self.kits.iter().map(KitConfig::summary).collect(),

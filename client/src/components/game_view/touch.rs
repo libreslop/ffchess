@@ -33,8 +33,6 @@ pub(super) struct TouchHandlers {
 pub(super) struct TouchContext {
     pub(super) handles: ViewHandles,
     pub(super) reducer: UseReducerHandle<GameStateReducer>,
-    pub(super) zoom_min: f64,
-    pub(super) zoom_max: f64,
 }
 
 /// Returns the client position of a touch.
@@ -191,7 +189,7 @@ impl TouchContext {
         if !camera_locked {
             let old_zoom = camera.zoom;
             let factor = (distance / previous_distance).powf(PINCH_DAMPING);
-            let new_zoom = (old_zoom * factor).clamp(self.zoom_min, self.zoom_max);
+            let new_zoom = camera.zoom_range().clamp(old_zoom * factor);
             if (new_zoom - old_zoom).abs() > 1e-6
                 && let Some(canvas) = self.handles.canvas_ref.cast::<HtmlCanvasElement>()
             {

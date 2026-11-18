@@ -1,14 +1,18 @@
 //! Camera update logic for panning, zooming, and follow behavior.
 
 mod flight;
+mod framing;
+
+pub use framing::ZoomRange;
 
 use crate::math::Vec2;
 use crate::reducer::ClientPhase;
 use crate::utils::performance_now;
-use common::models::JoinCameraCenterConfig;
-use common::protocol::VictoryFocusTarget;
+use common::models::{CameraCue, MaxFitZoom, StartingCameraPosition};
 use common::*;
 use flight::{CameraFlight, CameraPose};
+use framing::max_fit_zoom;
+use std::rc::Rc;
 use yew::prelude::*;
 
 /// Length of the step the camera tuning values are expressed per, in milliseconds.
@@ -35,12 +39,19 @@ pub struct CameraManager {
     pub last_pan_ms: f64,
     /// Scripted move in progress, which holds off player input until it lands.
     flight: Option<CameraFlight>,
+    /// Zoom levels allowed on the last update: the configured range, widened to reach the
+    /// zoom fitting the whole board.
+    zoom_range: ZoomRange,
+    /// Last hook camera move made, so each is made once.
+    applied_cue: Option<Rc<CameraCue>>,
+    /// Starting pose the camera keeps fitted to the screen: while flying there, and after
+    /// landing too when the mode resets the camera on resize.
+    start_framing: Option<StartFraming>,
     pub was_alive: bool,
-    /// True while the menu or queue screen was showing on the last update.
-    was_in_menu: bool,
+    /// Phase on the last update.
+    last_phase: Option<ClientPhase>,
     pub last_tracked_king_id: Option<PieceId>,
     pub last_tracked_join_time: Option<TimestampMs>,
-    pub last_king_grid_pos: glam::IVec2,
     pub last_touch_dist: Option<f64>,
     pub last_touch_center: Option<Vec2>,
 }
@@ -57,11 +68,13 @@ impl CameraManager {
             velocity: Vec2::ZERO,
             last_pan_ms: 0.0,
             flight: None,
+            zoom_range: ZoomRange::new(1.0, 1.0),
+            applied_cue: None,
+            start_framing: None,
             was_alive: false,
-            was_in_menu: false,
+            last_phase: None,
             last_tracked_king_id: None,
             last_tracked_join_time: None,
-            last_king_grid_pos: glam::IVec2::ZERO,
             last_touch_dist: None,
             last_touch_center: None,
         }
@@ -70,6 +83,11 @@ impl CameraManager {
     /// Returns true while a scripted move is in progress and player input is ignored.
     pub fn input_locked(&self) -> bool {
         self.flight.is_some()
+    }
+
+    /// Returns the zoom levels the camera may take.
+    pub fn zoom_range(&self) -> ZoomRange {
+        self.zoom_range
     }
 
     /// Returns the current pose, for squares of `tile_size_px` pixels at zoom 1.
@@ -88,10 +106,13 @@ impl CameraManager {
         self.target_zoom = pose.zoom;
     }
 
-    /// Starts a scripted move to `target`, whose zoom is clamped to the allowed range.
-    fn fly_to(&mut self, target: CameraPose, params: &CameraUpdateParams<'_>) {
+    /// Starts a scripted move to `target`, whose zoom is clamped to the allowed range, and
+    /// returns the pose it lands on.
+    ///
+    /// The move replaces any starting framing.
+    fn fly_to(&mut self, target: CameraPose, params: &CameraUpdateParams<'_>) -> CameraPose {
         let target = CameraPose {
-            zoom: target.zoom.clamp(params.zoom_min, params.zoom_max),
+            zoom: self.zoom_range.clamp(target.zoom),
             ..target
         };
         self.flight = Some(CameraFlight::new(
@@ -100,6 +121,80 @@ impl CameraManager {
             params.flight_ms,
         ));
         self.velocity = Vec2::ZERO;
+        self.start_framing = None;
+        target
+    }
+
+    /// Flies to the starting pose centred on `center`, and keeps it fitted to the screen.
+    fn frame_start(&mut self, center: Vec2, params: &CameraUpdateParams<'_>, fit: MaxFitZoom) {
+        let pose = CameraPose {
+            center,
+            zoom: starting_zoom(params, fit),
+        };
+        let pose = self.fly_to(pose, params);
+        self.start_framing = Some(StartFraming { pose, fit });
+    }
+
+    /// Refits the starting pose when the room for the board changed: while flying there, as
+    /// the view may still be laying out, and after landing only when the mode resets the
+    /// camera on resize, which puts it back in the starting pose wherever it was moved.
+    ///
+    /// Returns true when the camera moved.
+    fn follow_start_framing(&mut self, params: &CameraUpdateParams<'_>, fit: MaxFitZoom) -> bool {
+        let Some(framing) = self.start_framing else {
+            return false;
+        };
+        let reset_on_resize = params
+            .mode
+            .is_some_and(|mode| mode.starting_camera.reset_on_resize);
+        if self.flight.is_none() && !reset_on_resize {
+            self.start_framing = None;
+            return false;
+        }
+        if framing.fit == fit {
+            return false;
+        }
+        let pose = CameraPose {
+            center: framing.pose.center,
+            zoom: self.zoom_range.clamp(starting_zoom(params, fit)),
+        };
+        if self.flight.is_some() {
+            self.fly_to(pose, params);
+        } else {
+            self.set_pose(pose, params.tile_size_px);
+        }
+        self.start_framing = Some(StartFraming { pose, fit });
+        true
+    }
+
+    /// Makes the camera move of `cue` unless it was already made.
+    ///
+    /// Returns true when the camera started moving.
+    fn apply_cue(
+        &mut self,
+        cue: &Rc<CameraCue>,
+        max_fit_zoom: MaxFitZoom,
+        params: &CameraUpdateParams<'_>,
+    ) -> bool {
+        if self
+            .applied_cue
+            .as_ref()
+            .is_some_and(|applied| Rc::ptr_eq(applied, cue))
+        {
+            return false;
+        }
+        self.applied_cue = Some(cue.clone());
+        let target = cue.target(max_fit_zoom);
+        if target.position.is_none() && target.zoom.is_none() {
+            return false;
+        }
+        let current = self.pose(params.tile_size_px);
+        let pose = CameraPose {
+            center: target.position.unwrap_or(current.center),
+            zoom: target.zoom.unwrap_or(current.zoom),
+        };
+        self.fly_to(pose, params);
+        true
     }
 }
 
@@ -119,8 +214,8 @@ pub struct CameraUpdateParams<'a> {
     pub mode: Option<&'a common::models::GameModeClientConfig>,
     pub piece_count: usize,
     pub phase: ClientPhase,
-    pub is_victory: bool,
-    pub victory_focus_target: VictoryFocusTarget,
+    /// Latest camera move a hook made for the local player.
+    pub camera_cue: Option<Rc<CameraCue>>,
     pub zoom_min: f64,
     pub zoom_max: f64,
     pub zoom_lerp: f64,
@@ -129,11 +224,9 @@ pub struct CameraUpdateParams<'a> {
     /// Milliseconds a pan can hold still before its release stops carrying momentum.
     pub pan_idle_ms: f64,
     pub pan_lerp_alive: f64,
-    /// Duration of scripted moves: joining, the death or victory focus, and returning to the
-    /// menu.
+    /// Duration of scripted moves: joining, hook camera moves, and returning to the menu.
     pub flight_ms: f64,
     pub tile_size_px: f64,
-    pub death_zoom: f64,
     pub board_rotated_180: bool,
 }
 
@@ -147,11 +240,23 @@ pub fn update_camera(manager: &mut CameraManager, params: CameraUpdateParams<'_>
     let player = params.state.players.get(&player_id_val);
     let is_alive = params.phase == ClientPhase::Alive;
     let in_menu = matches!(params.phase, ClientPhase::Menu | ClientPhase::Queued);
-    let entering_menu = in_menu && !manager.was_in_menu;
-    manager.was_in_menu = in_menu;
+    let previous_phase = manager.last_phase.replace(params.phase);
+    let was_in_menu = matches!(
+        previous_phase,
+        Some(ClientPhase::Menu | ClientPhase::Queued)
+    );
+    let entering_menu = in_menu && !was_in_menu;
+    let entering_spectate =
+        params.phase == ClientPhase::Spectating && previous_phase != Some(params.phase);
 
-    manager.target_zoom = manager.target_zoom.clamp(params.zoom_min, params.zoom_max);
-    manager.zoom = manager.zoom.clamp(params.zoom_min, params.zoom_max);
+    let max_fit_zoom = max_fit_zoom(
+        params.canvas_ref,
+        params.state.board_size,
+        params.tile_size_px,
+    );
+    manager.zoom_range = ZoomRange::new(params.zoom_min, params.zoom_max).including(max_fit_zoom.0);
+    manager.target_zoom = manager.zoom_range.clamp(manager.target_zoom);
+    manager.zoom = manager.zoom_range.clamp(manager.zoom);
 
     // 1. Zoom interpolation, which a flight does itself
     if manager.flight.is_none() && (manager.target_zoom - manager.zoom).abs() > 0.000001 {
@@ -232,15 +337,13 @@ pub fn update_camera(manager: &mut CameraManager, params: CameraUpdateParams<'_>
                 || manager.last_tracked_king_id != Some(p.king_id)
                 || manager.last_tracked_join_time != Some(p.join_time);
             if fresh_alive_entry {
-                let center = join_focus_center(&params, p.king_id, square_center(king.position.0));
-                manager.fly_to(CameraPose { center, zoom: 1.0 }, &params);
-                manager.last_king_grid_pos = king.position.into();
+                let center = starting_center(&params, square_center(king.position.0));
+                manager.frame_start(center, &params, max_fit_zoom);
                 manager.last_tracked_king_id = Some(p.king_id);
                 manager.last_tracked_join_time = Some(p.join_time);
                 manager.was_alive = true;
                 changed = true;
             } else {
-                manager.last_king_grid_pos = king.position.into();
                 manager.last_tracked_king_id = Some(p.king_id);
                 manager.last_tracked_join_time = Some(p.join_time);
                 // We don't update target_camera here, allowing for free-panning
@@ -282,28 +385,11 @@ pub fn update_camera(manager: &mut CameraManager, params: CameraUpdateParams<'_>
         }
     } else if params.phase == ClientPhase::Dead {
         if manager.was_alive {
-            if params.is_victory {
-                match params.victory_focus_target {
-                    VictoryFocusTarget::KeepCurrent => {
-                        manager.flight = None;
-                        manager.target_camera = manager.camera;
-                        manager.target_zoom = manager.zoom;
-                    }
-                    VictoryFocusTarget::BoardPosition(grid_pos) => {
-                        let focus = CameraPose {
-                            center: square_center(grid_pos.0),
-                            zoom: params.death_zoom,
-                        };
-                        manager.fly_to(focus, &params);
-                    }
-                }
-            } else {
-                // Just died, focus on last king position.
-                let focus = CameraPose {
-                    center: square_center(manager.last_king_grid_pos),
-                    zoom: params.death_zoom,
-                };
-                manager.fly_to(focus, &params);
+            // Hooks move the camera at the end of a life with camera cues, which may arrive
+            // before this phase; without one the camera settles where it is.
+            if manager.flight.is_none() {
+                manager.target_camera = manager.camera;
+                manager.target_zoom = manager.zoom;
             }
             manager.was_alive = false;
             manager.last_tracked_king_id = None;
@@ -315,6 +401,13 @@ pub fn update_camera(manager: &mut CameraManager, params: CameraUpdateParams<'_>
         manager.was_alive = false;
         manager.last_tracked_king_id = None;
         manager.last_tracked_join_time = None;
+        // Watching from the menu starts framed as playing would; watching the match just
+        // left keeps the view of its end.
+        if entering_spectate && previous_phase != Some(ClientPhase::Dead) {
+            let center = starting_center(&params, board_center(params.state.board_size));
+            manager.frame_start(center, &params, max_fit_zoom);
+            changed = true;
+        }
         // Free panning, pulled back once the view centre leaves the board.
         if !params.is_dragging && manager.flight.is_none() {
             let tile_size = params.tile_size_px * manager.zoom;
@@ -341,6 +434,11 @@ pub fn update_camera(manager: &mut CameraManager, params: CameraUpdateParams<'_>
         manager.last_tracked_king_id = None;
         manager.last_tracked_join_time = None;
     }
+
+    if let Some(cue) = &params.camera_cue {
+        changed |= manager.apply_cue(cue, max_fit_zoom, &params);
+    }
+    changed |= manager.follow_start_framing(&params, max_fit_zoom);
 
     // 5. Scripted flight, or easing towards target_camera
     if let Some(flight) = &mut manager.flight {
@@ -383,29 +481,43 @@ fn board_bounds(board_size: BoardSize, tile_size: f64) -> CameraBounds {
     }
 }
 
-/// Returns the point, in squares, the camera centres on when the player joins: as the mode
-/// configures, or `fallback` when it names no piece the player owns.
-fn join_focus_center(params: &CameraUpdateParams<'_>, king_id: PieceId, fallback: Vec2) -> Vec2 {
+/// Returns the centre of a board of `board_size`, in squares from the board origin.
+fn board_center(board_size: BoardSize) -> Vec2 {
+    Vec2::splat((board_size.limit_pos() - board_size.half()) as f64 / 2.0)
+}
+
+/// Starting pose kept fitted to the screen.
+#[derive(Clone, Copy, Debug)]
+struct StartFraming {
+    /// Pose the camera was sent to.
+    pose: CameraPose,
+    /// Fit zoom the pose was worked out for.
+    fit: MaxFitZoom,
+}
+
+/// Returns the point the camera centres on when the player joins or starts watching: as the
+/// mode configures, or `fallback` when it names no piece the viewer owns.
+fn starting_center(params: &CameraUpdateParams<'_>, fallback: Vec2) -> Vec2 {
     let Some(mode) = params.mode else {
         return fallback;
     };
-    let focus = &mode.join_camera_center;
-    match focus {
-        JoinCameraCenterConfig::Position { position } => Vec2::new(position[0], position[1]),
-        JoinCameraCenterConfig::Piece { piece_id } => {
-            let player_id = params.player_id.unwrap_or_else(PlayerId::nil);
-            let target_piece = params.state.pieces.get(&king_id).and_then(|king| {
-                if king.piece_type == *piece_id {
-                    Some(king)
-                } else {
-                    params.state.pieces.values().find(|piece| {
-                        piece.owner_id == Some(player_id) && piece.piece_type == *piece_id
-                    })
-                }
-            });
-            target_piece
-                .map(|piece| square_center(piece.position.0))
-                .unwrap_or(fallback)
+    match &mode.starting_camera.position {
+        StartingCameraPosition::Point(point) => Vec2::new(point[0], point[1]),
+        StartingCameraPosition::Piece { piece_id } => {
+            let viewer = params.player_id.unwrap_or_else(PlayerId::nil);
+            params
+                .state
+                .pieces
+                .values()
+                .find(|piece| piece.owner_id == Some(viewer) && piece.piece_type == *piece_id)
+                .map_or(fallback, |piece| square_center(piece.position.0))
         }
     }
+}
+
+/// Returns the zoom the camera starts at when the player joins or starts watching.
+fn starting_zoom(params: &CameraUpdateParams<'_>, fit: MaxFitZoom) -> f64 {
+    params
+        .mode
+        .map_or(1.0, |mode| mode.starting_camera.zoom(fit))
 }

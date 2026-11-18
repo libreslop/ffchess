@@ -95,8 +95,6 @@ pub fn game_view(props: &GameViewProps) -> Html {
         canvas_ref: canvas_ref.clone(),
         input_blocked: has_match_result,
         camera_locked: reducer.camera_movement_disabled(),
-        zoom_min: globals.camera_zoom_min,
-        zoom_max: globals.camera_zoom_max,
         scroll_base: globals.scroll_zoom_base,
     });
     use_selection_cleanup(&selected, reducer);
@@ -148,8 +146,6 @@ pub fn game_view(props: &GameViewProps) -> Html {
     let touch = TouchContext {
         handles: handles.clone(),
         reducer: reducer.clone(),
-        zoom_min: globals.camera_zoom_min,
-        zoom_max: globals.camera_zoom_max,
     }
     .handlers(&pointer);
     let mouse_pos = |e: &MouseEvent| vec2(e.client_x() as f64, e.client_y() as f64);

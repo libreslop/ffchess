@@ -9,7 +9,7 @@
     "fog_of_war_radius": null,
     "show_scoreboard": false,
     "disable_camera_movement": true,
-    "join_camera_center": { "position": [0, 0] },
+    "starting_camera": { "position": [0, 0], "zoom": "0.8 * max_fit_zoom", "reset_on_resize": true },
     "respawn_cooldown_ms": 0,
     "allow_replays": true,
     "npc_limits": [],
@@ -150,7 +150,8 @@
         {
             "trigger": "OnCapture",
             "target_piece_id": "bullet_king",
-            "action": "EliminateOwner"
+            "action": "EliminateOwner",
+            "set_camera": { "position": "death_position", "zoom": "max_fit_zoom" }
         },
         {
             "trigger": "OnPlayerKilled",
@@ -162,7 +163,7 @@
             "target_piece_id": "bullet_king",
             "action": "WinCapturer",
             "capture": true,
-            "victory_focus": "CaptureSquare",
+            "set_camera": { "position": "death_position", "zoom": "max_fit_zoom" },
             "title": "VICTORY",
             "message": ""
         },
@@ -176,7 +177,6 @@
             "players_left": 1,
             "action": "WinRemaining",
             "capture": true,
-            "victory_focus": "KeepCurrent",
             "title": "VICTORY",
             "message": "Opponent disconnected"
         },

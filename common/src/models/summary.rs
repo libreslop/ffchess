@@ -1,4 +1,4 @@
-use crate::models::config::JoinCameraCenterConfig;
+use crate::models::camera::StartingCameraConfig;
 use crate::types::{ColorHex, DurationMs, ExprString, KitId, ModeId, PlayerCount, TimestampMs};
 use educe::Educe;
 use serde::{Deserialize, Serialize};
@@ -30,10 +30,7 @@ pub struct GameModeClientConfig {
     pub fog_of_war_radius: Option<ExprString>,
     #[educe(Default = true)]
     pub show_scoreboard: bool,
-    #[educe(Default = JoinCameraCenterConfig::Piece {
-        piece_id: crate::types::PieceTypeId::from("king")
-    })]
-    pub join_camera_center: JoinCameraCenterConfig,
+    pub starting_camera: StartingCameraConfig,
     #[educe(Default = false)]
     pub disable_camera_movement: bool,
     #[educe(Default = DurationMs::zero())]

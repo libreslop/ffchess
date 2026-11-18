@@ -19,7 +19,7 @@ The filename stem becomes the runtime `GameModeConfig.id`.
 | `camera_pan_limit` | expression string | Yes | none | Client-side expression evaluated with `player_piece_count` and `fog_of_war_radius`. |
 | `fog_of_war_radius` | expression string or `null` | No | `null` | Client-side expression evaluated with `player_piece_count`. `null` disables fog of war. |
 | `show_scoreboard` | boolean | No | `true` | Shows or hides the in-game leaderboard overlay. |
-| `join_camera_center` | `JoinCameraCenter` | No | `{ "piece_id": "king" }` | Initial camera focus when entering `Alive` (first spawn/rejoin). |
+| `starting_camera` | `StartingCamera` | No | `{ "position": { "piece_id": "king" }, "zoom": "1" }` | Camera pose when entering `Alive` (first spawn/rejoin), and when starting to watch a match or replay from the menu. |
 | `disable_camera_movement` | boolean | No | `false` | Disables player-controlled camera drag and zoom input. Automatic camera focus and scripted panning still run. |
 | `respawn_cooldown_ms` | integer (`i64`) | Yes | none | Time after elimination before the same stored player id may respawn. |
 | `allow_replays` | boolean | No | `false` | Records each private match so its players and spectators can watch it back after it finishes. Replays are kept for 24 hours. Only queue modes have matches that finish, so it has no effect on public modes. See [spectating.md](../logic/spectating.md#replays). |
@@ -81,14 +81,46 @@ The filename stem becomes the runtime `GameModeConfig.id`.
 | `piece_id` | piece id | Yes | Piece type to spawn. |
 | `position` | `[i32, i32]` | Yes | Absolute board coordinate. |
 
-### `JoinCameraCenter`
+### `StartingCamera`
 
-Untagged union: use exactly one of these objects.
+| Field | Type | Required | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `position` | `StartingCameraPosition` | No | `{ "piece_id": "king" }` | Point the camera centres on. |
+| `zoom` | expression string | No | `"1"` | Client-side zoom expression evaluated with `max_fit_zoom`. |
+| `reset_on_resize` | boolean | No | `false` | Whenever the screen is resized, puts the camera back in the starting pose with the zoom worked out for the new size, even if the player moved it. Stops once a hook moves the camera or the player leaves. |
 
-| Shape | Required fields | Notes |
+`StartingCameraPosition` is one of:
+
+| Shape | Example | Notes |
 | --- | --- | --- |
-| Piece target | `piece_id` | Focuses the local player's first owned piece with this type id (falls back to king if missing). |
-| Position target | `position` | Focuses a board-space point `[x, y]` (`f64`) measured in tile units from the board origin. `[0, 0]` is the board origin, and square centers are typically half-integers such as `[0.5, 0.5]`. |
+| Piece target | `{ "piece_id": "king" }` | Centres on the local player's first owned piece with this type id, or on the king when the player owns none. Spectators centre on the board centre. |
+| Fixed point | `[0, 0]` | Centres on a board-space point `[x, y]` (`f64`) measured in tile units from the board origin. `[0, 0]` is the board origin, and square centers are half-integers such as `[0.5, 0.5]`. |
+
+`max_fit_zoom` is the zoom at which the whole board just fits in the part of the screen the
+board is shown in, so `"0.8 * max_fit_zoom"` shows the whole board with a margin on any screen.
+The replay viewer counts only the room beside its analysis panel. While the camera flies to
+the starting pose, the pose keeps fitting the screen as the view lays out; after it lands, only
+`reset_on_resize` refits it. Zooms are kept within the
+`camera_zoom_min` / `camera_zoom_max` range of the client globals, widened to reach
+`max_fit_zoom`.
+
+### `SetCamera`
+
+Camera move a hook makes when a piece dies. Both fields are optional; a field left out keeps
+that part of the camera as it is, and a hook without `set_camera` does not move the camera.
+
+| Field | Type | Required | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `position` | expression string | No | `null` | Point to centre on, as an `(x, y)` tuple in tile units from the board origin. |
+| `zoom` | expression string | No | `null` | Zoom to move to. |
+
+Both expressions are evaluated on the client with:
+
+| Variable | Value |
+| --- | --- |
+| `death_position` | Centre of the square the piece died on, as an `(x, y)` tuple. |
+| `death_x`, `death_y` | The components of `death_position`, for arithmetic such as `"(death_x, death_y - 2)"`; evalexpr cannot do arithmetic on tuples. |
+| `max_fit_zoom` | As for `StartingCamera`. |
 
 ### `Hook`
 
@@ -101,7 +133,7 @@ Untagged union: use exactly one of these objects.
 | `capture` | boolean | No | `false` | If this hook matches, no later hooks in the mode list are evaluated for the same event batch. |
 | `title` | string or `null` | No | `null` | Optional victory title override. |
 | `message` | string or `null` | No | `null` | Optional victory message override. |
-| `victory_focus` | string enum or `null` | No | runtime-specific | One of `CaptureSquare` or `KeepCurrent`. |
+| `set_camera` | `SetCamera` or `null` | No | `null` | Camera move made when the hook fires: `EliminateOwner` moves the eliminated player's camera, `WinCapturer` the winner's. Other actions ignore it. |
 
 ## Supported Hook Combinations
 
@@ -132,11 +164,14 @@ Different expressions run in different places:
 | `npc_limits[*].max_expr` | `player_count` |
 | `fog_of_war_radius` | `player_piece_count` |
 | `camera_pan_limit` | `player_piece_count`, `fog_of_war_radius` |
+| `starting_camera.zoom` | `max_fit_zoom` |
+| `hooks[*].set_camera.position`, `hooks[*].set_camera.zoom` | `death_position`, `death_x`, `death_y`, `max_fit_zoom` |
 
 Expressions use [evalexpr](https://docs.rs/evalexpr) syntax. Counts such as `player_count` are
 integers, so dividing two integers rounds down (`player_count / 3`); write `player_count / 3.0`
 to keep the fraction. Most math functions are namespaced, for example `math::sqrt`, while
-`min`, `max`, `floor`, `ceil`, and `round` are not. A malformed expression evaluates to `0`.
+`min`, `max`, `floor`, `ceil`, and `round` are not. A malformed expression evaluates to `0`;
+camera expressions are checked when the server loads the config, and a malformed one stops it.
 
 ## Queue Mode Rules
 
@@ -204,7 +239,7 @@ joining the extra slot fails at runtime.
   "camera_pan_limit": "8",
   "fog_of_war_radius": null,
   "show_scoreboard": false,
-  "join_camera_center": { "position": [0, 0] },
+  "starting_camera": { "position": [0, 0], "zoom": "0.8 * max_fit_zoom", "reset_on_resize": true },
   "disable_camera_movement": true,
   "respawn_cooldown_ms": 0,
   "npc_limits": [],
@@ -237,10 +272,18 @@ joining the extra slot fails at runtime.
   },
   "hooks": [
     {
+      "trigger": "OnCapture",
+      "target_piece_id": "bullet_king",
+      "action": "EliminateOwner",
+      // The loser's camera zooms in on the square their king fell on.
+      "set_camera": { "position": "death_position", "zoom": "max_fit_zoom" }
+    },
+    {
       "trigger": "OnCapturePieceActive",
       "target_piece_id": "bullet_king",
       "action": "WinCapturer",
-      "victory_focus": "CaptureSquare"
+      // So does the winner's.
+      "set_camera": { "position": "death_position", "zoom": "max_fit_zoom" }
     }
   ]
 }

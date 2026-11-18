@@ -129,16 +129,18 @@ pub fn join_screen(props: &JoinScreenProps) -> Html {
                                     })
                                 }}
                                 style="padding: 8px 20px; border-radius: 0; border: 2px solid #cbd5e1; width: 100%; box-sizing: border-box; font-size: 1.2em; outline: none; background: #fff; text-align: center;"/>
-                            <div style="display: flex; gap: 8px; justify-content: center;">
+                            // The buttons share the row, Play taking the larger part of the room
+                            // left, so they fit narrow screens with thin padding and fill wide ones.
+                            <div style="display: flex; gap: 8px; width: 100%;">
                                 <button type="submit" disabled={props.landing_cooldown.is_active() || props.is_loading}
-                                    style={format!("padding: 6px 40px; background: {}; color: #fff; border: 3px solid {}; border-radius: 0; font-weight: 900; cursor: {}; font-size: 1.2em; width: auto; text-transform: uppercase; letter-spacing: 1px; text-shadow: {PLAY_TEXT_SHADOW};",
+                                    style={format!("flex: 2 1 auto; padding: 6px 8px; background: {}; color: #fff; border: 3px solid {}; border-radius: 0; font-weight: 900; cursor: {}; font-size: 1.2em; white-space: nowrap; text-transform: uppercase; letter-spacing: 1px; text-shadow: {PLAY_TEXT_SHADOW};",
                                         if props.landing_cooldown.is_active() || props.is_loading { "#94a3b8" } else { play_colors.secondary.as_str() },
                                         if props.landing_cooldown.is_active() || props.is_loading { "#64748b" } else { play_colors.tertiary.as_str() },
                                         if props.landing_cooldown.is_active() || props.is_loading { "not-allowed" } else { "pointer" })}>
                                     <CountdownLabel cooldown={props.landing_cooldown} max={props.landing_cooldown_max} ready="Play!" />
                                 </button>
                                 <button type="button" onclick={props.on_spectate.clone()} disabled={props.is_loading}
-                                    style={format!("padding: 6px 20px; background: transparent; color: #e2e8f0; border: 3px solid #cbd5e1; border-radius: 0; font-weight: 900; cursor: {}; font-size: 1.2em; text-transform: uppercase; letter-spacing: 1px;",
+                                    style={format!("flex: 1 1 auto; padding: 6px 8px; background: transparent; color: #e2e8f0; border: 3px solid #cbd5e1; border-radius: 0; font-weight: 900; cursor: {}; font-size: 1.2em; white-space: nowrap; text-transform: uppercase; letter-spacing: 1px;",
                                         if props.is_loading { "not-allowed" } else { "pointer" })}>
                                     {"Spectate"}
                                 </button>

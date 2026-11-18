@@ -76,11 +76,7 @@ impl Reducible for GameStateReducer {
                     next.error = None;
                 }
             }
-            GameAction::SetVictory {
-                title,
-                msg,
-                focus_target,
-            } => {
+            GameAction::SetVictory { title, msg } => {
                 next.error = None;
                 next.clear_disconnect_ui();
                 next.fatal_error = false;
@@ -89,9 +85,9 @@ impl Reducible for GameStateReducer {
                 next.victory = Some(Victory {
                     title,
                     message: msg,
-                    focus_target,
                 });
             }
+            GameAction::SetCamera(cue) => next.camera_cue = Some(Rc::new(cue)),
             // A session the client already left has no end screen to show.
             GameAction::GameOver(_) if next.active_player_id().is_none() => {}
             GameAction::GameOver(stats) => {
@@ -216,6 +212,7 @@ impl GameStateReducer {
         self.clear_victory_state();
         self.queue_status = None;
         self.finished_match = None;
+        self.camera_cue = None;
     }
 
     /// Clears reconnect/disconnect UI details while keeping fatal flags untouched.

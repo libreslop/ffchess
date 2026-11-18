@@ -47,13 +47,14 @@ impl HookEvents {
             && self.spectator_leaves.is_empty()
     }
 
-    /// Returns the owners of captured pieces whose type matches `matches`.
-    pub(super) fn captured_owners(&self, matches: impl Fn(&PieceTypeId) -> bool) -> Vec<PlayerId> {
-        self.captures
-            .iter()
-            .filter(|event| matches(&event.captured_piece_type))
-            .filter_map(|event| event.captured_owner_id)
-            .collect()
+    /// Returns the captures of owned pieces whose type matches `matches`.
+    pub(super) fn owned_captures(
+        &self,
+        matches: impl Fn(&PieceTypeId) -> bool,
+    ) -> impl Iterator<Item = &CaptureEvent> {
+        self.captures.iter().filter(move |event| {
+            event.captured_owner_id.is_some() && matches(&event.captured_piece_type)
+        })
     }
 
     /// Returns the first capture whose piece type matches `matches`.

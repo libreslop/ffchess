@@ -162,15 +162,11 @@ fn to_action(message: ServerMessage, mode_id: &ModeId) -> GameAction {
             GameAction::SetDisconnected(DisconnectNotice::fatal(title, message))
         }
         ServerMessage::Error(error) => GameAction::SetError(error),
-        ServerMessage::Victory {
-            title,
-            message,
-            focus_target,
-        } => GameAction::SetVictory {
+        ServerMessage::Victory { title, message } => GameAction::SetVictory {
             title,
             msg: message,
-            focus_target,
         },
+        ServerMessage::SetCamera(cue) => GameAction::SetCamera(cue),
         ServerMessage::GameOver(stats) => GameAction::GameOver(stats),
         ServerMessage::Pong(sent_at, server_time) => GameAction::Pong(sent_at, server_time),
         ServerMessage::Chat { line } => GameAction::PushChatLine(line),

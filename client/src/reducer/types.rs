@@ -2,8 +2,8 @@
 
 use crate::premoves::PremoveQueue;
 use crate::utils::DEFAULT_RESPAWN_COOLDOWN;
-use common::models::{GameModeClientConfig, GameState, MatchSummary, Player};
-use common::protocol::{ChatLine, ClientMessage, GameError, VictoryFocusTarget};
+use common::models::{CameraCue, GameModeClientConfig, GameState, MatchSummary, Player};
+use common::protocol::{ChatLine, ClientMessage, GameError};
 use common::rules::Catalog;
 use common::types::{
     DurationMs, PlayerCount, PlayerId, QueuePosition, ReplayId, Score, SessionSecret, TimestampMs,
@@ -91,7 +91,6 @@ impl MatchStats {
 pub struct Victory {
     pub title: String,
     pub message: String,
-    pub focus_target: VictoryFocusTarget,
 }
 
 /// The match on screen finished; it can no longer be spectated.
@@ -148,6 +147,9 @@ pub struct GameStateReducer {
     pub match_list: Option<Vec<MatchSummary>>,
     /// Set once the match on screen finished.
     pub finished_match: Option<FinishedMatch>,
+    /// Latest camera move a hook made for the local player; the camera makes each one once,
+    /// telling them apart by allocation.
+    pub camera_cue: Option<Rc<CameraCue>>,
 }
 
 impl GameStateReducer {

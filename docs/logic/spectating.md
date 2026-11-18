@@ -115,6 +115,10 @@ Escape or the top-left button closes the viewer.
 
 ## Client Camera
 
+Watching a match or a replay from the menu starts the camera in the mode's `starting_camera`
+pose, centred on the board centre when it names a piece; watching the match just lost keeps the
+view of its end.
+
 While spectating, the camera is not centred or tied to a king: dragging, inertia, and zoom work
 freely. Whenever the view centre leaves the board and no drag is in progress, the camera eases back
 to the nearest point on the board, like the pull back towards the king while playing.

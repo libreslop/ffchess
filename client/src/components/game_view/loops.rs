@@ -108,12 +108,7 @@ impl CameraFrameState {
                 mode: reducer.mode.as_ref(),
                 piece_count: reducer.state.pieces_of(reducer.viewer_id()).count(),
                 phase: reducer.phase,
-                is_victory: reducer.is_victory(),
-                victory_focus_target: reducer
-                    .victory
-                    .as_ref()
-                    .map(|victory| victory.focus_target)
-                    .unwrap_or_default(),
+                camera_cue: reducer.camera_cue.clone(),
                 zoom_min: globals.camera_zoom_min,
                 zoom_max: globals.camera_zoom_max,
                 zoom_lerp: globals.zoom_lerp,
@@ -123,7 +118,6 @@ impl CameraFrameState {
                 pan_lerp_alive: globals.pan_lerp_alive,
                 flight_ms: globals.focus_flight_ms,
                 tile_size_px: globals.tile_size_px,
-                death_zoom: globals.death_zoom,
                 board_rotated_180: reducer.board_rotated_180(),
             },
         );
@@ -154,8 +148,6 @@ pub(super) struct WheelZoomInputs {
     pub(super) canvas_ref: NodeRef,
     pub(super) input_blocked: bool,
     pub(super) camera_locked: bool,
-    pub(super) zoom_min: f64,
-    pub(super) zoom_max: f64,
     pub(super) scroll_base: f64,
 }
 
@@ -167,8 +159,6 @@ pub(super) fn use_wheel_zoom(inputs: WheelZoomInputs) {
         canvas_ref,
         input_blocked,
         camera_locked,
-        zoom_min,
-        zoom_max,
         scroll_base,
     } = inputs;
     use_effect_with(
@@ -190,7 +180,7 @@ pub(super) fn use_wheel_zoom(inputs: WheelZoomInputs) {
                     }
                     let factor = scroll_base.max(1.01).powf(-event.delta_y() / 100.0);
                     camera.mouse_pos = vec2(event.client_x() as f64, event.client_y() as f64);
-                    camera.target_zoom = (camera.target_zoom * factor).clamp(zoom_min, zoom_max);
+                    camera.target_zoom = camera.zoom_range().clamp(camera.target_zoom * factor);
                 })
             });
             move || drop(listener)

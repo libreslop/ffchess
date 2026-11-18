@@ -55,16 +55,15 @@ This keeps capture side effects deterministic even when several things happen in
 ### `OnCapture` + `EliminateOwner`
 
 If the captured piece matches `target_piece_id`, remove that captured piece's owner from the game.
-All of their remaining pieces are removed and their queued actions are cancelled.
+All of their remaining pieces are removed and their queued actions are cancelled. With
+`set_camera`, the owner is first sent the camera move, centred on the captured piece's square.
 
 ### `OnCapturePieceActive` + `WinCapturer`
 
 If the capture matches, send the capturing player a victory payload.
 
-`victory_focus` decides whether the client:
-
-- stays on the current camera target, or
-- centers on the capture square.
+With `set_camera`, the capturing player is also sent the camera move, centred on the capture
+square.
 
 ### `OnPlayerLeave` + `WinRemaining`
 
@@ -77,10 +76,16 @@ The server sends `ServerMessage::Victory` with:
 
 - `title`
 - `message`
-- `focus_target`
 
-The client switches into its victory/dead phase and the camera may keep its current view or focus
-the capture square depending on the payload.
+The client switches into its victory/dead phase.
+
+## Death Camera
+
+Hooks with `set_camera` send `ServerMessage::SetCamera` to the player they affect, carrying the
+hook's camera expressions and the square the piece died on. The client evaluates them against its
+own screen, since `max_fit_zoom` depends on it, and flies the camera there once per message. The
+message may arrive before the snapshot that ends the player's life; the flight carries on through
+the phase change. Without a camera move, the camera stays where it is when the life ends.
 
 ## Combat Diagram
 

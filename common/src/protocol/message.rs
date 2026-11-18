@@ -1,5 +1,5 @@
 use crate::models::{
-    GameModeClientConfig, GameState, MatchSummary, Piece, PieceAction, Player, Shop,
+    CameraCue, GameModeClientConfig, GameState, MatchSummary, Piece, PieceAction, Player, Shop,
 };
 use crate::protocol::error::GameError;
 use crate::rules::Catalog;
@@ -8,14 +8,6 @@ use crate::types::{
     QueuePosition, ReplayId, Score, SessionSecret, TimestampMs,
 };
 use serde::{Deserialize, Serialize};
-
-/// Camera target behavior for a victory overlay.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
-pub enum VictoryFocusTarget {
-    #[default]
-    KeepCurrent,
-    BoardPosition(BoardCoord),
-}
 
 /// One chat line sent by the server for the active room.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -131,8 +123,9 @@ pub enum ServerMessage {
     Victory {
         title: String,
         message: String,
-        focus_target: VictoryFocusTarget,
     },
+    /// Camera move a hook makes for this player when a piece died.
+    SetCamera(CameraCue),
     QueueState {
         position_in_queue: QueuePosition,
         queued_players: PlayerCount,

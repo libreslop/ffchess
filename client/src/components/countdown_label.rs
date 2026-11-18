@@ -26,7 +26,8 @@ fn widest_wait_label(max: CooldownSeconds) -> String {
 /// Renders "Wait (Ns)" while `cooldown` is active and `ready` afterwards.
 ///
 /// Every label the button can show shares one grid cell, the inactive ones hidden, so the
-/// label keeps the width of the widest one while the countdown ticks down.
+/// label keeps the width of the widest one while the countdown ticks down. The labels never
+/// wrap, since a wrapped hidden label would leave the shown one at the top of a taller cell.
 pub fn countdown_label(props: &CountdownLabelProps) -> Html {
     let current = if props.cooldown.is_active() {
         format!("Wait ({}s)", props.cooldown.as_u32())
@@ -34,7 +35,7 @@ pub fn countdown_label(props: &CountdownLabelProps) -> Html {
         props.ready.to_string()
     };
     html! {
-        <span style="display: inline-grid;">
+        <span style="display: inline-grid; white-space: nowrap;">
             <span style="grid-area: 1 / 1; visibility: hidden;">{props.ready.clone()}</span>
             <span style="grid-area: 1 / 1; visibility: hidden;">{widest_wait_label(props.max.max(props.cooldown))}</span>
             <span style="grid-area: 1 / 1;">{current}</span>

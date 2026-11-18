@@ -79,8 +79,9 @@ pub struct ConfigManager {
 impl ConfigManager {
     /// Loads configuration from the given config root directory.
     ///
-    /// Panics with file context when a piece, shop, or mode config is malformed, and when a
-    /// special move names an unknown piece type or has an unparsable condition.
+    /// Panics with file context when a piece, shop, or mode config is malformed, when a
+    /// special move names an unknown piece type or has an unparsable condition, and when a
+    /// mode has an unparsable camera expression.
     pub fn load(root: &Path) -> Self {
         let catalog = Catalog {
             pieces: load_id_mapped_configs(&root.join("pieces"), |_| {}),
@@ -89,7 +90,12 @@ impl ConfigManager {
         catalog
             .validate()
             .unwrap_or_else(|e| panic!("Invalid piece config: {e}"));
-        let modes = load_id_mapped_configs(&root.join("modes"), |_| {});
+        let modes: HashMap<ModeId, GameModeConfig> =
+            load_id_mapped_configs(&root.join("modes"), |_| {});
+        for (id, mode) in &modes {
+            mode.validate()
+                .unwrap_or_else(|e| panic!("Invalid mode config {id}: {e}"));
+        }
         let server_globals = read_jsonc_value(&root.join("global/server.jsonc"));
 
         Self {

@@ -6,8 +6,8 @@ pub(super) use events::HookEvents;
 
 use super::players::Departure;
 use super::world::World;
-use common::models::{GameState, HookConfig, HookVictoryFocus, Piece, SupportedHook};
-use common::protocol::{ChatLine, ServerMessage, VictoryFocusTarget};
+use common::models::{CameraCue, GameState, HookConfig, Piece, SupportedHook};
+use common::protocol::{ChatLine, ServerMessage};
 use common::types::{ColorHex, PlayerId, TimestampMs};
 use events::{CaptureEvent, KillEvent};
 
@@ -20,24 +20,18 @@ struct VictoryMessage {
     player_id: PlayerId,
     title: String,
     message: String,
-    focus_target: VictoryFocusTarget,
+    /// Camera move made for the winner along with the victory.
+    camera_cue: Option<CameraCue>,
 }
 
 impl VictoryMessage {
     /// Builds the victory of the player who made a winning capture.
     fn capturer(hook: &HookConfig, event: &CaptureEvent) -> Option<Self> {
-        let focus_target =
-            match hook.victory_focus_or_default(SupportedHook::WinCapturerOnActiveCapture) {
-                HookVictoryFocus::CaptureSquare => {
-                    VictoryFocusTarget::BoardPosition(event.captured_position)
-                }
-                HookVictoryFocus::KeepCurrent => VictoryFocusTarget::KeepCurrent,
-            };
         Some(Self {
             player_id: event.capturer_id?,
             title: hook.victory_title_or("VICTORY"),
             message: hook.victory_message_or("You won by capturing the enemy king."),
-            focus_target,
+            camera_cue: hook.camera_cue(event.captured_position),
         })
     }
 
@@ -47,7 +41,7 @@ impl VictoryMessage {
             player_id,
             title: hook.victory_title_or("VICTORY"),
             message: hook.victory_message_or("Opponent disconnected. You win."),
-            focus_target: VictoryFocusTarget::KeepCurrent,
+            camera_cue: None,
         }
     }
 }
@@ -184,9 +178,12 @@ impl World {
                 ServerMessage::Victory {
                     title: victory.title,
                     message: victory.message,
-                    focus_target: victory.focus_target,
                 },
             );
+            if let Some(cue) = victory.camera_cue {
+                self.outbox
+                    .send_to_player(victory.player_id, ServerMessage::SetCamera(cue));
+            }
         }
     }
 
@@ -202,9 +199,11 @@ impl World {
             return HookOutcome::default();
         };
         match supported {
-            SupportedHook::EliminateOwnerOnCapture => {
-                HookOutcome::matched(self.eliminate_owners(events.captured_owners(targets), now))
-            }
+            SupportedHook::EliminateOwnerOnCapture => HookOutcome::matched(self.eliminate_owners(
+                hook,
+                events.owned_captures(targets),
+                now,
+            )),
             SupportedHook::WinCapturerOnActiveCapture => HookOutcome {
                 matched: events.first_capture(targets).is_some(),
                 victory: events
@@ -276,12 +275,28 @@ impl World {
         }
     }
 
-    /// Eliminates the listed players that are still in the match.
+    /// Eliminates the owners of the captured pieces that are still in the match, making the
+    /// hook's camera move for each of them first, while they can still be messaged.
     ///
     /// Elimination is not a leave, so it never triggers leave-based victories.
-    fn eliminate_owners(&mut self, owners: Vec<PlayerId>, now: TimestampMs) -> bool {
+    fn eliminate_owners<'a>(
+        &mut self,
+        hook: &HookConfig,
+        captures: impl Iterator<Item = &'a CaptureEvent>,
+        now: TimestampMs,
+    ) -> bool {
         let mut matched = false;
-        for player_id in owners {
+        for capture in captures {
+            let Some(player_id) = capture.captured_owner_id else {
+                continue;
+            };
+            if !self.state.players.contains_key(&player_id) {
+                continue;
+            }
+            if let Some(cue) = hook.camera_cue(capture.captured_position) {
+                self.outbox
+                    .send_to_player(player_id, ServerMessage::SetCamera(cue));
+            }
             matched |= self.remove_player(player_id, Departure::Eliminated, now);
         }
         matched

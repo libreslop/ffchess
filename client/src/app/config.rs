@@ -64,8 +64,6 @@ pub struct GlobalClientConfig {
     /// Duration of each black or colored phase of a failed premove trail's flash.
     #[educe(Default = 100)]
     pub premove_fail_flash_ms: u32,
-    #[educe(Default = 1.3)]
-    pub death_zoom: f64,
     #[educe(Default = 1.2)]
     pub scroll_zoom_base: f64,
     #[educe(Default = 10000)]
