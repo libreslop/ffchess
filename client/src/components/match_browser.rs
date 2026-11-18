@@ -10,6 +10,9 @@ use yew::prelude::*;
 /// How often the list asks the server for the running matches.
 const REFRESH_MS: u32 = 2000;
 
+/// Hides the match list scrollbar; the list still scrolls by wheel and touch.
+const MATCH_LIST_STYLE: &str = ".ff-match-list { scrollbar-width: none; } .ff-match-list::-webkit-scrollbar { display: none; }";
+
 /// Properties for the match browser.
 #[derive(Properties, PartialEq)]
 pub struct MatchBrowserProps {
@@ -37,6 +40,7 @@ pub fn match_browser(props: &MatchBrowserProps) -> Html {
 
     html! {
         <>
+            <style>{MATCH_LIST_STYLE}</style>
             <div style="position: absolute; inset: 0; background: rgba(0,0,0,0.6); z-index: 90;"></div>
             // The fade animates `transform`, so it runs on an inner box to keep the centering.
             <div data-testid="match-browser" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 100; width: 90%; max-width: 400px; text-align: center;">
@@ -49,7 +53,7 @@ pub fn match_browser(props: &MatchBrowserProps) -> Html {
                                 <div style="color: #cbd5e1;">{"No matches are being played right now"}</div>
                             },
                             Some(matches) => html! {
-                                <div style="max-height: 320px; overflow-y: auto; border: 2px solid #cbd5e1;">
+                                <div class="ff-match-list" style="max-height: 320px; overflow-y: auto; border: 2px solid #cbd5e1;">
                                     { for matches.iter().map(|summary| match_row(summary, props.now, &props.on_select)) }
                                 </div>
                             },

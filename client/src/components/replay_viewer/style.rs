@@ -40,7 +40,10 @@ pub(super) const REPLAY_CSS: &str = "
         white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
 
-    .replay-moves { position: relative; flex: 1; min-height: 0; overflow-y: auto; }
+    .replay-moves {
+        position: relative; flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: none;
+    }
+    .replay-moves::-webkit-scrollbar { display: none; }
     .replay-row { display: flex; border-bottom: 3px solid var(--wood-frame); }
     .replay-row-time {
         flex: none; width: 44px; box-sizing: border-box; padding: 6px 8px; text-align: right;
