@@ -123,7 +123,7 @@ pub fn end_screen(props: &EndScreenProps) -> Html {
                         }
                         if let Some(on_view_replay) = props.on_view_replay.clone() {
                             <button data-testid="view-replay" onclick={on_view_replay} style={SECONDARY_BUTTON_STYLE}>
-                                {"View replay"}
+                                {"Analysis board"}
                             </button>
                         }
                     </div>

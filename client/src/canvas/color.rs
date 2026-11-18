@@ -1,5 +1,7 @@
 //! Color conversion helpers for canvas drawing.
 
+use crate::utils::svg_data_url;
+
 /// Derived color shades for rendering team-tinted piece icons.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct PieceIconColors {
@@ -42,6 +44,17 @@ pub fn arrow_color(seed: u128, alpha: f64) -> String {
     // The golden angle spreads consecutive seeds far apart on the hue wheel.
     let hue = (seed % 1000) as f64 * 137.508 % 360.0;
     format!("hsla({hue:.0}, 30%, 55%, {alpha})")
+}
+
+/// Returns a data URL of the piece SVG `template` tinted with the player color `color`.
+pub(crate) fn tinted_piece_data_url(template: &str, color: &str) -> String {
+    let colors = piece_icon_colors(color);
+    svg_data_url(
+        &template
+            .replace("${primary}", &colors.primary)
+            .replace("${secondary}", &colors.secondary)
+            .replace("${tertiary}", &colors.tertiary),
+    )
 }
 
 /// Builds lighter and darker shades for piece SVG tinting.

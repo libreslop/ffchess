@@ -27,6 +27,16 @@ impl PlaybackSpeed {
         }
     }
 
+    /// Returns twice this speed, staying at the fastest.
+    fn faster(self) -> Self {
+        Self((self.0 * 2).min(Self::MAX))
+    }
+
+    /// Returns half this speed, staying at real time.
+    fn slower(self) -> Self {
+        Self((self.0 / 2).max(Self::NORMAL.0))
+    }
+
     /// Returns the label shown on the speed button.
     pub(super) fn label(self) -> String {
         format!("{}x", self.0)
@@ -120,11 +130,16 @@ impl Playback {
         self.anchored(at, now_local_ms, false)
     }
 
-    /// Switches to the next speed without jumping.
-    pub(super) fn sped_up(self, timeline: &ReplayTimeline, now_local_ms: f64) -> Self {
+    /// Switches to the speed `change` makes of the current one, without jumping.
+    pub(super) fn with_speed(
+        self,
+        change: fn(PlaybackSpeed) -> PlaybackSpeed,
+        timeline: &ReplayTimeline,
+        now_local_ms: f64,
+    ) -> Self {
         let at = self.position(timeline, now_local_ms);
         Self {
-            speed: self.speed.next(),
+            speed: change(self.speed),
             ..self.anchored(at, now_local_ms, self.playing)
         }
     }
@@ -150,8 +165,18 @@ pub(super) enum PlaybackCommand {
     /// Stops at the move of the history a step away from the one shown.
     Step(HistoryStep),
     NextSpeed,
+    Faster,
+    Slower,
     /// Pauses; sent once playing reached the end.
     Pause,
+}
+
+/// A button of the playback controls, lit while a key or the wheel presses it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum PlaybackButton {
+    Toggle,
+    Speed,
+    Step(HistoryStep),
 }
 
 /// Playback of one replay, as a reducer so every command sees the latest position.
@@ -206,7 +231,9 @@ impl Reducible for PlaybackState {
             PlaybackCommand::Step(step) => {
                 self.shown_entry(self.history.step(self.current_entry(now), step), now)
             }
-            PlaybackCommand::NextSpeed => playback.sped_up(timeline, now),
+            PlaybackCommand::NextSpeed => playback.with_speed(PlaybackSpeed::next, timeline, now),
+            PlaybackCommand::Faster => playback.with_speed(PlaybackSpeed::faster, timeline, now),
+            PlaybackCommand::Slower => playback.with_speed(PlaybackSpeed::slower, timeline, now),
             PlaybackCommand::Pause => playback.paused(timeline, now),
         };
         Rc::new(Self {

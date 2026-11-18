@@ -3,6 +3,7 @@
 mod controls;
 mod history;
 mod move_list;
+mod piece_icons;
 mod playback;
 mod player;
 mod style;
@@ -14,6 +15,7 @@ use common::types::ReplayId;
 use gloo_net::http::Request;
 use history::MoveHistory;
 use move_list::SharedHistory;
+use piece_icons::{PieceIcons, SharedIcons};
 use player::{LoadedReplay, ReplayPlayer, SharedReplay};
 use std::rc::Rc;
 use timeline::ReplayTimeline;
@@ -52,17 +54,16 @@ impl ReplayLoad {
         let Ok(replay) = response.json::<Replay>().await else {
             return Self::Unavailable;
         };
-        match ReplayTimeline::new(&replay) {
-            Some(timeline) => Self::Ready(SharedReplay(Rc::new(LoadedReplay {
-                history: SharedHistory(Rc::new(MoveHistory::new(
-                    &timeline,
-                    &replay.header.catalog,
-                ))),
-                header: replay.header,
-                timeline: Rc::new(timeline),
-            }))),
-            None => Self::Unavailable,
-        }
+        let Some(timeline) = ReplayTimeline::new(&replay) else {
+            return Self::Unavailable;
+        };
+        let icons = PieceIcons::fetch(&replay.header.catalog).await;
+        Self::Ready(SharedReplay(Rc::new(LoadedReplay {
+            history: SharedHistory(Rc::new(MoveHistory::new(&timeline, &replay.header.catalog))),
+            icons: SharedIcons(Rc::new(icons)),
+            header: replay.header,
+            timeline: Rc::new(timeline),
+        })))
     }
 }
 

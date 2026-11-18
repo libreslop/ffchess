@@ -11,8 +11,6 @@ pub(super) struct ReplayTimeline {
     keyframes: Vec<ReplayKeyframe>,
     start: TimestampMs,
     end: TimestampMs,
-    /// Moments a piece left the board, marked on the scrub bar.
-    captures: Vec<TimestampMs>,
 }
 
 impl ReplayTimeline {
@@ -23,17 +21,10 @@ impl ReplayTimeline {
         let end = replay.ended_at.max(first);
         // A match that finished during its countdown starts as late as it ends.
         let start = replay.started_at.clamp(first, end);
-        let captures = keyframes
-            .windows(2)
-            .filter(|pair| pair[1].at > start)
-            .filter(|pair| pair[1].state.pieces.len() < pair[0].state.pieces.len())
-            .map(|pair| pair[1].at)
-            .collect();
         Some(Self {
             keyframes,
             start,
             end,
-            captures,
         })
     }
 
@@ -55,11 +46,6 @@ impl ReplayTimeline {
     /// Returns how far `at` is into the replay.
     pub(super) fn elapsed(&self, at: TimestampMs) -> DurationMs {
         (at - self.start()).max(DurationMs::zero())
-    }
-
-    /// Returns how far into the replay each piece was taken.
-    pub(super) fn capture_times(&self) -> Vec<DurationMs> {
-        self.captures.iter().map(|at| self.elapsed(*at)).collect()
     }
 
     /// Returns `at` moved into the replay.

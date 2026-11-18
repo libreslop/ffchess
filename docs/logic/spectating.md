@@ -73,7 +73,7 @@ match browser and can no longer be spectated.
 
 The client keeps the last board on screen and shows "Game ended" with a Return To Menu button,
 which sends `Leave`. The victory and defeat screens hide their Spectate button once the match
-finished. Both screens show a View Replay button when `MatchFinished` named a replay.
+finished. Both screens show an Analysis Board button when `MatchFinished` named a replay.
 
 ## Replays
 

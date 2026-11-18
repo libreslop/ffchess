@@ -2,7 +2,7 @@
 
 use super::countdown_label::CountdownLabel;
 use super::pixel_font::{NATIVE_PX, title_pixel_px};
-use crate::canvas::color::piece_icon_colors;
+use crate::canvas::color::{piece_icon_colors, tinted_piece_data_url};
 use crate::reducer::QueueStatus;
 use crate::ui_state::{CooldownSeconds, JoinStep};
 use crate::utils::{event_targets_text_input, is_mobile, svg_data_url};
@@ -291,17 +291,6 @@ fn title(props: &TitleProps) -> Html {
             )} />
         </h1>
     }
-}
-
-/// Returns a data URL of the piece SVG `template` tinted with the player color `color`.
-fn tinted_piece_data_url(template: &str, color: &str) -> String {
-    let colors = piece_icon_colors(color);
-    svg_data_url(
-        &template
-            .replace("${primary}", &colors.primary)
-            .replace("${secondary}", &colors.secondary)
-            .replace("${tertiary}", &colors.tertiary),
-    )
 }
 
 /// Properties for a scrolling list of modes.

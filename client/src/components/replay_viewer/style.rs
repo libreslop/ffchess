@@ -41,7 +41,7 @@ pub(super) const REPLAY_CSS: &str = "
     }
 
     .replay-moves { position: relative; flex: 1; min-height: 0; overflow-y: auto; }
-    .replay-row { display: flex; border-bottom: 1px solid rgba(255, 241, 224, 0.1); }
+    .replay-row { display: flex; border-bottom: 3px solid var(--wood-frame); }
     .replay-row-time {
         flex: none; width: 44px; box-sizing: border-box; padding: 6px 8px; text-align: right;
         background: rgba(0, 0, 0, 0.2); color: rgba(255, 241, 224, 0.5); font-size: 20px;
@@ -58,17 +58,28 @@ pub(super) const REPLAY_CSS: &str = "
     .replay-entry:hover { background: rgba(255, 241, 224, 0.12); }
     .replay-entry.current { background: var(--wood-plate); border-color: var(--wood-frame); }
     .replay-move { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; padding: 2px 4px; }
+    .replay-piece { flex: none; display: block; width: 16px; height: 16px; image-rendering: pixelated; }
     .replay-swatch { flex: none; width: 8px; height: 8px; border: 1px solid var(--wood-text); }
     .replay-start { opacity: 0.6; }
     .replay-entry.current .replay-start { opacity: 1; }
 
-    .replay-nav { flex: none; display: flex; gap: 4px; padding: 4px; border-top: 3px solid var(--wood-frame); }
+    .replay-nav { flex: none; display: flex; gap: 4px; padding: 0 4px 4px; }
     .replay-nav button, .replay-button {
+        display: flex; align-items: center; justify-content: center;
         height: 36px; background: var(--wood-plate); color: var(--wood-text);
         border: 2px solid var(--wood-frame); border-radius: 0; font-size: 20px; cursor: pointer;
     }
     .replay-nav button { flex: 1; }
     .replay-nav button:hover, .replay-button:hover { filter: brightness(1.1); }
+    .replay-nav button:active, .replay-button:active,
+    .replay-nav button.pressed, .replay-button.pressed { filter: brightness(1.25); }
+    .replay-icon {
+        flex: none; display: block; width: 24px; height: 24px; background-color: currentColor;
+        -webkit-mask: var(--icon) center / contain no-repeat; mask: var(--icon) center / contain no-repeat;
+    }
+    .replay-icon-arrow { --icon: url(/assets/static/img/arrow-up.svg); }
+    .replay-icon-play { --icon: url(/assets/static/img/play.svg); }
+    .replay-icon-pause { --icon: url(/assets/static/img/pause.svg); }
 
     .replay-scrubber { -webkit-appearance: none; appearance: none; }
     .replay-scrubber::-webkit-slider-runnable-track { background: transparent; height: 36px; }

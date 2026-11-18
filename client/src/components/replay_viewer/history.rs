@@ -1,18 +1,20 @@
 //! Move history of a replay: every moment a piece moved, grouped into rows of equal length.
 
 use super::timeline::ReplayTimeline;
-use common::models::{GameState, Piece, PieceConfig};
+use common::models::{GameState, Piece};
 use common::rules::Catalog;
-use common::types::{BoardCoord, BoardSize, ColorHex, DurationMs, TimestampMs};
+use common::types::{BoardCoord, BoardSize, ColorHex, DurationMs, PieceTypeId, TimestampMs};
 use std::ops::Range;
 
 /// Length of the stretch of a replay one history row covers.
 const ROW_SPAN: DurationMs = DurationMs(1000);
 
-/// One piece moving, written in algebraic notation.
+/// One piece moving, written in algebraic notation without the piece, which is shown by its
+/// icon instead.
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct PieceMove {
     pub(super) notation: String,
+    pub(super) piece_type: PieceTypeId,
     /// Color of the player owning the piece, or `None` for pieces nobody owns.
     pub(super) color: Option<ColorHex>,
 }
@@ -24,13 +26,16 @@ impl PieceMove {
         let captured = before
             .piece_at(piece.position)
             .is_some_and(|other| other.id != piece.id);
-        let figurine = Figurine::of(catalog.pieces.get(&piece.piece_type));
         let size = after.board_size;
-        // Like a pawn in chess notation, a piece without a figurine names the file it left
-        // when it takes.
-        let prefix = match (&figurine, captured) {
-            (Figurine::None, true) => Square(from).file(size),
-            (figurine, _) => figurine.symbol(),
+        // Like a pawn in chess notation, a piece drawn as a pawn names the file it left when
+        // it takes.
+        let drawn_as_pawn = catalog
+            .pieces
+            .get(&piece.piece_type)
+            .is_some_and(|config| config.svg_path == "pawn.svg");
+        let prefix = match drawn_as_pawn && captured {
+            true => Square(from).file(size),
+            false => String::new(),
         };
         let capture = if captured { "x" } else { "" };
         let color = piece.owner_id.and_then(|owner| {
@@ -42,51 +47,8 @@ impl PieceMove {
         });
         Self {
             notation: format!("{prefix}{capture}{}", Square(piece.position).name(size)),
+            piece_type: piece.piece_type.clone(),
             color,
-        }
-    }
-}
-
-/// Symbol written before the moves of a piece, as in chess notation.
-enum Figurine {
-    /// Pawns are written without one.
-    None,
-    Glyph(char),
-    /// Pieces unknown to chess are written with their initial.
-    Initial(String),
-}
-
-impl Figurine {
-    /// Returns the figurine of a piece type, picked by the chess piece it is drawn as.
-    fn of(config: Option<&PieceConfig>) -> Self {
-        let Some(config) = config else {
-            return Self::Initial("?".to_string());
-        };
-        let drawn_as = config.svg_path.trim_end_matches(".svg");
-        match drawn_as {
-            "pawn" => Self::None,
-            "king" => Self::Glyph('♚'),
-            "queen" => Self::Glyph('♛'),
-            "rook" => Self::Glyph('♜'),
-            "bishop" => Self::Glyph('♝'),
-            "knight" => Self::Glyph('♞'),
-            _ => Self::Initial(
-                config
-                    .display_name
-                    .chars()
-                    .next()
-                    .map(|initial| initial.to_uppercase().collect())
-                    .unwrap_or_default(),
-            ),
-        }
-    }
-
-    /// Returns the symbol as written.
-    fn symbol(&self) -> String {
-        match self {
-            Self::None => String::new(),
-            Self::Glyph(glyph) => glyph.to_string(),
-            Self::Initial(initial) => initial.clone(),
         }
     }
 }

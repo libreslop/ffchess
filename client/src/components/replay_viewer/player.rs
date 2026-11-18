@@ -2,8 +2,9 @@
 
 use super::controls::ReplayControls;
 use super::history::HistoryStep;
-use super::move_list::{MoveList, SharedHistory};
-use super::playback::{PlaybackCommand, PlaybackState};
+use super::move_list::{MoveList, MoveNav, SharedHistory};
+use super::piece_icons::SharedIcons;
+use super::playback::{PlaybackButton, PlaybackCommand, PlaybackState};
 use super::style::REPLAY_CSS;
 use super::timeline::ReplayTimeline;
 use crate::app::GlobalClientConfig;
@@ -13,20 +14,27 @@ use crate::ui_state::Backdrop;
 use crate::utils::performance_now;
 use common::models::ReplayHeader;
 use common::types::{PlayerId, SessionSecret};
-use gloo_events::{EventListener, EventListenerOptions};
-use gloo_timers::callback::Interval;
+use gloo_events::{EventListener, EventListenerOptions, EventListenerPhase};
+use gloo_timers::callback::{Interval, Timeout};
 use std::rc::Rc;
 use wasm_bindgen::JsCast;
 use yew::prelude::*;
 
 /// How often the scrub bar follows a playing replay, in milliseconds.
 const FOLLOW_INTERVAL_MS: u32 = 50;
+/// How far the wheel turns for one step through the move history, in pixels.
+const WHEEL_STEP_PX: f64 = 100.0;
+/// Pixels counted for each line the wheel turns, when it reports lines.
+const WHEEL_LINE_PX: f64 = 40.0;
+/// How long a button stays lit after the wheel pressed it, in milliseconds.
+const WHEEL_PRESS_MS: u32 = 120;
 
 /// A replay ready to be played back.
 pub(super) struct LoadedReplay {
     pub(super) header: ReplayHeader,
     pub(super) timeline: Rc<ReplayTimeline>,
     pub(super) history: SharedHistory,
+    pub(super) icons: SharedIcons,
 }
 
 /// Shared handle to a loaded replay, compared by identity so re-renders stay cheap.
@@ -58,6 +66,8 @@ pub(super) fn replay_player(props: &ReplayPlayerProps) -> Html {
         use_reducer(move || PlaybackState::new(timeline, history))
     };
     let now_local = use_state(performance_now);
+    let pressed = use_state(|| None::<PlaybackButton>);
+    let board_ref = use_node_ref();
 
     use_replay_board(&board, &replay);
     let timeline = &replay.timeline;
@@ -81,7 +91,8 @@ pub(super) fn replay_player(props: &ReplayPlayerProps) -> Html {
             }
         });
     }
-    use_playback_keys(playback.dispatcher(), props.on_close.clone());
+    use_playback_keys(playback.dispatcher(), pressed.setter(), props.on_close.clone());
+    use_wheel_steps(&board_ref, playback.dispatcher(), pressed.setter());
 
     let show_scores = board.mode.as_ref().is_none_or(|mode| mode.show_scoreboard);
     let on_command = |command: fn() -> PlaybackCommand| {
@@ -109,7 +120,7 @@ pub(super) fn replay_player(props: &ReplayPlayerProps) -> Html {
     html! {
         <div data-testid="replay-viewer" class="replay-layout">
             <style>{REPLAY_CSS}</style>
-            <div class="replay-board">
+            <div class="replay-board" ref={board_ref}>
                 <GameView
                     reducer={board.clone()}
                     tx={None}
@@ -131,23 +142,24 @@ pub(super) fn replay_player(props: &ReplayPlayerProps) -> Html {
                 />
             </div>
             <div class="replay-panel" data-ui-exempt="true">
-                <div class="replay-title">{format!("Replay · {}", replay.header.mode.display_name)}</div>
+                <div class="replay-title">{"Analysis board"}</div>
                 <MoveList
                     history={replay.history.clone()}
+                    icons={replay.icons.clone()}
                     current={playback.current_entry(*now_local)}
                     on_show={on_show}
-                    on_step={on_step}
                 />
                 <ReplayControls
                     elapsed={timeline.elapsed(position)}
                     duration={timeline.duration()}
-                    captures={timeline.capture_times()}
                     playing={playback.playback.is_playing()}
                     speed_label={playback.playback.speed().label()}
+                    pressed={*pressed}
                     on_toggle={on_command(|| PlaybackCommand::Toggle)}
                     on_seek={on_seek}
                     on_speed={on_command(|| PlaybackCommand::NextSpeed)}
                 />
+                <MoveNav on_step={on_step} pressed={*pressed} />
             </div>
         </div>
     }
@@ -184,37 +196,124 @@ fn use_follow_playback(playing: bool, now_local: UseStateHandle<f64>) {
     });
 }
 
-/// Controls playback with the keyboard: Space plays and pauses, the arrows step through the
-/// move history, and Escape closes the viewer.
+/// Returns the command a key gives playback and the button it presses.
+fn key_binding(key: &str) -> Option<(PlaybackCommand, PlaybackButton)> {
+    let step = |step| (PlaybackCommand::Step(step), PlaybackButton::Step(step));
+    Some(match key {
+        " " => (PlaybackCommand::Toggle, PlaybackButton::Toggle),
+        "ArrowLeft" => step(HistoryStep::PreviousMove),
+        "ArrowRight" => step(HistoryStep::NextMove),
+        "ArrowUp" => step(HistoryStep::PreviousRow),
+        "ArrowDown" => step(HistoryStep::NextRow),
+        // `=` and `_` share their keys with `+` and `-`, so neither needs Shift.
+        "+" | "=" => (PlaybackCommand::Faster, PlaybackButton::Speed),
+        "-" | "_" => (PlaybackCommand::Slower, PlaybackButton::Speed),
+        _ => return None,
+    })
+}
+
+/// Controls playback with the keyboard: Space plays and pauses wherever focus is, the arrows
+/// step through the move history, `+` and `-` change the speed, and Escape closes the viewer.
+/// The button a key stands for stays lit while the key is held.
 ///
 /// The listener runs before any other and keeps every key to itself, so the screens beneath
 /// the viewer do not react to keys meant for it.
 #[hook]
-fn use_playback_keys(playback: UseReducerDispatcher<PlaybackState>, on_close: Callback<()>) {
+fn use_playback_keys(
+    playback: UseReducerDispatcher<PlaybackState>,
+    pressed: UseStateSetter<Option<PlaybackButton>>,
+    on_close: Callback<()>,
+) {
     use_effect_with((), move |_| {
         let window = web_sys::window().expect("window available");
-        let options = EventListenerOptions::run_in_capture_phase();
-        let listener = EventListener::new_with_options(&window, "keydown", options, move |event| {
-            let Some(event) = event.dyn_ref::<web_sys::KeyboardEvent>() else {
-                return;
-            };
-            event.stop_propagation();
-            let command = match event.key().as_str() {
-                " " => Some(PlaybackCommand::Toggle),
-                "ArrowLeft" => Some(PlaybackCommand::Step(HistoryStep::PreviousMove)),
-                "ArrowRight" => Some(PlaybackCommand::Step(HistoryStep::NextMove)),
-                "ArrowUp" => Some(PlaybackCommand::Step(HistoryStep::PreviousRow)),
-                "ArrowDown" => Some(PlaybackCommand::Step(HistoryStep::NextRow)),
-                "Escape" => {
+        // Not passive, so the keys can be kept from scrolling and from pressing buttons.
+        let options = EventListenerOptions {
+            phase: EventListenerPhase::Capture,
+            passive: false,
+        };
+        let press = {
+            let pressed = pressed.clone();
+            EventListener::new_with_options(&window, "keydown", options, move |event| {
+                let Some(event) = event.dyn_ref::<web_sys::KeyboardEvent>() else {
+                    return;
+                };
+                event.stop_propagation();
+                if event.key() == "Escape" {
+                    event.prevent_default();
                     on_close.emit(());
-                    None
+                    return;
                 }
-                _ => return,
-            };
-            event.prevent_default();
-            if let Some(command) = command {
+                let Some((command, button)) = key_binding(&event.key()) else {
+                    return;
+                };
+                event.prevent_default();
                 playback.dispatch(command);
+                pressed.set(Some(button));
+            })
+        };
+        // A focused button clicks itself when Space is released, which would press the last
+        // button clicked on top of the play and pause done on the key going down.
+        let release = EventListener::new_with_options(&window, "keyup", options, move |event| {
+            if let Some(event) = event.dyn_ref::<web_sys::KeyboardEvent>()
+                && key_binding(&event.key()).is_some()
+            {
+                event.prevent_default();
+                pressed.set(None);
             }
+        });
+        move || drop((press, release))
+    });
+}
+
+/// Steps through the move history with the mouse wheel over the board, down to the next move
+/// and up to the previous one like the arrow keys, instead of zooming the board.
+#[hook]
+fn use_wheel_steps(
+    board_ref: &NodeRef,
+    playback: UseReducerDispatcher<PlaybackState>,
+    pressed: UseStateSetter<Option<PlaybackButton>>,
+) {
+    use_effect_with(board_ref.clone(), move |board_ref| {
+        // Caught on the way down to the board, so the board never sees it.
+        let options = EventListenerOptions {
+            phase: EventListenerPhase::Capture,
+            passive: false,
+        };
+        let listener = board_ref.cast::<web_sys::HtmlElement>().map(|board| {
+            let mut turned = 0.0;
+            let mut unpress: Option<Timeout> = None;
+            EventListener::new_with_options(&board, "wheel", options, move |event| {
+                let Some(event) = event.dyn_ref::<web_sys::WheelEvent>() else {
+                    return;
+                };
+                event.stop_propagation();
+                event.prevent_default();
+                let delta = match event.delta_mode() {
+                    web_sys::WheelEvent::DOM_DELTA_LINE => event.delta_y() * WHEEL_LINE_PX,
+                    web_sys::WheelEvent::DOM_DELTA_PAGE => event.delta_y() * WHEEL_STEP_PX,
+                    _ => event.delta_y(),
+                };
+                // Turning back forgets what was turned the other way.
+                if turned * delta < 0.0 {
+                    turned = 0.0;
+                }
+                turned += delta;
+                if turned.abs() < WHEEL_STEP_PX {
+                    return;
+                }
+                let step = if turned > 0.0 {
+                    HistoryStep::NextMove
+                } else {
+                    HistoryStep::PreviousMove
+                };
+                turned = 0.0;
+                playback.dispatch(PlaybackCommand::Step(step));
+                pressed.set(Some(PlaybackButton::Step(step)));
+                let pressed = pressed.clone();
+                // Replacing the timeout cancels the one before, so the button stays lit
+                // while the wheel keeps turning.
+                unpress.replace(Timeout::new(WHEEL_PRESS_MS, move || pressed.set(None)));
+            })
         });
         move || drop(listener)
     });
