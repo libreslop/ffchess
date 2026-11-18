@@ -146,7 +146,7 @@ impl ViewHandles {
     pub(super) fn cancel_drag(&self) {
         self.cancel_hold();
         self.drag_start.set(None);
-        self.camera.borrow_mut().velocity = Vec2::ZERO;
+        self.camera.borrow_mut().stop_coasting();
         *self.did_pan.borrow_mut() = false;
     }
 

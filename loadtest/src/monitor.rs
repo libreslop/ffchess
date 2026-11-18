@@ -48,7 +48,12 @@ impl ServerProcess {
         };
         // Fields after the parenthesized command name; utime and stime are the 14th and 15th.
         let fields: Vec<&str> = stat.rsplit_once(')')?.1.split_whitespace().collect();
-        let tick = |index: usize| fields.get(index).and_then(|v| v.parse::<u64>().ok()).unwrap_or(0);
+        let tick = |index: usize| {
+            fields
+                .get(index)
+                .and_then(|v| v.parse::<u64>().ok())
+                .unwrap_or(0)
+        };
         let sample = Sample {
             rss_mb: kb(&status, "VmRSS:") / 1024,
             swap_mb: kb(&status, "VmSwap:") / 1024,

@@ -256,7 +256,11 @@ impl Metrics {
                 .iter()
                 .map(|(kind, samples)| (*kind, Percentiles::of(samples)))
                 .collect(),
-            within_target: if total == 0 { 1.0 } else { fast as f64 / total as f64 },
+            within_target: if total == 0 {
+                1.0
+            } else {
+                fast as f64 / total as f64
+            },
         }
     }
 }

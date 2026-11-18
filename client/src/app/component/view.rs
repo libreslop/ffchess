@@ -87,8 +87,8 @@ pub fn render_app(props: AppViewProps) -> Html {
     let is_spectating = reducer.is_spectating();
     let on_main_menu = props.on_main_menu;
     // A finished match cannot be spectated anymore, but its replay may be watched.
-    let on_spectate_own = (!reducer.match_finished())
-        .then(|| props.on_spectate.reform(|_| SpectateTarget::Own));
+    let on_spectate_own =
+        (!reducer.match_finished()).then(|| props.on_spectate.reform(|_| SpectateTarget::Own));
     let on_view_replay = reducer
         .replay_id()
         .map(|replay_id| props.on_view_replay.reform(move |_| replay_id));
@@ -156,9 +156,9 @@ pub fn render_app(props: AppViewProps) -> Html {
             if props.show_disconnected {
                 <DisconnectedScreen
                     show={true}
-                    disconnected={reducer.disconnected && !reducer.fatal_error && (is_joined || queue_status.is_some()) && !has_match_result}
-                    title={reducer.disconnected_title.clone()}
-                    msg={reducer.disconnected_msg.clone()}
+                    disconnected={reducer.connection_lost_matters(is_joined)}
+                    title={reducer.connection.title.clone()}
+                    msg={reducer.connection.msg.clone()}
                 />
             }
 
@@ -186,10 +186,10 @@ pub fn render_app(props: AppViewProps) -> Html {
                     }
                 </div>
             } else if is_joined && !force_join_overlay {
-                    <div data-testid="in-game-hud">
-                        { leaderboard }
-                        { stats_overlay }
-                    </div>
+                <div data-testid="in-game-hud">
+                    { leaderboard }
+                    { stats_overlay }
+                </div>
             } else if let (Some(sender), true) = (tx.clone(), props.join_step.is_select_match()) {
                 <MatchBrowser
                     matches={reducer.match_list.clone()}
@@ -233,9 +233,9 @@ pub fn render_app(props: AppViewProps) -> Html {
                 <QueueBanner queue={props.nested_queue} />
 
                 <FatalNotification
-                    show={reducer.fatal_error}
-                    title={reducer.disconnected_title.clone()}
-                    msg={reducer.disconnected_msg.clone()}
+                    show={reducer.connection.is_fatal}
+                    title={reducer.connection.title.clone()}
+                    msg={reducer.connection.msg.clone()}
                 />
 
                 if let Some(notice) = &reducer.error {

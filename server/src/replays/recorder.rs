@@ -62,7 +62,9 @@ impl ReplayRecorder {
                     frame,
                 });
             }
-            Err(error) => tracing::error!("Failed to encode a frame of replay {}: {error}", self.id),
+            Err(error) => {
+                tracing::error!("Failed to encode a frame of replay {}: {error}", self.id)
+            }
         }
     }
 

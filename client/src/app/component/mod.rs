@@ -190,7 +190,6 @@ pub fn app() -> Html {
         show_disconnected.clone(),
         reducer.clone(),
         is_joined,
-        is_queueing,
         global_cfg.disconnected_hide_ms,
     );
     use_rejoin_flow_reset_effect(rejoin_flow.clone(), reducer.clone());
@@ -272,7 +271,7 @@ pub fn app() -> Html {
         is_victory: reducer.is_victory(),
         join_step: join_step.clone(),
         landing_cooldown: landing_cooldown.clone(),
-        disconnected: reducer.disconnected,
+        disconnected: reducer.connection.disconnected,
         queueing: is_queueing,
         kits,
         single_kit,

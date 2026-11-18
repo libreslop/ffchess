@@ -63,7 +63,7 @@ pub fn use_nested_queue_effect(
     let base_matched = base.reducer.active_player_id().is_some();
     let base_queued = base.reducer.queue_status.is_some();
     let nested_playing =
-        nested.reducer.active_player_id().is_some() && !nested.reducer.disconnected;
+        nested.reducer.active_player_id().is_some() && !nested.reducer.connection.disconnected;
     use_effect_with(
         (focus.is_nested(), base_matched, base_queued, nested_playing),
         move |&(is_nested, base_matched, base_queued, nested_playing)| {

@@ -28,13 +28,13 @@ pub fn use_joining_reset_effect(
     let answered = reducer.active_player_id().is_some()
         || reducer.error.is_some()
         || reducer.queue_status.is_some()
-        || reducer.disconnected;
+        || reducer.connection.disconnected;
     use_effect_with(
         (
             reducer.player_id,
             reducer.error.clone(),
             reducer.queue_status.clone(),
-            reducer.disconnected,
+            reducer.connection.disconnected,
         ),
         move |_| {
             if answered {
@@ -88,7 +88,7 @@ pub fn use_fatal_error_reset_effect(
     reducer: UseReducerHandle<GameStateReducer>,
     hide_after_ms: u32,
 ) {
-    let fatal_error = reducer.fatal_error;
+    let fatal_error = reducer.connection.is_fatal;
     use_effect_with(fatal_error, move |&fatal| {
         let timeout = fatal.then(|| {
             Timeout::new(hide_after_ms, move || {
@@ -176,13 +176,9 @@ pub fn use_disconnected_overlay_effect(
     show_disconnected: UseStateHandle<bool>,
     reducer: UseReducerHandle<GameStateReducer>,
     is_joined: bool,
-    is_queueing: bool,
     hide_after_ms: u32,
 ) {
-    let should_show = reducer.disconnected
-        && !reducer.fatal_error
-        && (is_joined || is_queueing)
-        && !reducer.has_match_result();
+    let should_show = reducer.connection_lost_matters(is_joined);
     use_effect_with(should_show, move |&should_show| {
         let timeout = if should_show {
             show_disconnected.set(true);
@@ -252,7 +248,7 @@ pub fn use_preview_default_effect(
                 return;
             }
             let should_force = mode.as_ref().is_some_and(|mode| {
-                mode.queue_players.as_u32() >= 2 && (step.is_select_kit() || queue_status.is_some())
+                mode.is_queue_mode() && (step.is_select_kit() || queue_status.is_some())
             });
             let Some(sender) = tx.as_ref() else {
                 return;

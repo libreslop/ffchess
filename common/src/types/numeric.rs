@@ -105,6 +105,11 @@ impl PlayerCount {
         self.0 == 1
     }
 
+    /// Returns true when a match of this many players needs a matchmaking queue: two or more.
+    pub const fn needs_queue(self) -> bool {
+        self.0 >= 2
+    }
+
     /// Saturating subtraction between counts.
     pub const fn saturating_sub(self, rhs: Self) -> Self {
         Self(self.0.saturating_sub(rhs.0))

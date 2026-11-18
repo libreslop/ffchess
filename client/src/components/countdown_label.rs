@@ -19,7 +19,10 @@ pub struct CountdownLabelProps {
 /// Every digit is a `0`, the widest digit of the UI font, so no countdown of that many digits
 /// is wider.
 fn widest_wait_label(max: CooldownSeconds) -> String {
-    format!("Wait ({}s)", "0".repeat(max.as_u32().max(1).to_string().len()))
+    format!(
+        "Wait ({}s)",
+        "0".repeat(max.as_u32().max(1).to_string().len())
+    )
 }
 
 #[function_component(CountdownLabel)]

@@ -11,7 +11,7 @@ use super::shop_context::ActiveShopQuery;
 use super::touch::TouchContext;
 use super::types::{InputEnd, InputMove, InputStart, LatestStateSnapshot, ViewHandles};
 use crate::app::GlobalClientConfig;
-use crate::camera::CameraManager;
+use crate::camera::{CameraManager, CameraTuning};
 use crate::canvas::Renderer;
 use crate::components::shop_ui::ShopUI;
 use crate::math::{Vec2, vec2};
@@ -88,7 +88,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
         canvas_ref: canvas_ref.clone(),
         cam_state: handles.cam_state.clone(),
         zoom_state: handles.zoom_state.clone(),
-        globals: globals.clone(),
+        tuning: CameraTuning::from(globals),
     });
     use_wheel_zoom(WheelZoomInputs {
         camera: handles.camera.clone(),

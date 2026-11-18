@@ -278,7 +278,9 @@ pub struct GameModeConfig {
 impl GameModeConfig {
     /// Returns the required queue size for matchmaking modes.
     pub fn queue_requirement(&self) -> Option<PlayerCount> {
-        (self.queue_players.as_u32() >= 2).then_some(self.queue_players)
+        self.queue_players
+            .needs_queue()
+            .then_some(self.queue_players)
     }
 
     /// Returns the board size this mode wants for `player_count` players.

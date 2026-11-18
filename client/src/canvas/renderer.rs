@@ -4,7 +4,7 @@ use super::types::{PieceDrawParams, PieceNameDrawParams, PieceSvgCache, RenderPa
 use crate::math::Vec2;
 use common::models::{GameModeClientConfig, Piece};
 use common::rules::Catalog;
-use common::types::{BoardCoord, ExprVars};
+use common::types::BoardCoord;
 use glam::IVec2;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -211,12 +211,7 @@ impl Visibility {
 /// Returns `None` when the mode has no fog of war.
 fn fog_radius(mode: Option<&GameModeClientConfig>, piece_count: usize) -> Option<f64> {
     match mode {
-        Some(mode) => {
-            let vars = ExprVars::new().with("player_piece_count", piece_count);
-            mode.fog_of_war_radius
-                .as_ref()
-                .map(|expr| expr.evaluate(&vars))
-        }
+        Some(mode) => mode.fog_radius(piece_count),
         None => Some(FALLBACK_FOG_RADIUS * (piece_count as f64).sqrt().max(1.0)),
     }
 }

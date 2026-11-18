@@ -1,10 +1,7 @@
 //! Timers driving the view: the per-frame redraw, the per-frame camera step, and wheel zoom.
 
 use super::types::{FpsCounter, LatestStateSnapshot};
-use crate::app::GlobalClientConfig;
-use crate::camera::{
-    CAMERA_STEP_MS, CameraManager, CameraUpdateParams, update_camera,
-};
+use crate::camera::{CAMERA_STEP_MS, CameraManager, CameraTuning, CameraUpdateParams};
 use crate::math::{Vec2, vec2};
 use crate::reducer::GameAction;
 use crate::utils::performance_now;
@@ -53,7 +50,7 @@ pub(super) struct CameraLoopInputs {
     pub(super) canvas_ref: NodeRef,
     pub(super) cam_state: UseStateHandle<Vec2>,
     pub(super) zoom_state: UseStateHandle<f64>,
-    pub(super) globals: GlobalClientConfig,
+    pub(super) tuning: CameraTuning,
 }
 
 /// Steps the camera on every displayed frame and reports the frame rate.
@@ -96,34 +93,16 @@ impl CameraFrameState {
         }
 
         let mut camera = inputs.camera.borrow_mut();
-        let globals = &inputs.globals;
-        let changed = update_camera(
-            &mut camera,
-            CameraUpdateParams {
-                steps,
-                state: &reducer.state,
-                player_id: reducer.player_id,
-                canvas_ref: &inputs.canvas_ref,
-                is_dragging,
-                mode: reducer.mode.as_ref(),
-                piece_count: reducer.state.pieces_of(reducer.viewer_id()).count(),
-                phase: reducer.phase,
-                camera_cue: reducer.camera_cue.clone(),
-                zoom_min: globals.camera_zoom_min,
-                zoom_max: globals.camera_zoom_max,
-                zoom_lerp: globals.zoom_lerp,
-                inertia_decay: globals.inertia_decay,
-                velocity_cutoff: globals.velocity_cutoff,
-                pan_idle_ms: globals.pan_idle_ms,
-                pan_lerp_alive: globals.pan_lerp_alive,
-                flight_ms: globals.focus_flight_ms,
-                tile_size_px: globals.tile_size_px,
-                board_rotated_180: reducer.board_rotated_180(),
-            },
-        );
+        let changed = camera.update(&CameraUpdateParams {
+            steps,
+            tuning: inputs.tuning,
+            reducer: &reducer,
+            canvas_ref: &inputs.canvas_ref,
+            is_dragging,
+        });
         if changed {
-            inputs.zoom_state.set(camera.zoom);
-            inputs.cam_state.set(camera.camera);
+            inputs.zoom_state.set(camera.zoom());
+            inputs.cam_state.set(camera.position());
         }
     }
 }
@@ -179,8 +158,8 @@ pub(super) fn use_wheel_zoom(inputs: WheelZoomInputs) {
                         return;
                     }
                     let factor = scroll_base.max(1.01).powf(-event.delta_y() / 100.0);
-                    camera.mouse_pos = vec2(event.client_x() as f64, event.client_y() as f64);
-                    camera.target_zoom = camera.zoom_range().clamp(camera.target_zoom * factor);
+                    let pointer = vec2(event.client_x() as f64, event.client_y() as f64);
+                    camera.zoom_towards(pointer, factor);
                 })
             });
             move || drop(listener)

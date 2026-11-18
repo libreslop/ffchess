@@ -89,7 +89,7 @@ pub async fn connect_ws(
 /// Shows the disconnected overlay unless another overlay already explains the situation.
 pub fn report_connection_lost(reducer: &ReducerRef) {
     let current = reducer.borrow().clone();
-    if !current.disconnected && !current.fatal_error {
+    if !current.connection.is_shown() {
         current.dispatch(GameAction::SetDisconnected(
             DisconnectNotice::connection_lost(),
         ));

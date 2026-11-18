@@ -50,8 +50,8 @@ pub(crate) struct FogTexture {
 impl FogTexture {
     /// Paints the fog of a view `radius_squares` squares around the king's square.
     fn paint(radius_squares: i32) -> Option<Self> {
-        let radius = (radius_squares.max(0) as f64 + 0.5) * ART_PIXELS_PER_TILE
-            / FOG_PIXEL_ART_PIXELS;
+        let radius =
+            (radius_squares.max(0) as f64 + 0.5) * ART_PIXELS_PER_TILE / FOG_PIXEL_ART_PIXELS;
         let half_pixels = radius.ceil() as u32;
         let (canvas, ctx) = Renderer::raster_canvas(half_pixels * 2)?;
         let side = (half_pixels * 2) as f64;

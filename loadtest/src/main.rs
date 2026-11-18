@@ -224,10 +224,28 @@ async fn ramp(plan: RampPlan) {
         .collect();
     println!(
         "{:>6} {:>5} {:>5} {:>5} {:>5} | {:>7} {:>6} {:>4} | {:>6} |{kinds} | {:>7} {:>6} | {:>5} {:>5} | {:>4} {:>4} {:>4} {:>4} {:>5}",
-        "bots", "conn", "play", "queue", "spec", "rss_mb", "cpu%", "thr", "ontime",
-        "upd/s/c", "MB/s", "match", "rplay", "disc", "cfail", "hfail", "err", "gap",
+        "bots",
+        "conn",
+        "play",
+        "queue",
+        "spec",
+        "rss_mb",
+        "cpu%",
+        "thr",
+        "ontime",
+        "upd/s/c",
+        "MB/s",
+        "match",
+        "rplay",
+        "disc",
+        "cfail",
+        "hfail",
+        "err",
+        "gap",
     );
-    println!("(request columns are p50/p95 in ms; ontime is the share answered within {target_ms} ms)");
+    println!(
+        "(request columns are p50/p95 in ms; ontime is the share answered within {target_ms} ms)"
+    );
     let started = Instant::now();
     let mut spawned = 0;
     let mut milestones = MILESTONES_MB.iter().peekable();

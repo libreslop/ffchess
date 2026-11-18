@@ -3,7 +3,7 @@
 use crate::premoves::PremoveQueue;
 use crate::utils::DEFAULT_RESPAWN_COOLDOWN;
 use common::models::{CameraCue, GameModeClientConfig, GameState, MatchSummary, Player};
-use common::protocol::{ChatLine, ClientMessage, GameError};
+use common::protocol::{ChatLine, ClientMessage, GameError, GameOverStats};
 use common::rules::Catalog;
 use common::types::{
     DurationMs, PlayerCount, PlayerId, QueuePosition, ReplayId, Score, SessionSecret, TimestampMs,
@@ -74,6 +74,18 @@ pub struct MatchStats {
 }
 
 impl MatchStats {
+    /// Returns the final stats the server reported, kept in the perspective of
+    /// `board_rotation_deg`.
+    pub fn of_game_over(stats: GameOverStats, board_rotation_deg: i32) -> Self {
+        Self {
+            score: stats.final_score,
+            kills: stats.kills,
+            captured: stats.pieces_captured,
+            survival_secs: stats.time_survived_secs,
+            board_rotation_deg,
+        }
+    }
+
     /// Captures the live stats of `player` at `now`.
     pub fn of(player: &Player, now: TimestampMs) -> Self {
         Self {
@@ -114,6 +126,61 @@ pub struct ChatLog {
     pub lines: Vec<ChatLine>,
 }
 
+/// Overlay telling the player about a lost or refused connection.
+#[derive(Clone, PartialEq, Eq, Debug, Default)]
+pub struct DisconnectNotice {
+    /// True while the connection is down.
+    pub disconnected: bool,
+    /// True when the server refused the session; shown as a banner instead of the
+    /// reconnecting overlay.
+    pub is_fatal: bool,
+    pub title: Option<String>,
+    pub msg: Option<String>,
+}
+
+impl DisconnectNotice {
+    /// Clears every disconnect overlay.
+    pub fn none() -> Self {
+        Self::default()
+    }
+
+    /// Shows the generic, recoverable "connection lost" overlay.
+    pub fn connection_lost() -> Self {
+        Self {
+            disconnected: true,
+            ..Self::none()
+        }
+    }
+
+    /// Shows a fatal banner with a custom title and message.
+    pub fn fatal(title: String, msg: String) -> Self {
+        Self {
+            disconnected: true,
+            is_fatal: true,
+            title: Some(title),
+            msg: Some(msg),
+        }
+    }
+
+    /// Returns true while the connection is lost but expected back.
+    pub fn is_recoverable_loss(&self) -> bool {
+        self.disconnected && !self.is_fatal
+    }
+
+    /// Returns true while any overlay explains the connection.
+    pub fn is_shown(&self) -> bool {
+        self.disconnected || self.is_fatal
+    }
+
+    /// Hides the reconnecting overlay and its text, keeping the fatal flag.
+    pub fn clear_overlay(&mut self) {
+        *self = Self {
+            is_fatal: self.is_fatal,
+            ..Self::none()
+        };
+    }
+}
+
 /// Aggregated client game state and UI state.
 #[derive(Clone, PartialEq, Default)]
 pub struct GameStateReducer {
@@ -131,10 +198,8 @@ pub struct GameStateReducer {
     pub ping_ms: u64,
     pub clock_offset_ms: i64,
     pub fps: u32,
-    pub disconnected: bool,
-    pub fatal_error: bool,
-    pub disconnected_title: Option<String>,
-    pub disconnected_msg: Option<String>,
+    /// State of the connection to the server, as shown to the player.
+    pub connection: DisconnectNotice,
     pub is_dead: bool,
     pub victory: Option<Victory>,
     pub queue_status: Option<QueueStatus>,
@@ -206,7 +271,7 @@ impl GameStateReducer {
     pub fn is_queue_mode(&self) -> bool {
         self.mode
             .as_ref()
-            .is_some_and(|mode| mode.queue_players.as_u32() >= 2)
+            .is_some_and(GameModeClientConfig::is_queue_mode)
     }
 
     /// Returns true while the local player still has a place on the board, winners included.
@@ -235,6 +300,14 @@ impl GameStateReducer {
                 player.board_rotation_deg
             });
         rotation.rem_euclid(360) == 180
+    }
+
+    /// Returns true when a lost connection interrupts something the player is in: a match,
+    /// with `is_joined`, or a queue.
+    pub fn connection_lost_matters(&self, is_joined: bool) -> bool {
+        self.connection.is_recoverable_loss()
+            && (is_joined || self.queue_status.is_some())
+            && !self.has_match_result()
     }
 
     /// Returns true when the mode locks the camera in place.

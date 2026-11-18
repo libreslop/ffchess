@@ -1,8 +1,9 @@
-//! Touch input: single-finger taps, pans, and piece drags, two-finger pinch zoom, and double-tap fullscreen.
+//! Touch input: single-finger taps, pans, and piece drags, two-finger pinch zoom, and
+//! double-tap fullscreen.
 
 use super::geometry::is_ui_exempt_target;
 use super::input::PointerHandlers;
-use super::types::{InputEnd, InputMove, InputStart, LastTap, ViewHandles};
+use super::types::{InputEnd, InputMove, InputStart, LastTap, TAP_SLOP_PX, ViewHandles};
 use crate::math::{Vec2, vec2};
 use crate::reducer::GameStateReducer;
 use crate::utils::{performance_now, request_fullscreen};
@@ -14,12 +15,6 @@ const DOUBLE_TAP_MS: f64 = 300.0;
 
 /// Two taps closer than this many pixels (squared) form a double tap.
 const DOUBLE_TAP_DIST_SQ: f64 = 900.0;
-
-/// Finger travel, in pixels, after which a single-finger touch counts as a gesture.
-const TOUCH_SLOP_PX: f64 = 10.0;
-
-/// Damping exponent applied to pinch scale changes.
-const PINCH_DAMPING: f64 = 0.8;
 
 /// Callbacks for the touch events of the game view.
 pub(super) struct TouchHandlers {
@@ -81,12 +76,7 @@ impl TouchContext {
         }
         if let Some((a, b)) = two_fingers(event) {
             *self.handles.touch_gesture_active.borrow_mut() = true;
-            {
-                let mut camera = self.handles.camera.borrow_mut();
-                camera.last_touch_dist = Some((b - a).length());
-                camera.last_touch_center = Some((a + b) * 0.5);
-                camera.velocity = Vec2::ZERO;
-            }
+            self.handles.camera.borrow_mut().begin_pinch(a, b);
             self.handles.drag_start.set(None);
             self.handles.cancel_hold();
             self.handles.mark_not_dragging();
@@ -107,13 +97,13 @@ impl TouchContext {
         }
         if let Some((a, b)) = two_fingers(event) {
             *self.handles.touch_gesture_active.borrow_mut() = true;
-            self.pinch((b - a).length(), (a + b) * 0.5);
+            self.pinch(a, b);
             self.handles.mark_not_dragging();
         } else if let Some(touch) = event.touches().get(0) {
             let pos = touch_pos(&touch);
             if let Some(start) = *self.handles.drag_start
                 && start.allow_panning
-                && (pos - start.pos).length() > TOUCH_SLOP_PX
+                && (pos - start.pos).length() > TAP_SLOP_PX
             {
                 *self.handles.touch_gesture_active.borrow_mut() = true;
             }
@@ -168,45 +158,18 @@ impl TouchContext {
         is_double
     }
 
-    /// Applies one pinch step: pans by the moved center and zooms around it.
-    fn pinch(&self, distance: f64, center: Vec2) {
-        let camera_locked = self.reducer.camera_movement_disabled();
-        let rotated = self.reducer.board_rotated_180();
+    /// Applies one pinch step with fingers at `a` and `b`, and shows where it moved the camera.
+    fn pinch(&self, a: Vec2, b: Vec2) {
+        let canvas = self.handles.canvas_ref.cast::<HtmlCanvasElement>();
         let mut camera = self.handles.camera.borrow_mut();
-        let Some(previous_distance) = camera.last_touch_dist else {
-            camera.last_touch_dist = Some(distance);
-            return;
-        };
-
-        camera.mouse_pos = center;
-        if !camera_locked && let Some(previous_center) = camera.last_touch_center {
-            let pan = center - previous_center;
-            camera.camera += if rotated { pan } else { -pan };
-            camera.target_camera = camera.camera;
-        }
-        camera.last_touch_center = Some(center);
-
-        if !camera_locked {
-            let old_zoom = camera.zoom;
-            let factor = (distance / previous_distance).powf(PINCH_DAMPING);
-            let new_zoom = camera.zoom_range().clamp(old_zoom * factor);
-            if (new_zoom - old_zoom).abs() > 1e-6
-                && let Some(canvas) = self.handles.canvas_ref.cast::<HtmlCanvasElement>()
-            {
-                // Keep the world point under the pinch center fixed while zooming.
-                let rect = canvas.get_bounding_client_rect();
-                let canvas_center = vec2(canvas.width() as f64, canvas.height() as f64) / 2.0;
-                let offset = center - vec2(rect.left(), rect.top()) - canvas_center;
-                let offset = if rotated { -offset } else { offset };
-                camera.camera = (camera.camera + offset) * (new_zoom / old_zoom) - offset;
-                camera.target_camera = camera.camera;
-            }
-            camera.target_zoom = new_zoom;
-            camera.zoom = new_zoom;
-        }
-        camera.velocity = Vec2::ZERO;
-        camera.last_touch_dist = Some(distance);
-        let (position, zoom) = (camera.camera, camera.zoom);
+        camera.pinch_to(
+            a,
+            b,
+            canvas.as_ref(),
+            self.reducer.camera_movement_disabled(),
+            self.reducer.board_rotated_180(),
+        );
+        let (position, zoom) = (camera.position(), camera.zoom());
         drop(camera);
         self.handles.cam_state.set(position);
         self.handles.zoom_state.set(zoom);
@@ -214,8 +177,6 @@ impl TouchContext {
 
     /// Clears pinch tracking.
     fn forget_pinch(&self) {
-        let mut camera = self.handles.camera.borrow_mut();
-        camera.last_touch_dist = None;
-        camera.last_touch_center = None;
+        self.handles.camera.borrow_mut().end_pinch();
     }
 }

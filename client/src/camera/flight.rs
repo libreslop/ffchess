@@ -61,10 +61,14 @@ impl CameraFlight {
         }
         let t = self.elapsed_ms / self.duration_ms;
         CameraPose {
-            center: self.from.center.lerp(self.to.center, Sharpness::PAN.progress(t)),
+            center: self
+                .from
+                .center
+                .lerp(self.to.center, Sharpness::PAN.progress(t)),
             // Zoom is eased by factor rather than linearly, so it feels equally fast at every
             // level.
-            zoom: self.from.zoom * (self.to.zoom / self.from.zoom).powf(Sharpness::ZOOM.progress(t)),
+            zoom: self.from.zoom
+                * (self.to.zoom / self.from.zoom).powf(Sharpness::ZOOM.progress(t)),
         }
     }
 

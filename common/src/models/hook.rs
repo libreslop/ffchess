@@ -2,42 +2,56 @@ use crate::models::camera::{CameraCue, SetCameraConfig};
 use crate::types::{BoardCoord, PieceTypeId};
 use serde::{Deserialize, Serialize};
 
-/// Trigger-action hook for game events.
+/// Gameplay event a hook reacts to.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum HookTrigger {
-    #[serde(rename = "OnCapture")]
     OnCapture,
-    #[serde(rename = "OnCapturePieceActive")]
     OnCapturePieceActive,
-    #[serde(rename = "OnPlayerLeave")]
     OnPlayerLeave,
-    #[serde(rename = "OnPlayerJoin")]
     OnPlayerJoin,
-    #[serde(rename = "OnPlayerDisconnect")]
     OnPlayerDisconnect,
-    #[serde(rename = "OnPlayerKilled")]
     OnPlayerKilled,
-    #[serde(rename = "OnQueueCountdown")]
     OnQueueCountdown,
-    #[serde(rename = "OnGameStart")]
     OnGameStart,
-    #[serde(rename = "OnSpectatorJoin")]
     OnSpectatorJoin,
-    #[serde(rename = "OnSpectatorLeave")]
     OnSpectatorLeave,
+}
+
+impl HookTrigger {
+    /// Returns the event a system chat hook on this trigger announces, if it announces any.
+    fn chat_event(self) -> Option<ChatEvent> {
+        Some(match self {
+            Self::OnPlayerJoin => ChatEvent::PlayerJoin,
+            Self::OnPlayerDisconnect => ChatEvent::PlayerDisconnect,
+            Self::OnPlayerKilled => ChatEvent::PlayerKilled,
+            Self::OnQueueCountdown => ChatEvent::QueueCountdown,
+            Self::OnGameStart => ChatEvent::GameStart,
+            Self::OnSpectatorJoin => ChatEvent::SpectatorJoin,
+            Self::OnSpectatorLeave => ChatEvent::SpectatorLeave,
+            Self::OnCapture | Self::OnCapturePieceActive | Self::OnPlayerLeave => return None,
+        })
+    }
 }
 
 /// Effect applied when a hook trigger matches.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum HookAction {
-    #[serde(rename = "EliminateOwner")]
     EliminateOwner,
-    #[serde(rename = "WinCapturer")]
     WinCapturer,
-    #[serde(rename = "WinRemaining")]
     WinRemaining,
-    #[serde(rename = "SystemChatMessage")]
     SystemChatMessage,
+}
+
+/// Event announced in chat by a system chat hook.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChatEvent {
+    PlayerJoin,
+    PlayerDisconnect,
+    PlayerKilled,
+    QueueCountdown,
+    GameStart,
+    SpectatorJoin,
+    SpectatorLeave,
 }
 
 /// Supported hook behaviors understood by the runtime.
@@ -46,13 +60,8 @@ pub enum SupportedHook {
     EliminateOwnerOnCapture,
     WinCapturerOnActiveCapture,
     WinRemainingOnPlayerLeave,
-    SystemChatOnPlayerJoin,
-    SystemChatOnPlayerDisconnect,
-    SystemChatOnPlayerKilled,
-    SystemChatOnQueueCountdown,
-    SystemChatOnGameStart,
-    SystemChatOnSpectatorJoin,
-    SystemChatOnSpectatorLeave,
+    /// Posts a system chat line for every occurrence of the event.
+    SystemChat(ChatEvent),
 }
 
 /// Trigger-action hook for game events.
@@ -88,26 +97,8 @@ impl HookConfig {
             (HookTrigger::OnPlayerLeave, HookAction::WinRemaining) => {
                 Some(SupportedHook::WinRemainingOnPlayerLeave)
             }
-            (HookTrigger::OnPlayerJoin, HookAction::SystemChatMessage) => {
-                Some(SupportedHook::SystemChatOnPlayerJoin)
-            }
-            (HookTrigger::OnPlayerDisconnect, HookAction::SystemChatMessage) => {
-                Some(SupportedHook::SystemChatOnPlayerDisconnect)
-            }
-            (HookTrigger::OnPlayerKilled, HookAction::SystemChatMessage) => {
-                Some(SupportedHook::SystemChatOnPlayerKilled)
-            }
-            (HookTrigger::OnQueueCountdown, HookAction::SystemChatMessage) => {
-                Some(SupportedHook::SystemChatOnQueueCountdown)
-            }
-            (HookTrigger::OnGameStart, HookAction::SystemChatMessage) => {
-                Some(SupportedHook::SystemChatOnGameStart)
-            }
-            (HookTrigger::OnSpectatorJoin, HookAction::SystemChatMessage) => {
-                Some(SupportedHook::SystemChatOnSpectatorJoin)
-            }
-            (HookTrigger::OnSpectatorLeave, HookAction::SystemChatMessage) => {
-                Some(SupportedHook::SystemChatOnSpectatorLeave)
+            (trigger, HookAction::SystemChatMessage) => {
+                trigger.chat_event().map(SupportedHook::SystemChat)
             }
             _ => None,
         }

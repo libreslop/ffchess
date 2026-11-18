@@ -220,7 +220,12 @@ mod tests {
     fn unsaved_replays_are_hidden() {
         let db = db();
         let id = ReplayId::new();
-        db.begin(id, "{}", TimestampMs::from_millis(0)).expect("begin");
-        assert_eq!(db.finished_replay(id, TimestampMs::from_millis(0)).expect("read"), None);
+        db.begin(id, "{}", TimestampMs::from_millis(0))
+            .expect("begin");
+        assert_eq!(
+            db.finished_replay(id, TimestampMs::from_millis(0))
+                .expect("read"),
+            None
+        );
     }
 }

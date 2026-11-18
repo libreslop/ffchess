@@ -1,8 +1,8 @@
 //! Tests for shared movement, shop, and simulation rules.
 
 use common::models::{
-    DestinationRequirement, GameState, MoveTiming, Piece, PieceAction, PieceConfig, Player, Shop, ShopConfig,
-    ShopGroupConfig, ShopItemConfig, ShopItemIndex,
+    DestinationRequirement, GameState, MoveTiming, Piece, PieceAction, PieceConfig, Player, Shop,
+    ShopConfig, ShopGroupConfig, ShopItemConfig, ShopItemIndex,
 };
 use common::protocol::GameError;
 use common::rules::{Catalog, LegalMove, MoveKind, Simulation};

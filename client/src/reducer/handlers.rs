@@ -32,7 +32,7 @@ impl GameStateReducer {
         self.premoves.clear();
         self.error = None;
         self.finished_match = None;
-        self.clear_disconnect_ui();
+        self.connection.clear_overlay();
         self.clear_victory_state();
         // A missing player right after Init is a race with the first update, not a death.
         self.is_dead = false;
@@ -41,7 +41,7 @@ impl GameStateReducer {
             self.menu_preview_state = Some(self.state.clone());
         } else {
             self.queue_status = None;
-            self.fatal_error = false;
+            self.connection.is_fatal = false;
             if let Some(player) = self.state.players.get(&player_id) {
                 self.stats.score = player.score;
                 self.stats.board_rotation_deg = player.board_rotation_deg;
@@ -51,7 +51,7 @@ impl GameStateReducer {
 
     /// Replaces the world with a per-tick snapshot and reconciles local predictions.
     pub(super) fn apply_update_state(&mut self, payload: UpdateStatePayload) {
-        self.disconnected = false;
+        self.connection.disconnected = false;
         self.state.board_size = payload.board_size;
         self.state.players = payload.players.into_iter().map(|p| (p.id, p)).collect();
         self.state.pieces = payload.pieces.into_iter().map(|p| (p.id, p)).collect();

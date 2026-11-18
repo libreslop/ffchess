@@ -1,5 +1,8 @@
 use crate::models::camera::StartingCameraConfig;
-use crate::types::{ColorHex, DurationMs, ExprString, KitId, ModeId, PlayerCount, TimestampMs};
+use crate::types::{
+    ColorHex, DurationMs, ExprString, ExprVars, KitId, ModeId, PieceTypeId, PlayerCount,
+    TimestampMs,
+};
 use educe::Educe;
 use serde::{Deserialize, Serialize};
 
@@ -8,7 +11,7 @@ use serde::{Deserialize, Serialize};
 pub struct KitSummary {
     pub name: KitId,
     pub description: String,
-    pub pieces: Vec<crate::types::PieceTypeId>,
+    pub pieces: Vec<PieceTypeId>,
 }
 
 /// Client-safe mode configuration.
@@ -38,6 +41,35 @@ pub struct GameModeClientConfig {
     pub kits: Vec<KitSummary>,
 }
 
+impl GameModeClientConfig {
+    /// Returns true when the mode matches players through a queue of separate matches.
+    pub fn is_queue_mode(&self) -> bool {
+        self.queue_players.needs_queue()
+    }
+
+    /// Returns the fog-of-war radius, in squares, around the army of a player owning
+    /// `piece_count` pieces, or `None` when the mode has no fog of war.
+    pub fn fog_radius(&self, piece_count: usize) -> Option<f64> {
+        self.fog_of_war_radius
+            .as_ref()
+            .map(|radius| radius.evaluate(&army_vars(piece_count)))
+    }
+
+    /// Returns how far, in squares, the camera may stray from the king of a player owning
+    /// `piece_count` pieces.
+    pub fn pan_limit(&self, piece_count: usize) -> f64 {
+        let fog_radius = self.fog_radius(piece_count).unwrap_or(0.0);
+        let vars = army_vars(piece_count).with("fog_of_war_radius", fog_radius);
+        self.camera_pan_limit.evaluate(&vars)
+    }
+}
+
+/// Returns the expression variables describing the army of a player owning `piece_count`
+/// pieces.
+fn army_vars(piece_count: usize) -> ExprVars {
+    ExprVars::new().with("player_piece_count", piece_count)
+}
+
 /// Summary info for mode selection screens.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ModeSummary {
@@ -52,7 +84,7 @@ pub struct ModeSummary {
 impl ModeSummary {
     /// Returns true when this summary describes a queue-based mode.
     pub fn is_queue_mode(&self) -> bool {
-        self.queue_players.as_u32() >= 2
+        self.queue_players.needs_queue()
     }
 }
 

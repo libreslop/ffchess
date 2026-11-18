@@ -1,6 +1,6 @@
 //! Reducer actions and payloads for client state updates.
 
-use crate::reducer::types::{MsgSender, QueueStatus};
+use crate::reducer::types::{DisconnectNotice, MsgSender, QueueStatus};
 use common::models::{
     CameraCue, GameModeClientConfig, GameState, MatchSummary, Piece, PieceAction, Player, Shop,
 };
@@ -30,44 +30,6 @@ pub struct UpdateStatePayload {
     pub shops: Vec<Shop>,
     pub board_size: BoardSize,
     pub spectators: Vec<String>,
-}
-
-/// Content of an overlay telling the player about a lost or refused connection.
-pub struct DisconnectNotice {
-    pub disconnected: bool,
-    pub is_fatal: bool,
-    pub title: Option<String>,
-    pub msg: Option<String>,
-}
-
-impl DisconnectNotice {
-    /// Clears every disconnect overlay.
-    pub fn none() -> Self {
-        Self {
-            disconnected: false,
-            is_fatal: false,
-            title: None,
-            msg: None,
-        }
-    }
-
-    /// Shows the generic, recoverable "connection lost" overlay.
-    pub fn connection_lost() -> Self {
-        Self {
-            disconnected: true,
-            ..Self::none()
-        }
-    }
-
-    /// Shows a fatal banner with a custom title and message.
-    pub fn fatal(title: String, msg: String) -> Self {
-        Self {
-            disconnected: true,
-            is_fatal: true,
-            title: Some(title),
-            msg: Some(msg),
-        }
-    }
 }
 
 /// Actions that drive the client reducer state machine.

@@ -5,19 +5,13 @@ use super::tap::{TapContext, TapOutcome};
 use super::types::{
     DragStart, HeldPiece, InputEnd, InputMove, InputStart, TAP_SLOP_PX, ViewHandles,
 };
-use crate::camera::CAMERA_STEP_MS;
 use crate::math::Vec2;
 use crate::premoves::Projection;
 use crate::reducer::{GameAction, GameStateReducer, MsgSender};
-use crate::utils::performance_now;
 use common::types::{BoardCoord, PieceId};
 use std::rc::Rc;
 use web_sys::HtmlCanvasElement;
 use yew::prelude::*;
-
-/// Shortest gap between pointer moves used to measure pan momentum, in milliseconds, so two
-/// moves in quick succession do not fling the camera.
-const MIN_PAN_SAMPLE_MS: f64 = 2.0;
 
 /// Everything pointer handlers need from the current render.
 #[derive(Clone)]
@@ -69,7 +63,7 @@ impl PointerContext {
         if is_panning {
             return "all-scroll";
         }
-        let hovered = self.handles.camera.borrow().mouse_pos;
+        let hovered = self.handles.camera.borrow().hovered();
         let Some(square) = self.square_at(hovered) else {
             return "default";
         };
@@ -100,8 +94,8 @@ impl PointerContext {
         Some(screen_to_grid_point(
             pos,
             &canvas,
-            camera.camera,
-            self.tile_size_px * camera.zoom,
+            camera.position(),
+            self.tile_size_px * camera.zoom(),
             self.reducer.board_rotated_180(),
         ))
     }
@@ -154,7 +148,7 @@ impl PointerContext {
             pos: input.pos,
             allow_panning: !is_interactive && !self.reducer.camera_movement_disabled(),
         }));
-        self.handles.camera.borrow_mut().velocity = Vec2::ZERO;
+        self.handles.camera.borrow_mut().stop_coasting();
     }
 
     /// Pans the camera while a panning press moves.
@@ -166,7 +160,7 @@ impl PointerContext {
             held.follow(input.pos);
         }
         let mut camera = self.handles.camera.borrow_mut();
-        camera.mouse_pos = input.pos;
+        camera.hover(input.pos);
         let Some(start) = *self.handles.drag_start else {
             return;
         };
@@ -174,7 +168,7 @@ impl PointerContext {
             return;
         }
         if self.reducer.camera_movement_disabled() {
-            camera.velocity = Vec2::ZERO;
+            camera.stop_coasting();
             return;
         }
         let delta = input.pos - start.pos;
@@ -183,26 +177,8 @@ impl PointerContext {
         }
 
         *self.handles.did_pan.borrow_mut() = true;
-        let movement = if self.reducer.board_rotated_180() {
-            delta
-        } else {
-            -delta
-        };
-        camera.camera += movement;
-        // Pointer moves arrive once per displayed frame, so the momentum is scaled to a
-        // camera step to carry the same speed on any refresh rate.
-        let now = performance_now();
-        let elapsed_ms = (now - camera.last_pan_ms).clamp(MIN_PAN_SAMPLE_MS, CAMERA_STEP_MS);
-        camera.velocity = movement * (CAMERA_STEP_MS / elapsed_ms);
-        camera.last_pan_ms = now;
-        let is_alive = self
-            .reducer
-            .active_player_id()
-            .is_some_and(|id| self.reducer.state.players.contains_key(&id));
-        if !is_alive {
-            camera.target_camera = camera.camera;
-        }
-        self.handles.cam_state.set(camera.camera);
+        camera.drag(delta, self.reducer.board_rotated_180());
+        self.handles.cam_state.set(camera.position());
         self.handles.drag_start.set(Some(DragStart {
             pos: input.pos,
             allow_panning: true,
@@ -222,13 +198,13 @@ impl PointerContext {
         let is_tap = match start {
             Some(start) => {
                 if !start.allow_panning {
-                    self.handles.camera.borrow_mut().velocity = Vec2::ZERO;
+                    self.handles.camera.borrow_mut().stop_coasting();
                 }
                 let dragged = start.allow_panning && (input.pos - start.pos).length() > TAP_SLOP_PX;
                 !panned && !dragged
             }
             None => {
-                self.handles.camera.borrow_mut().velocity = Vec2::ZERO;
+                self.handles.camera.borrow_mut().stop_coasting();
                 true
             }
         };
@@ -324,8 +300,7 @@ pub(super) fn mouse_leave_handler(handles: ViewHandles) -> Callback<MouseEvent> 
         handles.drag_start.set(None);
         *handles.did_pan.borrow_mut() = false;
         if previous.is_some_and(|drag| drag.allow_panning) {
-            let mut camera = handles.camera.borrow_mut();
-            camera.target_camera = camera.camera;
+            handles.camera.borrow_mut().settle();
         }
     })
 }

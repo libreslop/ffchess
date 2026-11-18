@@ -91,7 +91,11 @@ pub(super) fn replay_player(props: &ReplayPlayerProps) -> Html {
             }
         });
     }
-    use_playback_keys(playback.dispatcher(), pressed.setter(), props.on_close.clone());
+    use_playback_keys(
+        playback.dispatcher(),
+        pressed.setter(),
+        props.on_close.clone(),
+    );
     use_wheel_steps(&board_ref, playback.dispatcher(), pressed.setter());
 
     let show_scores = board.mode.as_ref().is_none_or(|mode| mode.show_scoreboard);

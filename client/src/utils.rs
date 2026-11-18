@@ -1,8 +1,8 @@
 //! Browser storage and environment helpers for the client.
 
 use common::types::{DurationMs, ModeId, PlayerId, SessionSecret, TimestampMs};
-use std::fmt::Write;
 use js_sys::{Function, Reflect};
+use std::fmt::Write;
 use uuid::Uuid;
 use wasm_bindgen::{JsCast, JsValue};
 use web_sys::Storage;

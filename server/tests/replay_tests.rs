@@ -23,7 +23,11 @@ fn mode_config(mode: &str) -> (GameModeConfig, ConfigManager) {
 }
 
 /// Creates a private match of `mode` recording into `store`.
-fn private_match(mode: &GameModeConfig, config: &ConfigManager, store: &ReplayStore) -> GameInstance {
+fn private_match(
+    mode: &GameModeConfig,
+    config: &ConfigManager,
+    store: &ReplayStore,
+) -> GameInstance {
     GameInstance::private_match(
         mode,
         config.catalog.clone(),
@@ -63,7 +67,10 @@ fn finished_replay(messages: &[ServerMessage]) -> Option<Option<ReplayId>> {
 /// Leaves only the two kings, ready to move, with the second right next to the first.
 fn kings_face_off(instance: &GameInstance, victim: PlayerId, winner: PlayerId) -> ActionRequest {
     let winner_king = instance.with_state(|state| {
-        let kings = [state.players[&victim].king_id, state.players[&winner].king_id];
+        let kings = [
+            state.players[&victim].king_id,
+            state.players[&winner].king_id,
+        ];
         state.pieces.retain(|id, _| kings.contains(id));
         for (id, pos) in kings.iter().zip([[1, 1], [0, 0]]) {
             let king = state.pieces.get_mut(id).expect("king exists");
@@ -199,5 +206,9 @@ async fn finished_match_stays_finished() {
     instance.leave(p2);
     instance.tick();
     assert_eq!(instance.status(), MatchStatus::Finished { at });
-    assert_eq!(finished_replay(&drain(&mut rx2)), None, "finishes only once");
+    assert_eq!(
+        finished_replay(&drain(&mut rx2)),
+        None,
+        "finishes only once"
+    );
 }

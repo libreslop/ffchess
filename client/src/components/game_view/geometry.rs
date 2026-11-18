@@ -1,5 +1,6 @@
 //! Geometry and hit-testing helpers for the game view.
 
+use crate::camera::view_offset;
 use crate::math::{Vec2, vec2};
 use common::types::BoardCoord;
 use wasm_bindgen::JsCast;
@@ -35,14 +36,7 @@ pub(super) fn screen_to_grid_point(
     tile_size: f64,
     board_rotated_180: bool,
 ) -> Vec2 {
-    let screen_pos = client_to_canvas(pos, canvas);
-    let canvas_center = vec2(canvas.width() as f64 / 2.0, canvas.height() as f64 / 2.0);
-    let world_pos = if board_rotated_180 {
-        camera + canvas_center - screen_pos
-    } else {
-        screen_pos + camera - canvas_center
-    };
-    world_pos / tile_size
+    (camera + view_offset(canvas, pos, board_rotated_180)) / tile_size
 }
 
 /// Returns the square containing a point in grid units.

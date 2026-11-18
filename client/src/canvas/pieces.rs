@@ -262,9 +262,8 @@ impl Renderer {
         );
         let (raster, ctx) = Self::raster_canvas(side * scale)?;
         let enlarged = (side * scale) as f64;
-        let _ = ctx.draw_image_with_html_canvas_element_and_dw_and_dh(
-            &base, 0.0, 0.0, enlarged, enlarged,
-        );
+        let _ = ctx
+            .draw_image_with_html_canvas_element_and_dw_and_dh(&base, 0.0, 0.0, enlarged, enlarged);
 
         let mut cache = self.svg_cache.borrow_mut();
         cache.rasters.insert(cache_key, raster.clone());
@@ -272,7 +271,9 @@ impl Renderer {
     }
 
     /// Creates an offscreen square canvas `side` pixels across that draws without smoothing.
-    pub(super) fn raster_canvas(side: u32) -> Option<(HtmlCanvasElement, CanvasRenderingContext2d)> {
+    pub(super) fn raster_canvas(
+        side: u32,
+    ) -> Option<(HtmlCanvasElement, CanvasRenderingContext2d)> {
         let canvas = web_sys::window()?
             .document()?
             .create_element("canvas")

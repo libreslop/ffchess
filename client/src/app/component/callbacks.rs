@@ -120,7 +120,7 @@ pub fn build_on_rejoin(inputs: RejoinInputs) -> Callback<MouseEvent> {
             return;
         }
         inputs.has_interacted.set(true);
-        if inputs.reducer.disconnected {
+        if inputs.reducer.connection.disconnected {
             return;
         }
         let single_kit = inputs.single_kit.clone().or_else(|| {
@@ -153,7 +153,7 @@ pub fn build_on_join(inputs: JoinInputs) -> Callback<KitId> {
         if *inputs.is_joining || reducer.queue_status.is_some() {
             return;
         }
-        if reducer.disconnected || reducer.fatal_error {
+        if reducer.connection.is_shown() {
             reducer.dispatch(GameAction::SetDisconnected(DisconnectNotice::none()));
         }
         inputs.has_interacted.set(true);
@@ -205,7 +205,7 @@ pub fn build_on_name_submit(inputs: NameSubmitInputs) -> Callback<SubmitEvent> {
     Callback::from(move |e: SubmitEvent| {
         e.prevent_default();
         inputs.has_interacted.set(true);
-        if inputs.reducer.disconnected || inputs.landing_cooldown.is_active() {
+        if inputs.reducer.connection.disconnected || inputs.landing_cooldown.is_active() {
             return;
         }
         store_name(inputs.player_name.trim());

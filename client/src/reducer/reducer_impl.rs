@@ -1,8 +1,9 @@
 //! Reducer implementation for applying actions to client state.
 
-use super::actions::{DisconnectNotice, GameAction};
+use super::actions::GameAction;
 use super::types::{
-    ClientPhase, ErrorNotice, FinishedMatch, GameStateReducer, MatchStats, SpectateStatus, Victory,
+    ClientPhase, DisconnectNotice, ErrorNotice, FinishedMatch, GameStateReducer, MatchStats,
+    SpectateStatus, Victory,
 };
 use common::protocol::{ChatLine, ClientMessage, GameError};
 use common::types::{PlayerId, TimestampMs};
@@ -29,7 +30,7 @@ impl Reducible for GameStateReducer {
             GameAction::SetQueueStatus(status) => {
                 next.queue_status = Some(status.continuing(next.queue_status.as_ref()));
                 next.error = None;
-                next.clear_disconnect_ui();
+                next.connection.clear_overlay();
                 next.is_dead = false;
                 next.clear_victory_state();
             }
@@ -78,8 +79,7 @@ impl Reducible for GameStateReducer {
             }
             GameAction::SetVictory { title, msg } => {
                 next.error = None;
-                next.clear_disconnect_ui();
-                next.fatal_error = false;
+                next.connection = DisconnectNotice::none();
                 next.is_dead = false;
                 next.snapshot_stats();
                 next.victory = Some(Victory {
@@ -91,13 +91,7 @@ impl Reducible for GameStateReducer {
             // A session the client already left has no end screen to show.
             GameAction::GameOver(_) if next.active_player_id().is_none() => {}
             GameAction::GameOver(stats) => {
-                next.stats = MatchStats {
-                    score: stats.final_score,
-                    kills: stats.kills,
-                    captured: stats.pieces_captured,
-                    survival_secs: stats.time_survived_secs,
-                    board_rotation_deg: next.stats.board_rotation_deg,
-                };
+                next.stats = MatchStats::of_game_over(stats, next.stats.board_rotation_deg);
                 next.victory = None;
                 next.is_dead = true;
             }
@@ -166,13 +160,10 @@ impl GameStateReducer {
 
     /// Applies a disconnect or fatal notice.
     fn set_disconnect_notice(&mut self, notice: DisconnectNotice) {
-        self.disconnected = notice.disconnected;
-        self.fatal_error = notice.is_fatal;
-        self.disconnected_title = notice.title;
-        self.disconnected_msg = notice.msg;
-        if notice.disconnected || notice.is_fatal {
+        if notice.is_shown() {
             self.clear_victory_state();
         }
+        self.connection = notice;
     }
 
     /// Updates latency and the server clock offset from a ping round trip.
@@ -206,20 +197,12 @@ impl GameStateReducer {
         self.move_unlock_at = None;
         self.premoves.clear();
         self.error = None;
-        self.clear_disconnect_ui();
-        self.fatal_error = false;
+        self.connection = DisconnectNotice::none();
         self.is_dead = false;
         self.clear_victory_state();
         self.queue_status = None;
         self.finished_match = None;
         self.camera_cue = None;
-    }
-
-    /// Clears reconnect/disconnect UI details while keeping fatal flags untouched.
-    pub(super) fn clear_disconnect_ui(&mut self) {
-        self.disconnected = false;
-        self.disconnected_title = None;
-        self.disconnected_msg = None;
     }
 
     /// Clears all victory state so generic end overlays can be derived cleanly.
