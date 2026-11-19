@@ -58,13 +58,13 @@ pub(super) struct Playback {
 }
 
 impl Playback {
-    /// Starts playing from `at` at normal speed.
-    pub(super) fn playing_from(at: TimestampMs, now_local_ms: f64) -> Self {
+    /// Stops at `at`, ready to play at normal speed.
+    pub(super) fn paused_at(at: TimestampMs, now_local_ms: f64) -> Self {
         Self {
             anchor: at,
             anchor_local_ms: now_local_ms,
             speed: PlaybackSpeed::NORMAL,
-            playing: true,
+            playing: false,
         }
     }
 
@@ -185,15 +185,19 @@ pub(super) struct PlaybackState {
     pub(super) timeline: Rc<ReplayTimeline>,
     pub(super) history: Rc<MoveHistory>,
     pub(super) playback: Playback,
+    /// Entry of the history playback stopped on when it was picked or stepped to, which tells
+    /// apart entries of the same moment, such as the last move and the end.
+    shown: Option<EntryIndex>,
 }
 
 impl PlaybackState {
-    /// Starts playing `timeline` from its beginning.
+    /// Stops at the beginning of `timeline`, waiting to be played.
     pub(super) fn new(timeline: Rc<ReplayTimeline>, history: Rc<MoveHistory>) -> Self {
         Self {
-            playback: Playback::playing_from(timeline.start(), performance_now()),
+            playback: Playback::paused_at(timeline.start(), performance_now()),
             timeline,
             history,
+            shown: None,
         }
     }
 
@@ -204,13 +208,15 @@ impl PlaybackState {
 
     /// Returns the move of the history shown at local time `now_local_ms`.
     pub(super) fn current_entry(&self, now_local_ms: f64) -> EntryIndex {
-        self.history.entry_at(self.position(now_local_ms))
+        self.shown
+            .unwrap_or_else(|| self.history.entry_at(self.position(now_local_ms)))
     }
 
-    /// Returns the playback stopped on the entry `index` of the history.
-    fn shown_entry(&self, index: EntryIndex, now_local_ms: f64) -> Playback {
+    /// Returns the playback stopped on the entry `index` of the history, and that entry.
+    fn shown_entry(&self, index: EntryIndex, now_local_ms: f64) -> (Playback, Option<EntryIndex>) {
         let at = self.history.entries()[index].at;
-        self.playback.shown(&self.timeline, at, now_local_ms)
+        let playback = self.playback.shown(&self.timeline, at, now_local_ms);
+        (playback, Some(index))
     }
 }
 
@@ -222,24 +228,37 @@ impl Reducible for PlaybackState {
         let now = performance_now();
         let timeline = &self.timeline;
         let playback = self.playback;
-        let playback = match command {
-            PlaybackCommand::Toggle => playback.toggled(timeline, now),
-            PlaybackCommand::Seek(elapsed) => {
-                playback.seeked(timeline, timeline.start() + elapsed, now)
-            }
+        // Showing and stepping stop on an entry and changing speed stays on it; every other
+        // command leaves the entry to follow from the position.
+        let (playback, shown) = match command {
             PlaybackCommand::Show(index) => self.shown_entry(index, now),
             PlaybackCommand::Step(step) => {
                 self.shown_entry(self.history.step(self.current_entry(now), step), now)
             }
-            PlaybackCommand::NextSpeed => playback.with_speed(PlaybackSpeed::next, timeline, now),
-            PlaybackCommand::Faster => playback.with_speed(PlaybackSpeed::faster, timeline, now),
-            PlaybackCommand::Slower => playback.with_speed(PlaybackSpeed::slower, timeline, now),
-            PlaybackCommand::Pause => playback.paused(timeline, now),
+            PlaybackCommand::Toggle => (playback.toggled(timeline, now), None),
+            PlaybackCommand::Seek(elapsed) => (
+                playback.seeked(timeline, timeline.start() + elapsed, now),
+                None,
+            ),
+            PlaybackCommand::NextSpeed => (
+                playback.with_speed(PlaybackSpeed::next, timeline, now),
+                self.shown,
+            ),
+            PlaybackCommand::Faster => (
+                playback.with_speed(PlaybackSpeed::faster, timeline, now),
+                self.shown,
+            ),
+            PlaybackCommand::Slower => (
+                playback.with_speed(PlaybackSpeed::slower, timeline, now),
+                self.shown,
+            ),
+            PlaybackCommand::Pause => (playback.paused(timeline, now), None),
         };
         Rc::new(Self {
             timeline: self.timeline.clone(),
             history: self.history.clone(),
             playback,
+            shown,
         })
     }
 }

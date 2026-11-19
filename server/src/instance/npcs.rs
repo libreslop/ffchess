@@ -66,7 +66,7 @@ impl World {
         if let Ok(effects) =
             Simulation::new(&catalog, &mut self.state, now).apply_move(piece_id, target)
         {
-            self.apply_effects(None, effects);
+            self.apply_effects(None, effects, now);
         }
     }
 

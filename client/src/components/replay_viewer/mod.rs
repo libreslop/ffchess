@@ -2,6 +2,7 @@
 
 mod controls;
 mod history;
+mod hold;
 mod move_list;
 mod piece_icons;
 mod playback;

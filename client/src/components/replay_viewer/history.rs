@@ -83,12 +83,23 @@ impl Square {
     }
 }
 
-/// A tick of the replay in which pieces moved, or its start.
+/// What happened at one moment of a replay.
+#[derive(Debug, PartialEq)]
+pub(super) enum HistoryEvent {
+    /// Moves were unlocked.
+    Start,
+    /// Pieces moved, in the order they moved; moves made by one action, such as castling, are
+    /// in the order of their notation.
+    Moves(Vec<PieceMove>),
+    /// The match finished.
+    End,
+}
+
+/// A moment of the replay in which pieces moved, or its start or end.
 #[derive(Debug, PartialEq)]
 pub(super) struct HistoryEntry {
     pub(super) at: TimestampMs,
-    /// Pieces that moved in the tick, in the order of their notation; empty for the start.
-    pub(super) moves: Vec<PieceMove>,
+    pub(super) event: HistoryEvent,
 }
 
 /// Entries that fall into the same stretch of the replay.
@@ -117,7 +128,7 @@ pub(super) enum HistoryStep {
 /// Every move of a replay, from the start on.
 #[derive(Debug, PartialEq)]
 pub(super) struct MoveHistory {
-    /// Entries in time order; the first is the start of the replay.
+    /// Entries in time order; the first is the start of the replay and the last its end.
     entries: Vec<HistoryEntry>,
     /// Rows in time order, leaving out stretches without moves.
     rows: Vec<HistoryRow>,
@@ -126,14 +137,42 @@ pub(super) struct MoveHistory {
 impl MoveHistory {
     /// Collects the moves of `timeline`, naming pieces as `catalog` draws them.
     pub(super) fn new(timeline: &ReplayTimeline, catalog: &Catalog) -> Self {
-        let start = HistoryEntry {
+        let mut entries = vec![HistoryEntry {
             at: timeline.start(),
-            moves: Vec::new(),
-        };
-        let moved = timeline
+            event: HistoryEvent::Start,
+        }];
+        // Each action is a frame of its own, so actions of one moment, such as a capture and
+        // the guard taking the square back, join one entry in the order they were made.
+        for (at, moves) in Self::frame_moves(timeline, catalog) {
+            match entries.last_mut() {
+                Some(HistoryEntry {
+                    at: last_at,
+                    event: HistoryEvent::Moves(last),
+                }) if *last_at == at => last.extend(moves),
+                _ => entries.push(HistoryEntry {
+                    at,
+                    event: HistoryEvent::Moves(moves),
+                }),
+            }
+        }
+        entries.push(HistoryEntry {
+            at: timeline.end(),
+            event: HistoryEvent::End,
+        });
+        let rows = Self::rows_of(&entries, timeline);
+        Self { entries, rows }
+    }
+
+    /// Returns the pieces that moved in each frame from the start on, leaving out frames
+    /// without moves.
+    fn frame_moves<'a>(
+        timeline: &'a ReplayTimeline,
+        catalog: &'a Catalog,
+    ) -> impl Iterator<Item = (TimestampMs, Vec<PieceMove>)> + 'a {
+        timeline
             .keyframes_from_start()
             .windows(2)
-            .filter_map(|pair| {
+            .filter_map(move |pair| {
                 let (before, after) = (&pair[0].state, &pair[1].state);
                 let mut moves: Vec<PieceMove> = after
                     .pieces
@@ -147,31 +186,25 @@ impl MoveHistory {
                     .map(|piece| PieceMove::new(before, after, piece, catalog))
                     .collect();
                 moves.sort_by(|a, b| a.notation.cmp(&b.notation));
-                (!moves.is_empty()).then_some(HistoryEntry {
-                    at: pair[1].at,
-                    moves,
-                })
-            });
-        let entries: Vec<HistoryEntry> = std::iter::once(start).chain(moved).collect();
-        let rows = Self::rows_of(&entries, timeline);
-        Self { entries, rows }
+                (!moves.is_empty()).then_some((pair[1].at, moves))
+            })
     }
 
     /// Groups consecutive entries by the stretch of the replay they fall into.
     fn rows_of(entries: &[HistoryEntry], timeline: &ReplayTimeline) -> Vec<HistoryRow> {
         // The start alone makes the row ending at zero; moves in the first stretch make the
         // row ending one span in.
-        let ends_after = |index: usize| match index {
-            0 => DurationMs::zero(),
+        let ends_after = |entry: &HistoryEntry| match entry.event {
+            HistoryEvent::Start => DurationMs::zero(),
             _ => {
                 let span = ROW_SPAN.as_i64();
-                let elapsed = timeline.elapsed(entries[index].at).as_i64();
+                let elapsed = timeline.elapsed(entry.at).as_i64();
                 DurationMs::from_millis((elapsed / span + 1) * span)
             }
         };
         let mut rows: Vec<HistoryRow> = Vec::new();
-        for index in 0..entries.len() {
-            let ends_after = ends_after(index);
+        for (index, entry) in entries.iter().enumerate() {
+            let ends_after = ends_after(entry);
             match rows.last_mut() {
                 Some(row) if row.ends_after == ends_after => row.entries.end = index + 1,
                 _ => rows.push(HistoryRow {

@@ -331,7 +331,7 @@ impl World {
         let catalog = self.setup.catalog.clone();
         let effects =
             Simulation::new(&catalog, &mut self.state, now).apply(piece_id, queued.action)?;
-        self.apply_effects(Some(queued.player_id), effects);
+        self.apply_effects(Some(queued.player_id), effects, now);
         Ok(())
     }
 }

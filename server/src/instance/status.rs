@@ -22,7 +22,7 @@ impl MatchStatus {
 }
 
 impl World {
-    /// Records the board of this tick into the replay, while the match is recorded.
+    /// Records the changes of the board into the replay, while the match is recorded.
     pub(super) fn record_replay_frame(&mut self, now: TimestampMs) {
         if let Some(recorder) = &mut self.replay {
             recorder.record(&self.state, now);

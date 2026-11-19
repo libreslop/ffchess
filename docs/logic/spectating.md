@@ -77,10 +77,12 @@ finished. Both screens show an Analysis Board button when `MatchFinished` named 
 
 ## Replays
 
-A queue mode with `"allow_replays": true` records each of its private matches. Every tick, the
-match compares its board with the last recorded one and queues a `ReplayFrame` holding only what
+A queue mode with `"allow_replays": true` records each of its private matches. After every
+action a piece makes (player and NPC moves alike), and again at the end of every tick, the match
+compares its board with the last recorded one and queues a `ReplayFrame` holding only what
 changed (board size, players, shops, changed and removed pieces); the first frame holds the whole
-board. Frames go to a background writer thread that stores them in a SQLite database at
+board. Recording each action on its own keeps moves of one tick apart, such as a capture and the
+guard taking the square back. Frame times never go back, so frames stay in order. Frames go to a background writer thread that stores them in a SQLite database at
 `~/.local/share/ffchess/replays.sqlite3`, so a recording does not build up in server memory.
 
 When the match finishes, the replay is saved with its `saved_at` time and becomes viewable through
@@ -92,6 +94,7 @@ finished (such as those cut off by a server restart) are deleted too.
 A saved replay also records when the match started: the time its countdown unlocked moves, or
 the start of the recording for modes without a countdown. Viewers start playback there, so the
 countdown is skipped, and the board as it stood then is the first entry of the move history.
+The viewer opens paused there.
 
 The replay viewer downloads the replay, rebuilds the board after every frame, and plays it back
 on a read-only board watched like a spectator watches a live match. The board fills the screen
@@ -99,15 +102,20 @@ as in a match, shifted left to make room for a panel floating on the right (or s
 the panel along the bottom, on narrow screens). The panel holds:
 
 - the **move history**: one row per second of the match, labelled with the second it ends at,
-  holding an entry for every tick in that second in which pieces moved. An entry is one box
-  that wraps its moves inside it, so a tick of many moves stays one highlight. Seconds without moves
-  are left out, and row 0 holds only the start. Moves are written
+  holding an entry for every moment in that second in which pieces moved. An entry is one box
+  that wraps its moves inside it, in the order they were made, so a moment of many moves (such as
+  a capture and the guard taking the square back) stays one highlight. Seconds without moves are
+  left out, row 0 holds only the start, and an `end` entry sits in the row of the second the
+  match finished in. Moves are written
   in chess notation (files from the left, ranks from the bottom, a figurine for non-pawns, `x`
   for captures) next to a swatch of the owner's color. The entry shown is highlighted and kept
   in view; clicking an entry shows it,
 - buttons stepping through the history: ◀ and ▶ (or the left and right arrow keys) move one
   entry, ▲ and ▼ (or the up and down arrow keys) move to the nearest entry before or after that
-  ends a row. Stepping pauses playback at the tick of the entry,
+  ends a row. Stepping pauses playback at the moment of the entry. Holding a button or arrow key
+  steps once, then again every 80 ms after a 400 ms pause. In modes with
+  `disable_camera_movement`, the mouse wheel over the board steps one entry too; in other modes it
+  zooms the board,
 - the playback bar: play and pause (Space), a scrub bar marking every capture, and a speed button
   cycling 1x, 2x, 4x and 8x.
 

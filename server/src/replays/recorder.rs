@@ -14,6 +14,8 @@ pub struct ReplayRecorder {
     id: ReplayId,
     writes: Sender<WriteCommand>,
     recorded: GameState,
+    /// Time of the last frame, which later frames never go back before.
+    recorded_at: TimestampMs,
     next_seq: FrameSeq,
     finished: bool,
 }
@@ -41,17 +43,23 @@ impl ReplayRecorder {
             id,
             writes,
             recorded: GameState::default(),
+            recorded_at: now,
             next_seq: FrameSeq(0),
             finished: false,
         }
     }
 
     /// Records the changes of the board since the last frame, if any.
+    ///
+    /// Times are read before the match is locked, so one taken a little earlier can arrive
+    /// after a later one; frames keep their order by never going back in time.
     pub fn record(&mut self, state: &GameState, now: TimestampMs) {
-        let Some(frame) = ReplayFrame::between(&self.recorded, state, now) else {
+        let at = now.max(self.recorded_at);
+        let Some(frame) = ReplayFrame::between(&self.recorded, state, at) else {
             return;
         };
         self.recorded = state.clone();
+        self.recorded_at = at;
         match serde_json::to_string(&frame) {
             Ok(frame) => {
                 let seq = self.next_seq;
@@ -77,7 +85,7 @@ impl ReplayRecorder {
         self.send(WriteCommand::Finish {
             id: self.id,
             started_at,
-            ended_at: now,
+            ended_at: now.max(self.recorded_at),
         });
         self.id
     }

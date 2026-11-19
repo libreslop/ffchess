@@ -104,12 +104,20 @@ impl World {
             .count()
     }
 
-    /// Handles the consequences of an applied action: captures, disturbed partner pieces, and
-    /// depleted shops.
+    /// Handles the consequences of an action applied at `now`: captures, disturbed partner
+    /// pieces, and depleted shops.
     ///
     /// Queued actions of partner pieces were planned from where they stood before, so they are
     /// cancelled, and so are the queued actions of captured pieces.
-    pub(super) fn apply_effects(&mut self, capturer: Option<PlayerId>, effects: ActionEffects) {
+    ///
+    /// Every action is recorded as a frame of its own, so moves made within one tick, such as
+    /// a capture and the guard taking the square back, each stay a move in the replay.
+    pub(super) fn apply_effects(
+        &mut self,
+        capturer: Option<PlayerId>,
+        effects: ActionEffects,
+        now: TimestampMs,
+    ) {
         self.cancel_actions_of(effects.partners);
         self.cancel_actions_of(effects.captured.iter().map(|piece| piece.id));
         for captured in &effects.captured {
@@ -118,6 +126,7 @@ impl World {
         for shop_id in effects.depleted_shops {
             self.respawn_shop(&shop_id);
         }
+        self.record_replay_frame(now);
     }
 
     /// Appends a chat line to the room history and sends it to everyone.

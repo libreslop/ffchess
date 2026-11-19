@@ -1,6 +1,7 @@
 //! Move history panel of the replay viewer, and the buttons to step through it.
 
-use super::history::{EntryIndex, HistoryEntry, HistoryStep, MoveHistory};
+use super::history::{EntryIndex, HistoryEntry, HistoryEvent, HistoryStep, MoveHistory, PieceMove};
+use super::hold::StepRepeater;
 use super::piece_icons::SharedIcons;
 use super::playback::PlaybackButton;
 use crate::canvas::color::NPC_PIECE_COLOR;
@@ -32,7 +33,8 @@ pub(super) struct MoveListProps {
 /// Properties for the buttons stepping through the move history.
 #[derive(Properties, PartialEq)]
 pub(super) struct MoveNavProps {
-    pub(super) on_step: Callback<HistoryStep>,
+    /// Repeats the step of a button while it is held.
+    pub(super) repeater: StepRepeater,
     /// Button lit as pressed by a key or the wheel.
     pub(super) pressed: Option<PlaybackButton>,
 }
@@ -60,7 +62,7 @@ pub(super) fn move_list(props: &MoveListProps) -> Html {
     let entry = |index: EntryIndex, entry: &HistoryEntry| {
         let is_current = index == props.current;
         // The icon in its owner's color names both the piece and its player.
-        let moves = entry.moves.iter().map(|piece_move| {
+        let piece_move = |piece_move: &PieceMove| {
             let color = piece_move.color.as_ref();
             html! {
                 <span class="replay-move">
@@ -78,18 +80,20 @@ pub(super) fn move_list(props: &MoveListProps) -> Html {
                     {piece_move.notation.clone()}
                 </span>
             }
-        });
+        };
+        let marker =
+            |label: &'static str| html! { <span class="replay-move replay-marker">{label}</span> };
         html! {
             <button
                 class={classes!("replay-entry", is_current.then_some("current"))}
                 ref={if is_current { current_ref.clone() } else { NodeRef::default() }}
                 onclick={props.on_show.reform(move |_| index)}
             >
-                if entry.moves.is_empty() {
-                    <span class="replay-move replay-start">{"start"}</span>
-                } else {
-                    { for moves }
-                }
+                {match &entry.event {
+                    HistoryEvent::Start => marker("start"),
+                    HistoryEvent::Moves(moves) => html! { for moves.iter().map(piece_move) },
+                    HistoryEvent::End => marker("end"),
+                }}
             </button>
         }
     };
@@ -112,15 +116,44 @@ pub(super) fn move_list(props: &MoveListProps) -> Html {
 }
 
 #[function_component(MoveNav)]
-/// Renders a row of buttons stepping to the previous or next move or row of the history.
+/// Renders a row of buttons stepping to the previous or next move or row of the history, again
+/// and again while held.
 pub(super) fn move_nav(props: &MoveNavProps) -> Html {
     let buttons = NAV_BUTTONS.iter().map(|&(step, turn, title)| {
+        let repeater = &props.repeater;
+        let on_down = {
+            let repeater = repeater.clone();
+            move |event: PointerEvent| {
+                if event.button() == 0 {
+                    repeater.press(step);
+                }
+            }
+        };
+        let on_up = {
+            let repeater = repeater.clone();
+            move |_: PointerEvent| repeater.release(step)
+        };
+        // A click of the keyboard, which has no pointer pressing it, steps once.
+        let on_click = {
+            let repeater = repeater.clone();
+            move |event: MouseEvent| {
+                if event.detail() == 0 {
+                    repeater.press(step);
+                    repeater.release(step);
+                }
+            }
+        };
         html! {
             <button
                 title={title}
                 aria-label={title}
                 class={classes!((props.pressed == Some(PlaybackButton::Step(step))).then_some("pressed"))}
-                onclick={props.on_step.reform(move |_| step)}
+                onpointerdown={on_down}
+                onpointerup={on_up.clone()}
+                onpointerleave={on_up.clone()}
+                onpointercancel={on_up}
+                onclick={on_click}
+                oncontextmenu={|event: MouseEvent| event.prevent_default()}
             >
                 <span
                     class="replay-icon replay-icon-arrow"

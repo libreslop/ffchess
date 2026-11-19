@@ -1,9 +1,9 @@
 //! Tests for finishing matches and recording their replays.
 
-use common::models::{GameModeConfig, PieceAction, Replay};
+use common::models::{GameModeConfig, Piece, PieceAction, Replay};
 use common::protocol::{ActionRequest, ServerMessage};
 use common::types::{
-    ActionId, BoardCoord, DurationMs, KitId, ModeId, PlayerId, ReplayId, TimestampMs,
+    ActionId, BoardCoord, DurationMs, KitId, ModeId, PieceId, PlayerId, ReplayId, TimestampMs,
 };
 use server::config::ConfigManager;
 use server::instance::{GameInstance, JoinRequest, MatchStatus, Spectator};
@@ -211,4 +211,102 @@ async fn finished_match_stays_finished() {
         None,
         "finishes only once"
     );
+}
+
+#[tokio::test]
+/// Verifies a capture and the guard taking the square back within one tick stay two moves in
+/// the replay, recorded at the same moment.
+async fn guard_recapture_is_recorded_as_its_own_move() {
+    let (mode, config) = mode_config("bullet");
+    let store = ReplayStore::in_memory();
+    let instance = private_match(&mode, &config, &store);
+    let (p1, _rx1) = join(&instance, "P1");
+    let (p2, mut rx2) = join(&instance, "P2");
+    instance.tick();
+
+    // The first player's king guards one of their pieces, which the second player's queen
+    // takes, out of reach of the second player's king.
+    let ready = |piece_ids: &[PieceId]| {
+        instance.with_state(|state| {
+            for id in piece_ids {
+                let piece = state.pieces.get_mut(id).expect("piece exists");
+                piece.last_move_time = TimestampMs::from_millis(0);
+                piece.cooldown_ms = DurationMs::zero();
+            }
+        })
+    };
+    let (guard, attacker, loser_king) = instance.with_state(|state| {
+        let (guard, loser_king) = (state.players[&p1].king_id, state.players[&p2].king_id);
+        let find = |owner, is_wanted: &dyn Fn(&Piece) -> bool| {
+            state
+                .pieces
+                .values()
+                .find(|piece| piece.owner_id == Some(owner) && is_wanted(piece))
+                .expect("piece exists")
+                .id
+        };
+        let guarded = find(p1, &|piece| piece.id != guard);
+        let attacker = find(p2, &|piece| piece.piece_type.as_ref().contains("queen"));
+        let kept = [guard, guarded, attacker, loser_king];
+        state.pieces.retain(|id, _| kept.contains(id));
+        for (id, pos) in kept.iter().zip([[0, 0], [1, 1], [3, 3], [6, 0]]) {
+            let piece = state.pieces.get_mut(id).expect("piece exists");
+            piece.position = BoardCoord::new(pos[0], pos[1]);
+        }
+        (guard, attacker, loser_king)
+    });
+    ready(&[guard, attacker]);
+    let request = |id, piece_id, action| ActionRequest {
+        id: ActionId(id),
+        piece_id,
+        action,
+        after: None,
+    };
+    let square = BoardCoord::new(1, 1);
+    instance.submit_action(p1, request(1, guard, PieceAction::Guard { target: square }));
+    instance.submit_action(
+        p2,
+        request(1, attacker, PieceAction::Move { target: square }),
+    );
+    instance.tick();
+    // Taking the other king, brought next to the guard, finishes the match, saving its replay.
+    let king_square = BoardCoord::new(2, 1);
+    instance.with_state(|state| {
+        state
+            .pieces
+            .get_mut(&loser_king)
+            .expect("king exists")
+            .position = king_square;
+    });
+    ready(&[guard]);
+    instance.submit_action(
+        p1,
+        request(
+            2,
+            guard,
+            PieceAction::Move {
+                target: king_square,
+            },
+        ),
+    );
+    instance.tick();
+
+    let replay_id = finished_replay(&drain(&mut rx2))
+        .flatten()
+        .expect("the match was recorded");
+    let keyframes = wait_for_replay(&store, replay_id).keyframes();
+    let standing_on_square = |piece_id| {
+        keyframes.iter().position(|keyframe| {
+            keyframe
+                .state
+                .pieces
+                .get(&piece_id)
+                .map(|piece| piece.position)
+                == Some(square)
+        })
+    };
+    let captured = standing_on_square(attacker).expect("the capture is its own frame");
+    let taken_back = standing_on_square(guard).expect("the guard takes the square back");
+    assert_eq!(taken_back, captured + 1);
+    assert_eq!(keyframes[captured].at, keyframes[taken_back].at);
 }

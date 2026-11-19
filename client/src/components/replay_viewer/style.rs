@@ -63,8 +63,8 @@ pub(super) const REPLAY_CSS: &str = "
     .replay-move { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; padding: 2px 4px; }
     .replay-piece { flex: none; display: block; width: 16px; height: 16px; image-rendering: pixelated; }
     .replay-swatch { flex: none; width: 8px; height: 8px; border: 1px solid var(--wood-text); }
-    .replay-start { opacity: 0.6; }
-    .replay-entry.current .replay-start { opacity: 1; }
+    .replay-marker { opacity: 0.6; }
+    .replay-entry.current .replay-marker { opacity: 1; }
 
     .replay-nav { flex: none; display: flex; gap: 4px; padding: 0 4px 4px; }
     .replay-nav button, .replay-button {
@@ -72,7 +72,7 @@ pub(super) const REPLAY_CSS: &str = "
         height: 36px; background: var(--wood-plate); color: var(--wood-text);
         border: 2px solid var(--wood-frame); border-radius: 0; font-size: 20px; cursor: pointer;
     }
-    .replay-nav button { flex: 1; }
+    .replay-nav button { flex: 1; touch-action: none; -webkit-user-select: none; user-select: none; }
     .replay-nav button:hover, .replay-button:hover { filter: brightness(1.1); }
     .replay-nav button:active, .replay-button:active,
     .replay-nav button.pressed, .replay-button.pressed { filter: brightness(1.25); }

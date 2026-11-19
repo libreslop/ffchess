@@ -2,6 +2,7 @@
 
 use super::controls::ReplayControls;
 use super::history::HistoryStep;
+use super::hold::{StepRepeater, use_step_repeater};
 use super::move_list::{MoveList, MoveNav, SharedHistory};
 use super::piece_icons::SharedIcons;
 use super::playback::{PlaybackButton, PlaybackCommand, PlaybackState};
@@ -91,12 +92,21 @@ pub(super) fn replay_player(props: &ReplayPlayerProps) -> Html {
             }
         });
     }
+    let repeater = use_step_repeater(playback.dispatcher(), pressed.setter());
     use_playback_keys(
         playback.dispatcher(),
         pressed.setter(),
+        repeater.clone(),
         props.on_close.clone(),
     );
-    use_wheel_steps(&board_ref, playback.dispatcher(), pressed.setter());
+    // Where the board can be zoomed, the wheel zooms it instead.
+    let wheel_steps = replay.header.mode.disable_camera_movement;
+    use_wheel_steps(
+        &board_ref,
+        wheel_steps,
+        playback.dispatcher(),
+        pressed.setter(),
+    );
 
     let show_scores = board.mode.as_ref().is_none_or(|mode| mode.show_scoreboard);
     let on_command = |command: fn() -> PlaybackCommand| {
@@ -112,12 +122,6 @@ pub(super) fn replay_player(props: &ReplayPlayerProps) -> Html {
         let playback = playback.dispatcher();
         use_callback((), move |index, _| {
             playback.dispatch(PlaybackCommand::Show(index))
-        })
-    };
-    let on_step = {
-        let playback = playback.dispatcher();
-        use_callback((), move |step, _| {
-            playback.dispatch(PlaybackCommand::Step(step))
         })
     };
 
@@ -163,7 +167,7 @@ pub(super) fn replay_player(props: &ReplayPlayerProps) -> Html {
                     on_seek={on_seek}
                     on_speed={on_command(|| PlaybackCommand::NextSpeed)}
                 />
-                <MoveNav on_step={on_step} pressed={*pressed} />
+                <MoveNav repeater={repeater} pressed={*pressed} />
             </div>
         </div>
     }
@@ -217,8 +221,11 @@ fn key_binding(key: &str) -> Option<(PlaybackCommand, PlaybackButton)> {
 }
 
 /// Controls playback with the keyboard: Space plays and pauses wherever focus is, the arrows
-/// step through the move history, `+` and `-` change the speed, and Escape closes the viewer.
-/// The button a key stands for stays lit while the key is held.
+/// step through the move history, again and again while held, `+` and `-` change the speed,
+/// and Escape closes the viewer. The button a key stands for stays lit while the key is held.
+///
+/// Arrows repeat at the pace of the step buttons rather than of the keyboard, so the keyboard's
+/// own repeats are ignored.
 ///
 /// The listener runs before any other and keeps every key to itself, so the screens beneath
 /// the viewer do not react to keys meant for it.
@@ -226,6 +233,7 @@ fn key_binding(key: &str) -> Option<(PlaybackCommand, PlaybackButton)> {
 fn use_playback_keys(
     playback: UseReducerDispatcher<PlaybackState>,
     pressed: UseStateSetter<Option<PlaybackButton>>,
+    repeater: StepRepeater,
     on_close: Callback<()>,
 ) {
     use_effect_with((), move |_| {
@@ -237,6 +245,7 @@ fn use_playback_keys(
         };
         let press = {
             let pressed = pressed.clone();
+            let repeater = repeater.clone();
             EventListener::new_with_options(&window, "keydown", options, move |event| {
                 let Some(event) = event.dyn_ref::<web_sys::KeyboardEvent>() else {
                     return;
@@ -251,39 +260,61 @@ fn use_playback_keys(
                     return;
                 };
                 event.prevent_default();
-                playback.dispatch(command);
-                pressed.set(Some(button));
+                if event.repeat() {
+                    return;
+                }
+                match command {
+                    PlaybackCommand::Step(step) => repeater.press(step),
+                    command => {
+                        playback.dispatch(command);
+                        pressed.set(Some(button));
+                    }
+                }
             })
         };
         // A focused button clicks itself when Space is released, which would press the last
         // button clicked on top of the play and pause done on the key going down.
-        let release = EventListener::new_with_options(&window, "keyup", options, move |event| {
-            if let Some(event) = event.dyn_ref::<web_sys::KeyboardEvent>()
-                && key_binding(&event.key()).is_some()
-            {
+        let release = {
+            let repeater = repeater.clone();
+            EventListener::new_with_options(&window, "keyup", options, move |event| {
+                let Some(event) = event.dyn_ref::<web_sys::KeyboardEvent>() else {
+                    return;
+                };
+                let Some((command, _)) = key_binding(&event.key()) else {
+                    return;
+                };
                 event.prevent_default();
-                pressed.set(None);
-            }
-        });
-        move || drop((press, release))
+                match command {
+                    PlaybackCommand::Step(step) => repeater.release(step),
+                    _ => pressed.set(None),
+                }
+            })
+        };
+        // Keys let go of while the window is in the background never come up here.
+        let leave = EventListener::new(&window, "blur", move |_| repeater.release_any());
+        move || drop((press, release, leave))
     });
 }
 
-/// Steps through the move history with the mouse wheel over the board, down to the next move
-/// and up to the previous one like the arrow keys, instead of zooming the board.
+/// Steps through the move history with the mouse wheel over the board when `enabled`, down to
+/// the next move and up to the previous one like the arrow keys, instead of zooming the board.
 #[hook]
 fn use_wheel_steps(
     board_ref: &NodeRef,
+    enabled: bool,
     playback: UseReducerDispatcher<PlaybackState>,
     pressed: UseStateSetter<Option<PlaybackButton>>,
 ) {
-    use_effect_with(board_ref.clone(), move |board_ref| {
+    use_effect_with((board_ref.clone(), enabled), move |(board_ref, enabled)| {
         // Caught on the way down to the board, so the board never sees it.
         let options = EventListenerOptions {
             phase: EventListenerPhase::Capture,
             passive: false,
         };
-        let listener = board_ref.cast::<web_sys::HtmlElement>().map(|board| {
+        let board = board_ref
+            .cast::<web_sys::HtmlElement>()
+            .filter(|_| *enabled);
+        let listener = board.map(|board| {
             let mut turned = 0.0;
             let mut unpress: Option<Timeout> = None;
             EventListener::new_with_options(&board, "wheel", options, move |event| {
