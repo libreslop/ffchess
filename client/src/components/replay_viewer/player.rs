@@ -180,7 +180,7 @@ fn use_replay_board(board: &UseReducerHandle<GameStateReducer>, replay: &Rc<Load
     let board = board.clone();
     let replay = replay.clone();
     use_effect_with((), move |_| {
-        board.dispatch(GameAction::LoadReplay(Box::new(InitPayload {
+        let payload = Box::new(InitPayload {
             player_id: PlayerId::nil(),
             session_secret: SessionSecret::nil(),
             move_unlock_at: None,
@@ -190,7 +190,9 @@ fn use_replay_board(board: &UseReducerHandle<GameStateReducer>, replay: &Rc<Load
             chat_room_key: String::new(),
             chat_history: Vec::new(),
             spectators: Vec::new(),
-        })));
+        });
+        let start = replay.timeline.start();
+        board.dispatch(GameAction::LoadReplay { payload, start });
         let (player_id, _) = SessionStore::new(&replay.header.mode.id).load();
         let orientation =
             player_id.and_then(|player_id| replay.timeline.orientation_for(player_id));

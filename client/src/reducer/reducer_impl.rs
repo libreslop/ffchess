@@ -142,8 +142,9 @@ impl Reducible for GameStateReducer {
                 next.finished_match = Some(FinishedMatch { replay });
             }
             GameAction::SetMatchList(matches) => next.match_list = Some(matches),
-            GameAction::LoadReplay(payload) => {
+            GameAction::LoadReplay { payload, start } => {
                 next.apply_init(*payload);
+                next.replay_time = Some(start);
                 next.spectate = Some(SpectateStatus::Watching);
             }
             GameAction::ShowReplayFrame(state) => {

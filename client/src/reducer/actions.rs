@@ -87,7 +87,11 @@ pub enum GameAction {
     MatchFinished(Option<ReplayId>),
     SetMatchList(Vec<MatchSummary>),
     /// Shows the start of a replay, watched like a spectator watches a live board.
-    LoadReplay(Box<InitPayload>),
+    LoadReplay {
+        payload: Box<InitPayload>,
+        /// Moment of the replay first shown.
+        start: TimestampMs,
+    },
     /// Shows the board of a replay at one moment.
     ShowReplayFrame(Box<GameState>),
     /// Moves the clock of a replay, which its cooldowns are measured against.

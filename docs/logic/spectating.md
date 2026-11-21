@@ -145,7 +145,8 @@ Escape or the top-left button closes the viewer.
 
 Watching a match or a replay from the menu starts the camera in the mode's `starting_camera`
 pose, centred on the board centre when it names a piece; watching the match just lost keeps the
-view of its end.
+view of its end. The camera flies into the pose when watching a match, and a replay opens
+straight in it.
 
 While spectating, the camera is not centred or tied to a king: dragging, inertia, and zoom work
 freely. Whenever the view centre leaves the board and no drag is in progress, the camera eases back

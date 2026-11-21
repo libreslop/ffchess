@@ -327,13 +327,33 @@ impl CameraManager {
     }
 
     /// Flies to the starting pose centred on `center`, and keeps it fitted to the screen.
+    ///
+    /// A replay opens straight in the starting pose, as there is no earlier view of it to fly
+    /// from.
     fn frame_start(&mut self, center: Vec2, params: &CameraUpdateParams<'_>, fit: MaxFitZoom) {
         let pose = CameraPose {
             center,
             zoom: params.starting_camera().zoom(fit),
         };
-        let pose = self.fly_to(pose, params);
+        let pose = if params.reducer.is_replay() {
+            self.jump_to(pose, params)
+        } else {
+            self.fly_to(pose, params)
+        };
         self.start_framing = Some(StartFraming { pose, fit });
+    }
+
+    /// Puts the camera in `target` at once, its zoom clamped to the allowed range, and returns
+    /// the pose it lands on.
+    fn jump_to(&mut self, target: CameraPose, params: &CameraUpdateParams<'_>) -> CameraPose {
+        let target = CameraPose {
+            zoom: self.zoom_range.clamp(target.zoom),
+            ..target
+        };
+        self.flight = None;
+        self.velocity = Vec2::ZERO;
+        self.set_pose(target, params.tuning.tile_size_px);
+        target
     }
 
     /// Refits the starting pose when the room for the board changed: while flying there, as
