@@ -123,7 +123,9 @@ the panel along the bottom, on narrow screens). The panel holds:
     mode's menu as soon as the page loads (closing the viewer drops `replay` from the address),
   - downloads the replay as the server sent it, as `<mode id>-<replay id>.ffr.json`,
   - renders the board to a WebM video, `<mode id>-<replay id>.webm`, seen the way the viewer has
-    it turned, with half a square of room around the board for the names over the kings. The
+    it turned, with half a square of room around the board for the names over the kings,
+    from `replay_video_lead_ms` before the match starts to `replay_video_tail_ms` after it ends
+    (client globals). The
     video has a frame every server tick (`tick_interval_ms`), so players can seek anywhere, but
     the board only looks different when the replay moves on to another board or a cooldown ring
     charges up a step. Only those frames are drawn off screen by the board renderer and encoded

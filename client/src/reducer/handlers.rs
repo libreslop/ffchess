@@ -22,7 +22,6 @@ impl GameStateReducer {
         self.session_secret = Some(session_secret);
         self.move_unlock_at = move_unlock_at;
         self.state = state;
-        self.replace_board();
         self.mode = Some(mode);
         self.catalog = Rc::new(catalog);
         self.spectators = spectators;

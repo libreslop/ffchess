@@ -12,5 +12,5 @@ pub mod types;
 mod wipe;
 
 pub use types::Renderer;
-pub use wipe::{BoardWipe, WipeTiming};
+pub use wipe::{BoardWipes, WipeTiming};
 pub use types::*;

@@ -7,7 +7,7 @@ use super::loops::{
     CameraLoopInputs, WheelZoomInputs, use_animation_frame, use_camera_loop, use_wheel_zoom,
 };
 use super::render::{
-    BoardFrame, BoardSwitch, ShownBoard, use_board_render, use_move_blurs, use_trail_flashes,
+    BoardFrame, BoardSwitch, use_board_render, use_move_blurs, use_trail_flashes,
 };
 use super::shop_context::ActiveShopQuery;
 use super::touch::TouchContext;
@@ -134,10 +134,6 @@ pub fn game_view(props: &GameViewProps) -> Html {
         zoom: *handles.zoom_state,
         canvas_size: view_size,
         tile_size_px: globals.tile_size_px,
-        shown: ShownBoard {
-            epoch: reducer.board_epoch(),
-            camera_cuts: handles.camera.borrow().cut_count(),
-        },
         switch: board_switch,
         wipe_timing: WipeTiming::from(globals),
     });

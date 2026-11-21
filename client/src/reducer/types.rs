@@ -8,27 +8,7 @@ use common::rules::Catalog;
 use common::types::{
     DurationMs, PlayerCount, PlayerId, QueuePosition, ReplayId, Score, SessionSecret, TimestampMs,
 };
-use std::cell::Cell;
 use std::rc::Rc;
-
-thread_local! {
-    /// Last board epoch handed out, shared by every view so no two boards ever share one.
-    static LAST_BOARD_EPOCH: Cell<u32> = const { Cell::new(0) };
-}
-
-/// Identifies the board a view shows; it changes whenever another board replaces it.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
-pub struct BoardEpoch(u32);
-
-impl BoardEpoch {
-    /// Returns an epoch no board had before.
-    fn next() -> Self {
-        LAST_BOARD_EPOCH.with(|last| {
-            last.set(last.get().wrapping_add(1));
-            Self(last.get())
-        })
-    }
-}
 
 /// High-level client session phase used for UI and camera behavior.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
@@ -237,8 +217,6 @@ pub struct GameStateReducer {
     pub(super) rotated_180: bool,
     /// Moment of the replay on screen, when the board is a replay.
     pub(super) replay_time: Option<TimestampMs>,
-    /// Board on screen, renewed whenever another board replaces it.
-    board_epoch: BoardEpoch,
 }
 
 impl GameStateReducer {
@@ -309,16 +287,6 @@ impl GameStateReducer {
         self.mode
             .as_ref()
             .map_or(DEFAULT_RESPAWN_COOLDOWN, |mode| mode.respawn_cooldown_ms)
-    }
-
-    /// Returns the board on screen, which changes whenever another board replaces it.
-    pub fn board_epoch(&self) -> BoardEpoch {
-        self.board_epoch
-    }
-
-    /// Marks the board on screen as replaced by another.
-    pub(super) fn replace_board(&mut self) {
-        self.board_epoch = BoardEpoch::next();
     }
 
     /// Returns true when the board should be viewed rotated by 180 degrees.

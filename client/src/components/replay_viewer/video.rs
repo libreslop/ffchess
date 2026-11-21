@@ -68,6 +68,10 @@ pub(super) struct VideoSettings {
     tile_size_px: f64,
     /// Time between frames: one server tick, the finest step the board changes in.
     frame_ms: i64,
+    /// How much of the board before the match starts the video opens with.
+    lead: DurationMs,
+    /// How much of the board after the match ends the video closes with.
+    tail: DurationMs,
 }
 
 impl From<&GlobalClientConfig> for VideoSettings {
@@ -75,6 +79,8 @@ impl From<&GlobalClientConfig> for VideoSettings {
         Self {
             tile_size_px: globals.tile_size_px,
             frame_ms: i64::from(globals.tick_interval_ms.max(1)),
+            lead: DurationMs::from_millis(i64::from(globals.replay_video_lead_ms)),
+            tail: DurationMs::from_millis(i64::from(globals.replay_video_tail_ms)),
         }
     }
 }
@@ -147,14 +153,16 @@ impl VideoRender {
                 .await?
                 .unchecked_into();
 
-        let duration = timeline.duration().as_i64();
+        // The video runs from a little before the match starts to a little after it ends.
+        let first = timeline.start() - self.settings.lead;
+        let duration = (timeline.end() + self.settings.tail - first).as_i64();
         let frame_ms = self.settings.frame_ms;
         let last_frame = (duration + frame_ms - 1) / frame_ms;
         let mut shown: Option<(usize, TimestampMs)> = None;
         let mut percent = None;
         for frame in 0..=last_frame {
             let elapsed = DurationMs::from_millis((frame * frame_ms).min(duration));
-            let at = timeline.start() + elapsed;
+            let at = first + elapsed;
             let index = timeline.index_at(at);
             let state = timeline.board(index);
             let changed = shown.is_none_or(|(shown_index, shown_at)| {
@@ -170,7 +178,7 @@ impl VideoRender {
                 on_progress(done);
             }
         }
-        let video = JsFuture::from(writer.finish(millis(timeline.duration()))).await?;
+        let video = JsFuture::from(writer.finish(duration as f64)).await?;
         Ok(video.unchecked_into())
     }
 

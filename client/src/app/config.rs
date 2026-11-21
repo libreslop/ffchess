@@ -58,6 +58,12 @@ pub struct GlobalClientConfig {
     /// Milliseconds between one region showing the new board and the next.
     #[educe(Default = 12.0)]
     pub board_switch_region_ms: f64,
+    /// Milliseconds of the board before the match starts that a replay video opens with.
+    #[educe(Default = 2000)]
+    pub replay_video_lead_ms: u32,
+    /// Milliseconds of the board after the match ends that a replay video closes with.
+    #[educe(Default = 2000)]
+    pub replay_video_tail_ms: u32,
     #[educe(Default = 40.0)]
     pub tile_size_px: f64,
     /// How far, in squares, a piece dropped on a square it cannot move to may be from the
@@ -93,11 +99,6 @@ pub fn load_global_config() -> GlobalClientConfig {
 }
 
 impl GlobalClientConfig {
-    /// Returns how long a board switch runs, in milliseconds: every region waits its turn.
-    pub fn board_switch_ms(&self) -> f64 {
-        f64::from(self.board_switch_regions.pow(2)) * self.board_switch_region_ms
-    }
-
     /// Parses the config from the server's client config JSON, falling back to defaults on
     /// error.
     pub fn from_json(json: &str) -> Self {

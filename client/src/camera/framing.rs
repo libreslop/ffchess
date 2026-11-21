@@ -119,9 +119,6 @@ pub(super) struct StartFraming {
     pub(super) pose: CameraPose,
     /// Fit zoom the pose was worked out for.
     pub(super) fit: MaxFitZoom,
-    /// `performance.now()` until which the pose is refitted whatever the mode, as the view may
-    /// still be laying out while the board switch runs.
-    pub(super) settles_at_ms: f64,
 }
 
 /// Where the camera starts when a player joins or starts watching, as the mode configures.

@@ -36,10 +36,8 @@ pub struct CameraTuning {
     velocity_cutoff: f64,
     /// Milliseconds a pan can hold still before its release stops carrying momentum.
     pan_idle_ms: f64,
-    /// Duration of hook camera moves.
+    /// Duration of scripted moves: joining, hook camera moves, and returning to the menu.
     flight_ms: f64,
-    /// How long a board switch runs, while the starting pose keeps being fitted to the screen.
-    switch_ms: f64,
     /// Size of a square at zoom 1, in pixels.
     tile_size_px: f64,
 }
@@ -54,7 +52,6 @@ impl From<&GlobalClientConfig> for CameraTuning {
             velocity_cutoff: globals.velocity_cutoff,
             pan_idle_ms: globals.pan_idle_ms,
             flight_ms: globals.focus_flight_ms,
-            switch_ms: globals.board_switch_ms(),
             tile_size_px: globals.tile_size_px,
         }
     }
@@ -289,7 +286,7 @@ impl CameraManager {
         starts_watching
     }
 
-    /// Cuts back to the middle of the board on returning to the menu.
+    /// Flies back to the middle of the board on returning to the menu.
     fn show_menu(
         &mut self,
         params: &CameraUpdateParams<'_>,
@@ -305,13 +302,13 @@ impl CameraManager {
                 center: Vec2::ZERO,
                 zoom: 1.0,
             };
-            self.cut_to(origin, params);
+            self.fly_to(origin, params);
         }
         !was_in_menu
     }
 
-    /// Starts a hook's camera move to `target` on the board shown, whose zoom is clamped to the
-    /// allowed range, and returns the pose it lands on.
+    /// Starts a scripted move to `target`, whose zoom is clamped to the allowed range, and
+    /// returns the pose it lands on.
     ///
     /// The move replaces any starting framing.
     fn fly_to(&mut self, target: CameraPose, params: &CameraUpdateParams<'_>) -> CameraPose {
@@ -329,40 +326,19 @@ impl CameraManager {
         target
     }
 
-    /// Cuts to the starting pose centred on `center`, and keeps it fitted to the screen.
+    /// Flies to the starting pose centred on `center`, and keeps it fitted to the screen.
     fn frame_start(&mut self, center: Vec2, params: &CameraUpdateParams<'_>, fit: MaxFitZoom) {
         let pose = CameraPose {
             center,
             zoom: params.starting_camera().zoom(fit),
         };
-        let pose = self.cut_to(pose, params);
-        self.start_framing = Some(StartFraming {
-            pose,
-            fit,
-            settles_at_ms: performance_now() + params.tuning.switch_ms,
-        });
+        let pose = self.fly_to(pose, params);
+        self.start_framing = Some(StartFraming { pose, fit });
     }
 
-    /// Jumps to `target` on another board, whose zoom is clamped to the allowed range, and
-    /// returns the pose it lands on. The view covers the jump with a board switch.
-    ///
-    /// The jump replaces any flight and starting framing.
-    fn cut_to(&mut self, target: CameraPose, params: &CameraUpdateParams<'_>) -> CameraPose {
-        let target = CameraPose {
-            zoom: self.zoom_range.clamp(target.zoom),
-            ..target
-        };
-        self.set_pose(target, params.tuning.tile_size_px);
-        self.flight = None;
-        self.velocity = Vec2::ZERO;
-        self.start_framing = None;
-        self.cuts = self.cuts.wrapping_add(1);
-        target
-    }
-
-    /// Refits the starting pose when the room for the board changed: while the board switch to
-    /// it runs, as the view may still be laying out, and afterwards only when the mode resets
-    /// the camera on resize, which puts it back in the starting pose wherever it was moved.
+    /// Refits the starting pose when the room for the board changed: while flying there, as
+    /// the view may still be laying out, and after landing only when the mode resets the
+    /// camera on resize, which puts it back in the starting pose wherever it was moved.
     ///
     /// Returns true when the camera moved.
     fn follow_start_framing(&mut self, params: &CameraUpdateParams<'_>, fit: MaxFitZoom) -> bool {
@@ -370,8 +346,7 @@ impl CameraManager {
             return false;
         };
         let starting_camera = params.starting_camera();
-        let settling = performance_now() < framing.settles_at_ms;
-        if !settling && !starting_camera.resets_on_resize() {
+        if self.flight.is_none() && !starting_camera.resets_on_resize() {
             self.start_framing = None;
             return false;
         }
@@ -382,8 +357,12 @@ impl CameraManager {
             center: framing.pose.center,
             zoom: self.zoom_range.clamp(starting_camera.zoom(fit)),
         };
-        self.set_pose(pose, params.tuning.tile_size_px);
-        self.start_framing = Some(StartFraming { pose, fit, ..framing });
+        if self.flight.is_some() {
+            self.fly_to(pose, params);
+        } else {
+            self.set_pose(pose, params.tuning.tile_size_px);
+        }
+        self.start_framing = Some(StartFraming { pose, fit });
         true
     }
 

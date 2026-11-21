@@ -188,7 +188,6 @@ impl GameStateReducer {
     fn reset_session(&mut self) {
         self.leave_session();
         self.state = self.menu_preview_state.clone().unwrap_or_default();
-        self.replace_board();
         self.spectate = None;
         self.match_list = None;
     }
