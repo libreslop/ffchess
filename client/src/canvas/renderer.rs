@@ -12,7 +12,7 @@ use wasm_bindgen::JsCast;
 use web_sys::HtmlCanvasElement;
 
 /// Fill color around the board, dark so the light rim marks the edge.
-const OFF_BOARD_COLOR: &str = "#413931";
+pub(super) const OFF_BOARD_COLOR: &str = "#413931";
 const LIGHT_SQUARE_COLOR: &str = "#ffd5b4";
 const DARK_SQUARE_COLOR: &str = "#e0b591";
 const DEFAULT_SHOP_COLOR: &str = "#c4923f";
@@ -252,6 +252,10 @@ impl Renderer {
         self.ctx.set_fill_style_str(OFF_BOARD_COLOR);
         self.ctx
             .fill_rect(0.0, 0.0, params.canvas_size.x, params.canvas_size.y);
+        // Until the server sent its mode, the board is a placeholder not worth showing.
+        if params.mode.is_none() {
+            return;
+        }
         self.draw_board(&params, &geometry);
         self.draw_shops(&params, &geometry, &visibility);
         let shades = self.shades(&params);
@@ -491,15 +495,17 @@ impl Renderer {
         alpha: f64,
         is_ghost: bool,
     ) -> PieceDrawParams<'a> {
+        let owned_by_shown_player = piece.owner_id.is_some_and(|owner| {
+            params.show_all_cooldowns || owner == params.player_id
+        });
         PieceDrawParams {
             piece,
-            player_id: params.player_id,
             geometry: *geometry,
             alpha,
             state: params.state,
-            is_ghost,
             pos: geometry.map_pos(piece.position.0.as_dvec2()),
-            clock_offset_ms: params.clock_offset_ms,
+            now: params.now,
+            shows_cooldown: owned_by_shown_player && !is_ghost,
         }
     }
 

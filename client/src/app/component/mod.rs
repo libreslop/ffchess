@@ -8,6 +8,7 @@ mod view;
 
 use crate::app::browser::PageMetadata;
 use crate::app::config::{GlobalClientConfig, load_global_config, order_modes, quick_play_modes};
+use crate::app::ReplayLink;
 use crate::app::focus::{ModeFocus, PerSlot, Slot};
 use crate::components::NestedQueue;
 use crate::reducer::{ClientPhase, GameStateReducer, MsgSender};
@@ -18,7 +19,7 @@ use callbacks::{
     build_on_leave, build_on_name_input, build_on_name_submit, build_on_rejoin,
 };
 use common::models::{GameModeClientConfig, ModeSummary};
-use common::types::{ModeId, ReplayId};
+use common::types::ModeId;
 use effects::{
     KeyboardShortcutEffectInputs, PreviewDefaultRef, use_boot_screen_effect,
     use_disconnected_overlay_effect, use_error_auto_clear_effect, use_fatal_error_reset_effect,
@@ -59,7 +60,7 @@ pub fn app() -> Html {
     let has_interacted = use_state(|| false);
     let show_disconnected = use_state(|| false);
     let preview_default_ref: PreviewDefaultRef = use_mut_ref(|| None);
-    let open_replay = use_state(|| None::<ReplayId>);
+    let open_replay = use_state(ReplayLink::requested);
 
     let injected_modes = use_memo((), |_| injected_modes());
     let injected_mode_info = injected_modes.first().cloned();
@@ -318,7 +319,10 @@ pub fn app() -> Html {
             let open_replay = open_replay.clone();
             Callback::from(move |replay_id| open_replay.set(Some(replay_id)))
         },
-        on_close_replay: Callback::from(move |_| open_replay.set(None)),
+        on_close_replay: Callback::from(move |_| {
+            ReplayLink::clear();
+            open_replay.set(None);
+        }),
     };
     use_boot_screen_effect(view_props.shows_own_screen(), player_name);
     render_app(view_props)

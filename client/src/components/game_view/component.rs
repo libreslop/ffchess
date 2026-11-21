@@ -6,13 +6,15 @@ use super::input::{PointerContext, mouse_leave_handler};
 use super::loops::{
     CameraLoopInputs, WheelZoomInputs, use_animation_frame, use_camera_loop, use_wheel_zoom,
 };
-use super::render::{BoardFrame, use_board_render, use_move_blurs, use_trail_flashes};
+use super::render::{
+    BoardFrame, BoardSwitch, ShownBoard, use_board_render, use_move_blurs, use_trail_flashes,
+};
 use super::shop_context::ActiveShopQuery;
 use super::touch::TouchContext;
 use super::types::{InputEnd, InputMove, InputStart, LatestStateSnapshot, ViewHandles};
 use crate::app::GlobalClientConfig;
 use crate::camera::{CameraManager, CameraTuning};
-use crate::canvas::Renderer;
+use crate::canvas::{Renderer, WipeTiming};
 use crate::components::shop_ui::ShopUI;
 use crate::math::{Vec2, vec2};
 use crate::reducer::{GameAction, GameStateReducer, MsgSender};
@@ -65,6 +67,7 @@ pub fn game_view(props: &GameViewProps) -> Html {
         held: use_mut_ref(|| None),
     };
     let view_size = use_view_size(&root_ref);
+    let board_switch = use_mut_ref(BoardSwitch::default);
     use_animation_frame();
 
     let renderer = use_renderer(&canvas_ref, reducer);
@@ -131,6 +134,12 @@ pub fn game_view(props: &GameViewProps) -> Html {
         zoom: *handles.zoom_state,
         canvas_size: view_size,
         tile_size_px: globals.tile_size_px,
+        shown: ShownBoard {
+            epoch: reducer.board_epoch(),
+            camera_cuts: handles.camera.borrow().cut_count(),
+        },
+        switch: board_switch,
+        wipe_timing: WipeTiming::from(globals),
     });
 
     let pointer_context = PointerContext {

@@ -91,7 +91,7 @@ impl Reducible for GameStateReducer {
             // A session the client already left has no end screen to show.
             GameAction::GameOver(_) if next.active_player_id().is_none() => {}
             GameAction::GameOver(stats) => {
-                next.stats = MatchStats::of_game_over(stats, next.stats.board_rotation_deg);
+                next.stats = MatchStats::of_game_over(stats);
                 next.victory = None;
                 next.is_dead = true;
             }
@@ -139,6 +139,8 @@ impl Reducible for GameStateReducer {
                 next.spectate = Some(SpectateStatus::Watching);
             }
             GameAction::ShowReplayFrame(state) => next.state = *state,
+            GameAction::SetBoardRotated(rotated) => next.rotated_180 = rotated,
+            GameAction::SetReplayTime(at) => next.replay_time = Some(at),
         }
         next.phase = compute_phase(&next);
         next.into()
@@ -186,6 +188,7 @@ impl GameStateReducer {
     fn reset_session(&mut self) {
         self.leave_session();
         self.state = self.menu_preview_state.clone().unwrap_or_default();
+        self.replace_board();
         self.spectate = None;
         self.match_list = None;
     }
@@ -208,7 +211,6 @@ impl GameStateReducer {
     /// Clears all victory state so generic end overlays can be derived cleanly.
     pub(super) fn clear_victory_state(&mut self) {
         self.victory = None;
-        self.stats.board_rotation_deg = 0;
     }
 }
 

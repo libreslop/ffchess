@@ -8,13 +8,15 @@ use super::piece_icons::SharedIcons;
 use super::playback::{PlaybackButton, PlaybackCommand, PlaybackState};
 use super::style::REPLAY_CSS;
 use super::timeline::ReplayTimeline;
+use super::title_bar::ReplayTitleBar;
+use super::video::VideoSettings;
 use crate::app::GlobalClientConfig;
 use crate::components::{GameView, Leaderboard, LeaveButton};
 use crate::reducer::{GameAction, GameStateReducer, InitPayload};
 use crate::ui_state::Backdrop;
-use crate::utils::performance_now;
+use crate::utils::{SessionStore, performance_now};
 use common::models::ReplayHeader;
-use common::types::{PlayerId, SessionSecret};
+use common::types::{PlayerId, ReplayId, SessionSecret};
 use gloo_events::{EventListener, EventListenerOptions, EventListenerPhase};
 use gloo_timers::callback::{Interval, Timeout};
 use std::rc::Rc;
@@ -36,6 +38,8 @@ pub(super) struct LoadedReplay {
     pub(super) timeline: Rc<ReplayTimeline>,
     pub(super) history: SharedHistory,
     pub(super) icons: SharedIcons,
+    /// The replay as the server sent it, saved as is when downloaded.
+    pub(super) source: Rc<str>,
 }
 
 /// Shared handle to a loaded replay, compared by identity so re-renders stay cheap.
@@ -51,6 +55,7 @@ impl PartialEq for SharedReplay {
 /// Properties for the replay player.
 #[derive(Properties, PartialEq)]
 pub(super) struct ReplayPlayerProps {
+    pub(super) replay_id: ReplayId,
     pub(super) replay: SharedReplay,
     pub(super) globals: GlobalClientConfig,
     pub(super) on_close: Callback<()>,
@@ -80,6 +85,12 @@ pub(super) fn replay_player(props: &ReplayPlayerProps) -> Html {
         use_effect_with(index, move |&index| {
             let state = replay.timeline.board(index).clone();
             board.dispatch(GameAction::ShowReplayFrame(Box::new(state)));
+        });
+    }
+    {
+        let board = board.dispatcher();
+        use_effect_with(position, move |&position| {
+            board.dispatch(GameAction::SetReplayTime(position));
         });
     }
     use_follow_playback(playback.playback.is_playing(), now_local.clone());
@@ -117,6 +128,12 @@ pub(super) fn replay_player(props: &ReplayPlayerProps) -> Html {
         let playback = playback.dispatcher();
         Callback::from(move |elapsed| playback.dispatch(PlaybackCommand::Seek(elapsed)))
     };
+    let on_flip = {
+        let board = board.clone();
+        Callback::from(move |_| {
+            board.dispatch(GameAction::SetBoardRotated(!board.board_rotated_180()));
+        })
+    };
     // Kept across renders, so the move list only re-renders when the shown move changes.
     let on_show = {
         let playback = playback.dispatcher();
@@ -150,7 +167,14 @@ pub(super) fn replay_player(props: &ReplayPlayerProps) -> Html {
                 />
             </div>
             <div class="replay-panel" data-ui-exempt="true">
-                <div class="replay-title">{"Analysis board"}</div>
+                <ReplayTitleBar
+                    replay_id={props.replay_id}
+                    mode_id={replay.header.mode.id.clone()}
+                    replay={props.replay.clone()}
+                    rotated_180={board.board_rotated_180()}
+                    video={VideoSettings::from(&props.globals)}
+                    on_flip={on_flip}
+                />
                 <MoveList
                     history={replay.history.clone()}
                     icons={replay.icons.clone()}
@@ -173,7 +197,8 @@ pub(super) fn replay_player(props: &ReplayPlayerProps) -> Html {
     }
 }
 
-/// Shows the rules and first board of the replay once, watched as a spectator.
+/// Shows the rules and first board of the replay once, watched as a spectator, from the side
+/// of the board the viewer played the match on.
 #[hook]
 fn use_replay_board(board: &UseReducerHandle<GameStateReducer>, replay: &Rc<LoadedReplay>) {
     let board = board.clone();
@@ -190,6 +215,9 @@ fn use_replay_board(board: &UseReducerHandle<GameStateReducer>, replay: &Rc<Load
             chat_history: Vec::new(),
             spectators: Vec::new(),
         })));
+        let (player_id, _) = SessionStore::new(&replay.header.mode.id).load();
+        let rotated = player_id.and_then(|player_id| replay.timeline.rotated_180_for(player_id));
+        board.dispatch(GameAction::SetBoardRotated(rotated.unwrap_or_default()));
     });
 }
 

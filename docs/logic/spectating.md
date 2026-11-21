@@ -117,7 +117,25 @@ the panel along the bottom, on narrow screens). The panel holds:
   `disable_camera_movement`, the mouse wheel over the board steps one entry too; in other modes it
   zooms the board,
 - the playback bar: play and pause (Space), a scrub bar marking every capture, and a speed button
-  cycling 1x, 2x, 4x and 8x.
+  cycling 1x, 2x, 4x and 8x,
+- in the title bar, a button flipping the board, and a share button opening a menu that:
+  - copies the share link, `/?replay=<replay id>#<mode id>`, which opens the viewer over the
+    mode's menu as soon as the page loads (closing the viewer drops `replay` from the address),
+  - downloads the replay as the server sent it, as `<mode id>-<replay id>.ffr.json`,
+  - renders the board to a WebM video, `<mode id>-<replay id>.webm`, seen the way the viewer has
+    it turned, with half a square of room around the board for the names over the kings. The
+    video has a frame every server tick (`tick_interval_ms`), so players can seek anywhere, but
+    the board only looks different when the replay moves on to another board or a cooldown ring
+    charges up a step. Only those frames are drawn off screen by the board renderer and encoded
+    with the browser's WebCodecs, with a keyframe at least every 30 seconds; with VP9, every
+    other frame is a one-byte `show_existing_frame` showing the last picture again, worked out
+    from the reference slots the encoded frames refresh. With VP8, the fallback, those frames
+    are encoded too. The encoder and WebM muxer, `assets/static/js/replay_video.js`, are only
+    loaded once a video is first rendered.
+
+The board is turned the way the viewer played the match: the client looks for its stored
+player id of the mode among the replay's players. Every player's pieces show their cooldown
+rings, measured against the moment of the replay on screen.
 
 Escape or the top-left button closes the viewer.
 

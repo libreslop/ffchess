@@ -98,8 +98,9 @@ The filename stem becomes the runtime `GameModeConfig.id`.
 
 `max_fit_zoom` is the zoom at which the whole board just fits in the part of the screen the
 board is shown in, so `"0.8 * max_fit_zoom"` shows the whole board with a margin on any screen.
-The replay viewer counts only the room beside its analysis panel. While the camera flies to
-the starting pose, the pose keeps fitting the screen as the view lays out; after it lands, only
+The replay viewer counts only the room beside its analysis panel. The camera cuts to the
+starting pose with a board switch (see `board_switch_regions` in the client globals); while the
+switch runs, the pose keeps fitting the screen as the view lays out, and afterwards only
 `reset_on_resize` refits it. Zooms are kept within the
 `camera_zoom_min` / `camera_zoom_max` range of the client globals, widened to reach
 `max_fit_zoom`.

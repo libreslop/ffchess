@@ -7,7 +7,7 @@ use crate::math::Vec2;
 use crate::premoves::{FailedMove, PremoveLine, Projection};
 use common::models::{GameModeClientConfig, GameState, Piece};
 use common::rules::Catalog;
-use common::types::{BoardCoord, PieceId, PieceTypeId, PlayerId};
+use common::types::{BoardCoord, PieceId, PieceTypeId, PlayerId, TimestampMs};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
@@ -48,15 +48,16 @@ pub(crate) struct PieceSvgKey {
 #[derive(Clone, Copy)]
 pub(super) struct PieceDrawParams<'a> {
     pub(super) piece: &'a Piece,
-    pub(super) player_id: PlayerId,
     pub(super) geometry: FrameGeometry,
     pub(super) alpha: f64,
     pub(super) state: &'a GameState,
-    pub(super) is_ghost: bool,
     /// Square position to draw at, already mapped for drawing, possibly fractional while
     /// animating.
     pub(super) pos: Vec2,
-    pub(super) clock_offset_ms: i64,
+    /// Server time the board is drawn at.
+    pub(super) now: TimestampMs,
+    /// Whether the piece's cooldown ring is drawn.
+    pub(super) shows_cooldown: bool,
 }
 
 /// Parameters for drawing a piece name overlay.
@@ -116,5 +117,8 @@ pub struct RenderParams<'a> {
     pub board_rotated_180: bool,
     pub active_shop_highlight_pos: Option<BoardCoord>,
     pub disable_fog_of_war: bool,
-    pub clock_offset_ms: i64,
+    /// Server time the board is drawn at, which cooldowns are measured against.
+    pub now: TimestampMs,
+    /// Draws the cooldowns of every player's pieces rather than only the viewer's own.
+    pub show_all_cooldowns: bool,
 }

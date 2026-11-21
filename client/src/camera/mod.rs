@@ -6,7 +6,7 @@ mod flight;
 mod framing;
 mod update;
 
-pub use framing::view_offset;
+pub use framing::{board_center, view_offset};
 pub use update::{CameraTuning, CameraUpdateParams};
 
 use crate::math::Vec2;
@@ -81,9 +81,12 @@ pub struct CameraManager {
     zoom_range: ZoomRange,
     /// Last hook camera move made, so each is made once.
     applied_cue: Option<Rc<CameraCue>>,
-    /// Starting pose the camera keeps fitted to the screen: while flying there, and after
-    /// landing too when the mode resets the camera on resize.
+    /// Starting pose the camera keeps fitted to the screen: while the board switch to it runs,
+    /// and afterwards too when the mode resets the camera on resize.
     start_framing: Option<StartFraming>,
+    /// Number of times the camera cut to another board, which the view covers with a board
+    /// switch.
+    cuts: u32,
     /// Life of the local player being followed, while alive.
     tracked_life: Option<TrackedLife>,
     /// Phase on the last update.
@@ -107,10 +110,16 @@ impl CameraManager {
             zoom_range: ZoomRange::new(1.0, 1.0),
             applied_cue: None,
             start_framing: None,
+            cuts: 0,
             tracked_life: None,
             last_phase: None,
             pinch: None,
         }
+    }
+
+    /// Returns how many times the camera cut to another board.
+    pub fn cut_count(&self) -> u32 {
+        self.cuts
     }
 
     /// Returns the camera position, in pixels from the board origin to the view centre.
@@ -128,7 +137,7 @@ impl CameraManager {
         self.mouse_pos
     }
 
-    /// Returns true while a scripted move is in progress and player input is ignored.
+    /// Returns true while a scripted move is in progress and the player cannot move the camera.
     pub fn input_locked(&self) -> bool {
         self.flight.is_some()
     }

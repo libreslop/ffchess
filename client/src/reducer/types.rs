@@ -8,7 +8,27 @@ use common::rules::Catalog;
 use common::types::{
     DurationMs, PlayerCount, PlayerId, QueuePosition, ReplayId, Score, SessionSecret, TimestampMs,
 };
+use std::cell::Cell;
 use std::rc::Rc;
+
+thread_local! {
+    /// Last board epoch handed out, shared by every view so no two boards ever share one.
+    static LAST_BOARD_EPOCH: Cell<u32> = const { Cell::new(0) };
+}
+
+/// Identifies the board a view shows; it changes whenever another board replaces it.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub struct BoardEpoch(u32);
+
+impl BoardEpoch {
+    /// Returns an epoch no board had before.
+    fn next() -> Self {
+        LAST_BOARD_EPOCH.with(|last| {
+            last.set(last.get().wrapping_add(1));
+            Self(last.get())
+        })
+    }
+}
 
 /// High-level client session phase used for UI and camera behavior.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
@@ -69,20 +89,16 @@ pub struct MatchStats {
     pub kills: u32,
     pub captured: u32,
     pub survival_secs: u64,
-    /// Board rotation kept so the end screen keeps the player's perspective.
-    pub board_rotation_deg: i32,
 }
 
 impl MatchStats {
-    /// Returns the final stats the server reported, kept in the perspective of
-    /// `board_rotation_deg`.
-    pub fn of_game_over(stats: GameOverStats, board_rotation_deg: i32) -> Self {
+    /// Returns the final stats the server reported.
+    pub fn of_game_over(stats: GameOverStats) -> Self {
         Self {
             score: stats.final_score,
             kills: stats.kills,
             captured: stats.pieces_captured,
             survival_secs: stats.time_survived_secs,
-            board_rotation_deg,
         }
     }
 
@@ -93,7 +109,6 @@ impl MatchStats {
             kills: player.kills,
             captured: player.pieces_captured,
             survival_secs: (now - player.join_time).as_u64() / 1000,
-            board_rotation_deg: player.board_rotation_deg,
         }
     }
 }
@@ -215,6 +230,15 @@ pub struct GameStateReducer {
     /// Latest camera move a hook made for the local player; the camera makes each one once,
     /// telling them apart by allocation.
     pub camera_cue: Option<Rc<CameraCue>>,
+    /// Whether the board is viewed upside down: the way the local player last saw it.
+    ///
+    /// It is kept after the player leaves or dies, so the view does not flip around while the
+    /// camera flies back to the menu, and only changes with the next player's perspective.
+    pub(super) rotated_180: bool,
+    /// Moment of the replay on screen, when the board is a replay.
+    pub(super) replay_time: Option<TimestampMs>,
+    /// Board on screen, renewed whenever another board replaces it.
+    board_epoch: BoardEpoch,
 }
 
 impl GameStateReducer {
@@ -287,19 +311,26 @@ impl GameStateReducer {
             .map_or(DEFAULT_RESPAWN_COOLDOWN, |mode| mode.respawn_cooldown_ms)
     }
 
+    /// Returns the board on screen, which changes whenever another board replaces it.
+    pub fn board_epoch(&self) -> BoardEpoch {
+        self.board_epoch
+    }
+
+    /// Marks the board on screen as replaced by another.
+    pub(super) fn replace_board(&mut self) {
+        self.board_epoch = BoardEpoch::next();
+    }
+
     /// Returns true when the board should be viewed rotated by 180 degrees.
     pub fn board_rotated_180(&self) -> bool {
-        let Some(player_id) = self.active_player_id() else {
-            return false;
-        };
-        let rotation = self
-            .state
-            .players
-            .get(&player_id)
-            .map_or(self.stats.board_rotation_deg, |player| {
-                player.board_rotation_deg
-            });
-        rotation.rem_euclid(360) == 180
+        self.rotated_180
+    }
+
+    /// Views the board from the perspective of `player_id`, when they are on it.
+    pub(super) fn adopt_perspective_of(&mut self, player_id: PlayerId) {
+        if let Some(player) = self.state.players.get(&player_id) {
+            self.rotated_180 = player.is_board_rotated_180();
+        }
     }
 
     /// Returns true when a lost connection interrupts something the player is in: a match,
@@ -320,6 +351,16 @@ impl GameStateReducer {
     /// Returns the current time on the server clock.
     pub fn server_now(&self) -> TimestampMs {
         TimestampMs::from_millis(js_sys::Date::now() as i64 + self.clock_offset_ms)
+    }
+
+    /// Returns the server time the board on screen shows: the moment of a replay, or now.
+    pub fn board_time(&self) -> TimestampMs {
+        self.replay_time.unwrap_or_else(|| self.server_now())
+    }
+
+    /// Returns true when the board is a replay, whose every player's cooldowns are shown.
+    pub fn is_replay(&self) -> bool {
+        self.replay_time.is_some()
     }
 }
 

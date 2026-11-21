@@ -3,16 +3,32 @@
 use super::move_blurs::MoveBlurs;
 use super::shop_context::ActiveShop;
 use super::trail_flashes::TrailFlashes;
-use crate::canvas::{DraggedPiece, RenderParams, Renderer};
+use crate::canvas::{BoardWipe, DraggedPiece, RenderParams, Renderer, WipeTiming};
 use crate::math::Vec2;
 use crate::premoves::Projection;
-use crate::reducer::GameStateReducer;
+use crate::reducer::{BoardEpoch, GameStateReducer};
 use crate::utils::performance_now;
 use common::types::PieceId;
 use std::cell::RefCell;
 use std::rc::Rc;
 use yew::hook;
 use yew::prelude::*;
+
+/// What makes the board drawn one board rather than another: the board itself, and the
+/// camera cut to it.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(super) struct ShownBoard {
+    pub(super) epoch: BoardEpoch,
+    pub(super) camera_cuts: u32,
+}
+
+/// Board switches of a view: the board it last drew, and the switch away from the one before
+/// while it runs.
+#[derive(Default)]
+pub(super) struct BoardSwitch {
+    shown: Option<ShownBoard>,
+    wipe: Option<BoardWipe>,
+}
 
 /// Everything one frame of the board needs.
 pub(super) struct BoardFrame {
@@ -28,6 +44,9 @@ pub(super) struct BoardFrame {
     pub(super) zoom: f64,
     pub(super) canvas_size: Vec2,
     pub(super) tile_size_px: f64,
+    pub(super) shown: ShownBoard,
+    pub(super) switch: Rc<RefCell<BoardSwitch>>,
+    pub(super) wipe_timing: WipeTiming,
 }
 
 /// Starts speed lines whenever the authoritative pieces move.
@@ -75,11 +94,30 @@ pub(super) fn use_board_render(frame: BoardFrame) {
 }
 
 impl BoardFrame {
-    /// Draws this frame with `renderer`.
+    /// Draws this frame with `renderer`, covered by the board switch while one runs.
+    ///
+    /// A switch starts whenever another board is shown than on the last frame, from the
+    /// picture that frame left on screen.
     fn draw(&self, renderer: &Renderer) {
+        let now = performance_now();
+        let mut switch = self.switch.borrow_mut();
+        if switch.shown.replace(self.shown) != Some(self.shown) {
+            switch.wipe = BoardWipe::from_screen(renderer, now);
+        }
+        self.draw_board(renderer, now);
+        let running = switch
+            .wipe
+            .as_ref()
+            .is_some_and(|wipe| wipe.cover(renderer, self.wipe_timing, now));
+        if !running {
+            switch.wipe = None;
+        }
+    }
+
+    /// Draws the board as it stands at `now`.
+    fn draw_board(&self, renderer: &Renderer, now: f64) {
         let reducer = &self.reducer;
         let has_match_result = reducer.has_match_result();
-        let now = performance_now();
         let move_blurs = self.move_blurs.borrow_mut().blurs_at(now);
         let failed_trails = self.trail_flashes.borrow_mut().trails_at(now);
         renderer.draw(RenderParams {
@@ -98,7 +136,8 @@ impl BoardFrame {
             board_rotated_180: reducer.board_rotated_180(),
             active_shop_highlight_pos: self.active_shop.as_ref().map(|shop| shop.position),
             disable_fog_of_war: has_match_result,
-            clock_offset_ms: reducer.clock_offset_ms,
+            now: reducer.board_time(),
+            show_all_cooldowns: reducer.is_replay(),
         });
     }
 }

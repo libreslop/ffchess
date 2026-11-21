@@ -162,11 +162,12 @@ impl TouchContext {
     fn pinch(&self, a: Vec2, b: Vec2) {
         let canvas = self.handles.canvas_ref.cast::<HtmlCanvasElement>();
         let mut camera = self.handles.camera.borrow_mut();
+        let locked = self.reducer.camera_movement_disabled() || camera.input_locked();
         camera.pinch_to(
             a,
             b,
             canvas.as_ref(),
-            self.reducer.camera_movement_disabled(),
+            locked,
             self.reducer.board_rotated_180(),
         );
         let (position, zoom) = (camera.position(), camera.zoom());

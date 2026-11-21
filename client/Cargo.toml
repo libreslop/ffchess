@@ -36,7 +36,16 @@ web-sys = { version = "0.3", features = [
     "TouchList",
     "Touch",
     "TouchEvent",
-    "History"
+    "History",
+    "Location",
+    "Url",
+    "UrlSearchParams",
+    "Clipboard",
+    "Blob",
+    "BlobPropertyBag",
+    "HtmlAnchorElement",
+    "Node",
+    "console"
 ] }
 serde = { version = "1.0", features = ["derive"] }
 educe = "0.6"

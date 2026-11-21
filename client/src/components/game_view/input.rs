@@ -77,9 +77,15 @@ impl PointerContext {
         }
     }
 
-    /// Returns true while input must be ignored: after the match or during a scripted pan.
+    /// Returns true while input must be ignored, after the match.
     fn is_blocked(&self) -> bool {
-        self.reducer.has_match_result() || self.handles.camera.borrow().input_locked()
+        self.reducer.has_match_result()
+    }
+
+    /// Returns true while the player may pan the camera: not during a scripted move, which
+    /// still lets pieces be picked up and moved.
+    fn may_pan(&self) -> bool {
+        !self.reducer.camera_movement_disabled() && !self.handles.camera.borrow().input_locked()
     }
 
     /// Returns the board square under a screen position.
@@ -146,7 +152,7 @@ impl PointerContext {
         *self.handles.held.borrow_mut() = held;
         self.handles.drag_start.set(Some(DragStart {
             pos: input.pos,
-            allow_panning: !is_interactive && !self.reducer.camera_movement_disabled(),
+            allow_panning: !is_interactive && self.may_pan(),
         }));
         self.handles.camera.borrow_mut().stop_coasting();
     }
@@ -164,7 +170,8 @@ impl PointerContext {
         let Some(start) = *self.handles.drag_start else {
             return;
         };
-        if !start.allow_panning {
+        // A scripted move that began during the press keeps the camera to itself.
+        if !start.allow_panning || camera.input_locked() {
             return;
         }
         if self.reducer.camera_movement_disabled() {

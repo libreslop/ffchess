@@ -86,7 +86,7 @@ pub(super) fn square_center(square: BoardCoord) -> Vec2 {
 }
 
 /// Returns the centre of a board of `board_size`, in squares from the board origin.
-pub(super) fn board_center(board_size: BoardSize) -> Vec2 {
+pub fn board_center(board_size: BoardSize) -> Vec2 {
     Vec2::splat((board_size.limit_pos() - board_size.half()) as f64 / 2.0)
 }
 
@@ -119,6 +119,9 @@ pub(super) struct StartFraming {
     pub(super) pose: CameraPose,
     /// Fit zoom the pose was worked out for.
     pub(super) fit: MaxFitZoom,
+    /// `performance.now()` until which the pose is refitted whatever the mode, as the view may
+    /// still be laying out while the board switch runs.
+    pub(super) settles_at_ms: f64,
 }
 
 /// Where the camera starts when a player joins or starts watching, as the mode configures.

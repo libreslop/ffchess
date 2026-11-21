@@ -35,10 +35,10 @@ pub(super) const REPLAY_CSS: &str = "
     }
 
     .replay-title {
-        flex: none; padding: 6px 12px; background: var(--wood-frame); font-size: 20px;
-        letter-spacing: 2px; text-transform: uppercase;
-        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        flex: none; display: flex; align-items: center; gap: 4px; padding: 2px 2px 2px 12px;
+        background: var(--wood-frame); font-size: 20px; letter-spacing: 2px; text-transform: uppercase;
     }
+    .replay-title-text { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
     .replay-moves {
         position: relative; flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: none;
@@ -83,6 +83,28 @@ pub(super) const REPLAY_CSS: &str = "
     .replay-icon-arrow { --icon: url(/assets/static/img/arrow-up.svg); }
     .replay-icon-play { --icon: url(/assets/static/img/play.svg); }
     .replay-icon-pause { --icon: url(/assets/static/img/pause.svg); }
+    .replay-icon-flip { --icon: url(/assets/static/img/flip.svg); }
+    .replay-icon-share { --icon: url(/assets/static/img/share.svg); }
+    .replay-icon-link { --icon: url(/assets/static/img/link.svg); }
+    .replay-icon-download { --icon: url(/assets/static/img/download.svg); }
+    .replay-icon-video { --icon: url(/assets/static/img/video.svg); }
+    .replay-icon-button { flex: none; width: 32px; height: 32px; padding: 0; }
+
+    .replay-share { position: relative; flex: none; }
+    .replay-menu {
+        position: absolute; top: calc(100% + 4px); right: 0; z-index: 10; min-width: 220px;
+        display: flex; flex-direction: column; background: var(--wood-plate);
+        border: 3px solid var(--wood-frame); box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.35);
+        letter-spacing: 0; text-transform: none;
+    }
+    .replay-menu-item {
+        display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: transparent;
+        color: var(--wood-text); border: none; border-radius: 0; font: inherit; font-size: 20px;
+        text-align: left; white-space: nowrap; cursor: pointer;
+    }
+    .replay-menu-item + .replay-menu-item { border-top: 2px solid var(--wood-frame); }
+    .replay-menu-item:hover { background: rgba(255, 241, 224, 0.15); }
+    .replay-menu-item:disabled { opacity: 0.5; cursor: wait; }
 
     .replay-scrubber { -webkit-appearance: none; appearance: none; }
     .replay-scrubber::-webkit-slider-runnable-track { background: transparent; height: 36px; }

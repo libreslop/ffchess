@@ -89,4 +89,8 @@ pub enum GameAction {
     LoadReplay(Box<InitPayload>),
     /// Shows the board of a replay at one moment.
     ShowReplayFrame(Box<GameState>),
+    /// Moves the clock of a replay, which its cooldowns are measured against.
+    SetReplayTime(TimestampMs),
+    /// Views the board upside down, or the right way up.
+    SetBoardRotated(bool),
 }

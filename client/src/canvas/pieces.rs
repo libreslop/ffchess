@@ -6,7 +6,7 @@ use super::types::{PieceDrawParams, PieceNameDrawParams, PieceSvgKey, Renderer};
 use crate::math::vec2;
 use crate::utils::svg_data_url;
 use common::models::{GameState, Piece};
-use common::types::{PieceTypeId, TimestampMs};
+use common::types::{DurationMs, PieceTypeId, TimestampMs};
 use gloo_net::http::Request;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::spawn_local;
@@ -37,26 +37,46 @@ impl Renderer {
     /// Draws a piece glyph and, for the local player's real pieces, its cooldown indicator.
     pub(super) fn draw_piece(&self, params: PieceDrawParams) {
         let base_color = Self::team_color(params.piece, params.state);
-        let colors = piece_icon_colors(&base_color);
-        let svg_handle = self
-            .catalog
-            .pieces
-            .get(&params.piece.piece_type)
-            .and_then(|config| {
-                self.resolve_piece_icon(&params.piece.piece_type, &config.svg_path, &colors)
-            });
-        let svg_ready = svg_handle
-            .as_ref()
-            .filter(|handle| handle.image.complete() && handle.image.natural_width() > 0);
-
         // Prefer SVGs when available; fall back to a simple circle when missing.
-        match svg_ready {
-            Some(handle) => self.draw_piece_icon(handle, params),
+        match self.loaded_icon(params.piece, params.state) {
+            Some(handle) => self.draw_piece_icon(&handle, params),
             None => self.draw_piece_fallback(&base_color, params),
         }
-        if self.should_draw_cooldown(&params) {
+        if params.shows_cooldown {
             self.draw_cooldown_bar(params, &base_color);
         }
+    }
+
+    /// Returns the moments the cooldown ring of `piece` changes how it looks, from its last
+    /// move until the ring disappears: just past each step it charges up in, then when the
+    /// cooldown is over.
+    pub fn cooldown_ring_changes(piece: &Piece) -> impl Iterator<Item = TimestampMs> {
+        let (start, cooldown) = (piece.last_move_time, piece.cooldown_ms.as_i64());
+        (0..COOLDOWN_STEPS)
+            .filter(move |_| cooldown > 0)
+            .map(move |step| step * cooldown / COOLDOWN_STEPS + 1)
+            .chain(std::iter::once(cooldown))
+            .map(move |elapsed| start + DurationMs::from_millis(elapsed))
+    }
+
+    /// Returns true once every piece on `state` can be drawn with its sprite, starting the
+    /// loads still missing.
+    pub fn sprites_ready(&self, state: &GameState) -> bool {
+        state
+            .pieces
+            .values()
+            .all(|piece| self.loaded_icon(piece, state).is_some())
+    }
+
+    /// Returns the sprite of `piece` in its team colors once it has loaded, starting the load
+    /// on first use.
+    fn loaded_icon(&self, piece: &Piece, state: &GameState) -> Option<PieceSvgHandle> {
+        let colors = piece_icon_colors(&Self::team_color(piece, state));
+        self.catalog
+            .pieces
+            .get(&piece.piece_type)
+            .and_then(|config| self.resolve_piece_icon(&piece.piece_type, &config.svg_path, &colors))
+            .filter(|handle| handle.image.complete() && handle.image.natural_width() > 0)
     }
 
     /// Returns the color of the team owning `piece`, or the NPC color for unowned pieces.
@@ -90,14 +110,9 @@ impl Renderer {
             .fill_text("?", center.x - 5.0 * zoom, center.y + 6.0 * zoom);
     }
 
-    fn should_draw_cooldown(&self, params: &PieceDrawParams<'_>) -> bool {
-        params.piece.owner_id == Some(params.player_id) && !params.is_ghost
-    }
-
     /// Traces the elapsed share of the piece cooldown around the rim of its square.
     fn draw_cooldown_bar(&self, params: PieceDrawParams<'_>, team_color: &str) {
-        let now = TimestampMs::from_millis(js_sys::Date::now() as i64 + params.clock_offset_ms);
-        let elapsed = now - params.piece.last_move_time;
+        let elapsed = params.now - params.piece.last_move_time;
         if elapsed >= params.piece.cooldown_ms {
             return;
         }
@@ -292,6 +307,9 @@ impl Renderer {
     }
 }
 
+/// Number of steps the whole cooldown ring charges up in.
+const COOLDOWN_STEPS: i64 = 4 * COOLDOWN_PARTS_PER_SIDE as i64;
+
 /// Returns the elapsed share of a ring around the rim of `square`, clockwise from the top
 /// center, in whole parts of a side so the ring charges up in steps.
 ///
@@ -302,7 +320,7 @@ fn square_progress(square: ArtRect, progress: f64) -> impl Iterator<Item = ArtRe
     let side = ART_PIXELS_PER_TILE;
     let length = side - thickness;
     let parts = COOLDOWN_PARTS_PER_SIDE;
-    let filled = (progress.clamp(0.0, 1.0) * (4 * parts) as f64).ceil() as usize;
+    let filled = (progress.clamp(0.0, 1.0) * COOLDOWN_STEPS as f64).ceil() as usize;
     let boundary = move |part: usize| (part as f64 * length / parts as f64).round();
     let start = parts / 2;
     let end = start + filled;

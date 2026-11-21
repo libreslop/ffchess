@@ -22,6 +22,7 @@ impl GameStateReducer {
         self.session_secret = Some(session_secret);
         self.move_unlock_at = move_unlock_at;
         self.state = state;
+        self.replace_board();
         self.mode = Some(mode);
         self.catalog = Rc::new(catalog);
         self.spectators = spectators;
@@ -44,8 +45,8 @@ impl GameStateReducer {
             self.connection.is_fatal = false;
             if let Some(player) = self.state.players.get(&player_id) {
                 self.stats.score = player.score;
-                self.stats.board_rotation_deg = player.board_rotation_deg;
             }
+            self.adopt_perspective_of(player_id);
         }
     }
 

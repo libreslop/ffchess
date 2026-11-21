@@ -83,7 +83,9 @@ This file is injected into the landing page and deserialized by the Yew client a
 | `velocity_cutoff` | float | No | `0.1` | Velocity threshold, in pixels per 16 ms, below which inertial camera panning stops. |
 | `pan_idle_ms` | float | No | `50.0` | How long, in milliseconds, a pan can hold still before releasing it no longer carries momentum. |
 | `pan_lerp_alive` | float | No | `0.15` | Fraction of the remaining distance to the camera target covered every 16 ms while the local player is alive or spectating. |
-| `focus_flight_ms` | float | No | `1500.0` | Duration, in milliseconds, of a scripted camera move: joining, the death or victory focus, and returning to the menu. The pan and zoom run together, each starting at full speed and slowing down until it stops at the end; the pan slows down more sharply, so it crosses most of the distance early while the zoom is spread more evenly. |
+| `focus_flight_ms` | float | No | `1500.0` | Duration, in milliseconds, of a camera move made by a hook, such as the death or victory focus. The pan and zoom run together, each starting at full speed and slowing down until it stops at the end; the pan slows down more sharply, so it crosses most of the distance early while the zoom is spread more evenly. |
+| `board_switch_regions` | integer (`u32`) | No | `8` | Whenever one board replaces another (joining or leaving a match, switching modes, starting to spectate, opening a replay), the camera cuts to its new pose and the screen is cut into this many rows and columns of regions. The new board replaces the old one region by region, in row-major order. |
+| `board_switch_region_ms` | float | No | `12.0` | Milliseconds between one region of a board switch showing the new board and the next, so a switch takes `board_switch_regions² × board_switch_region_ms`. |
 | `tile_size_px` | float | No | `40.0` | Base world-tile size before zoom is applied. |
 | `scroll_zoom_base` | float | No | `1.2` | Exponential base used for wheel zoom scaling. Values above `1.0` make zoom responsive without going unstable. |
 | `chat_message_ttl_ms` | integer (`u32`) | No | `10000` | Client-side chat display lifetime before the fade-out starts. This should match the server value for consistent room history. |
@@ -116,6 +118,8 @@ This file is injected into the landing page and deserialized by the Yew client a
   "pan_idle_ms": 50.0,
   "pan_lerp_alive": 0.15,
   "focus_flight_ms": 1500.0,
+  "board_switch_regions": 8,
+  "board_switch_region_ms": 12.0,
   "tile_size_px": 40.0,
   "scroll_zoom_base": 1.2,
 

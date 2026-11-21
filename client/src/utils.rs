@@ -1,11 +1,12 @@
 //! Browser storage and environment helpers for the client.
 
 use common::types::{DurationMs, ModeId, PlayerId, SessionSecret, TimestampMs};
+use gloo_timers::callback::Timeout;
 use js_sys::{Function, Reflect};
 use std::fmt::Write;
 use uuid::Uuid;
 use wasm_bindgen::{JsCast, JsValue};
-use web_sys::Storage;
+use web_sys::{Blob, HtmlAnchorElement, Storage, Url};
 
 /// Storage key of the last entered player name.
 const NAME_KEY: &str = "ffchess_name";
@@ -101,6 +102,29 @@ impl SessionStore {
         write(&self.key("death_ts"), &record.died_at.as_i64().to_string());
         write(&self.key("death_cd"), &record.cooldown.as_i64().to_string());
     }
+}
+
+/// How long the address of a downloaded file stays valid, in milliseconds.
+const DOWNLOAD_URL_LIFETIME_MS: u32 = 60_000;
+
+/// Saves `blob` as a file named `file_name` through the browser's downloads.
+pub fn download(blob: &Blob, file_name: &str) {
+    let Ok(url) = Url::create_object_url_with_blob(blob) else {
+        return;
+    };
+    if let Ok(anchor) = gloo_utils::document()
+        .create_element("a")
+        .map(JsCast::unchecked_into::<HtmlAnchorElement>)
+    {
+        anchor.set_href(&url);
+        anchor.set_download(file_name);
+        anchor.click();
+    }
+    // Released later, as some browsers only start reading the file after the click returns.
+    Timeout::new(DOWNLOAD_URL_LIFETIME_MS, move || {
+        let _ = Url::revoke_object_url(&url);
+    })
+    .forget();
 }
 
 /// Returns the current local wall-clock time.
