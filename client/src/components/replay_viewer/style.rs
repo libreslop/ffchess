@@ -6,7 +6,9 @@
 ///
 /// The board view reaches past the left edge of the screen by the room the panel takes, so
 /// the board, which sits in the middle of the view, lands in the middle of the space left.
-/// The panel is drawn in the wood colors of the shop menu.
+/// The panel is drawn in the wood colors of the shop menu. While the replay loads, or when it
+/// is gone, a message is shown in the colors of the board's surroundings, darkened like the
+/// menu darkens the board, with the text of the queue waiting screen.
 pub(super) const REPLAY_CSS: &str = "
     .replay-layout {
         --replay-panel: 320px;
@@ -17,6 +19,17 @@ pub(super) const REPLAY_CSS: &str = "
         --wood-text: #fff1e0;
         --wood-shade: rgba(43, 30, 18, 0.88);
         position: fixed; inset: 0; z-index: 300; overflow: hidden; background: #413931;
+    }
+    .replay-message {
+        position: fixed; inset: 0; z-index: 300; display: flex; flex-direction: column;
+        align-items: center; justify-content: center; gap: 16px;
+        background: linear-gradient(rgba(0, 0, 0, 0.6), rgba(0, 0, 0, 0.6)), #413931;
+        color: #e2e8f0; text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.5);
+    }
+    .replay-message-back {
+        padding: 6px 24px; background: transparent; color: #e2e8f0; border: 3px solid #cbd5e1;
+        border-radius: 0; font-weight: 900; font-size: 1em; cursor: pointer;
+        text-transform: uppercase; letter-spacing: 1px;
     }
     .replay-board { position: absolute; top: 0; bottom: 0; right: 0; left: calc(-1 * var(--replay-room)); }
     .replay-hud { position: absolute; top: 0; bottom: 0; left: 0; right: var(--replay-room); pointer-events: none; }

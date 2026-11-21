@@ -3,11 +3,11 @@
 use super::controls::ReplayControls;
 use super::history::HistoryStep;
 use super::hold::{StepRepeater, use_step_repeater};
-use super::move_list::{MoveList, MoveNav, SharedHistory};
-use super::piece_icons::SharedIcons;
+use super::loaded::{LoadedReplay, SharedReplay};
+use super::move_list::{MoveList, MoveNav};
 use super::playback::{PlaybackButton, PlaybackCommand, PlaybackState};
+use super::share_menu::ShareTarget;
 use super::style::REPLAY_CSS;
-use super::timeline::ReplayTimeline;
 use super::title_bar::ReplayTitleBar;
 use super::video::VideoSettings;
 use crate::app::GlobalClientConfig;
@@ -15,8 +15,7 @@ use crate::components::{GameView, Leaderboard, LeaveButton};
 use crate::reducer::{GameAction, GameStateReducer, InitPayload};
 use crate::ui_state::Backdrop;
 use crate::utils::{SessionStore, performance_now};
-use common::models::ReplayHeader;
-use common::types::{PlayerId, ReplayId, SessionSecret};
+use common::types::{PlayerId, SessionSecret};
 use gloo_events::{EventListener, EventListenerOptions, EventListenerPhase};
 use gloo_timers::callback::{Interval, Timeout};
 use std::rc::Rc;
@@ -32,30 +31,9 @@ const WHEEL_LINE_PX: f64 = 40.0;
 /// How long a button stays lit after the wheel pressed it, in milliseconds.
 const WHEEL_PRESS_MS: u32 = 120;
 
-/// A replay ready to be played back.
-pub(super) struct LoadedReplay {
-    pub(super) header: ReplayHeader,
-    pub(super) timeline: Rc<ReplayTimeline>,
-    pub(super) history: SharedHistory,
-    pub(super) icons: SharedIcons,
-    /// The replay as the server sent it, saved as is when downloaded.
-    pub(super) source: Rc<str>,
-}
-
-/// Shared handle to a loaded replay, compared by identity so re-renders stay cheap.
-#[derive(Clone)]
-pub(super) struct SharedReplay(pub(super) Rc<LoadedReplay>);
-
-impl PartialEq for SharedReplay {
-    fn eq(&self, other: &Self) -> bool {
-        Rc::ptr_eq(&self.0, &other.0)
-    }
-}
-
 /// Properties for the replay player.
 #[derive(Properties, PartialEq)]
 pub(super) struct ReplayPlayerProps {
-    pub(super) replay_id: ReplayId,
     pub(super) replay: SharedReplay,
     pub(super) globals: GlobalClientConfig,
     pub(super) on_close: Callback<()>,
@@ -134,6 +112,11 @@ pub(super) fn replay_player(props: &ReplayPlayerProps) -> Html {
             board.dispatch(GameAction::SetBoardRotated(!board.board_rotated_180()));
         })
     };
+    let share = ShareTarget {
+        replay: props.replay.clone(),
+        rotated_180: board.board_rotated_180(),
+        video: VideoSettings::from(&props.globals),
+    };
     // Kept across renders, so the move list only re-renders when the shown move changes.
     let on_show = {
         let playback = playback.dispatcher();
@@ -167,14 +150,7 @@ pub(super) fn replay_player(props: &ReplayPlayerProps) -> Html {
                 />
             </div>
             <div class="replay-panel" data-ui-exempt="true">
-                <ReplayTitleBar
-                    replay_id={props.replay_id}
-                    mode_id={replay.header.mode.id.clone()}
-                    replay={props.replay.clone()}
-                    rotated_180={board.board_rotated_180()}
-                    video={VideoSettings::from(&props.globals)}
-                    on_flip={on_flip}
-                />
+                <ReplayTitleBar share={share} on_flip={on_flip} />
                 <MoveList
                     history={replay.history.clone()}
                     icons={replay.icons.clone()}

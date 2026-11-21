@@ -6,30 +6,34 @@
 // encoded; with VP9 every other one is a one-byte frame telling the decoder to show the last
 // picture again.
 
-/// Codecs tried in order, with the Matroska id of each and whether its frames can be repeated
-/// without encoding them again.
+/**
+ * Codecs tried in order, with the Matroska id of each and whether its frames can be repeated
+ * without encoding them again.
+ */
 const CODECS = [
     { config: "vp09.00.10.08", matroska: "V_VP9", repeats: true },
     { config: "vp8", matroska: "V_VP8", repeats: false },
 ];
 
-/// Longest stretch between keyframes, in milliseconds, so the video seeks quickly.
+/** Longest stretch between keyframes, in milliseconds, so the video seeks quickly. */
 const KEYFRAME_SPAN_MS = 30000;
 
-/// Longest span of a cluster, in milliseconds, which its 16-bit relative timestamps allow.
+/** Longest span of a cluster, in milliseconds, which its 16-bit relative timestamps allow. */
 const CLUSTER_SPAN_MS = 32000;
 
-/// Encoded frames allowed to wait for the encoder before the next one is held back.
+/** Encoded frames allowed to wait for the encoder before the next one is held back. */
 const MAX_QUEUED_FRAMES = 4;
 
-/// How often a full encoder queue is checked again, in milliseconds.
+/** How often a full encoder queue is checked again, in milliseconds. */
 const QUEUE_POLL_MS = 5;
 
-/// Bitrate budget. Encoded frames are far apart, so every one gets plenty to stay sharp,
-/// while frames that change a few squares come out small whatever the budget.
+/**
+ * Bitrate budget. Encoded frames are far apart, so every one gets plenty to stay sharp,
+ * while frames that change a few squares come out small whatever the budget.
+ */
 const BITRATE = 8_000_000;
 
-/// Returns a video writer for frames of `width` by `height` pixels.
+/** Returns a video writer for frames of `width` by `height` pixels. */
 export async function createVideoWriter(width, height) {
     if (typeof VideoEncoder === "undefined") {
         throw new Error("This browser cannot encode video");
@@ -51,14 +55,14 @@ export async function createVideoWriter(width, height) {
     throw new Error("This browser cannot encode WebM video");
 }
 
-/// Collects the frames of a video and muxes them into a WebM file once finished.
+/** Collects the frames of a video and muxes them into a WebM file once finished. */
 class VideoWriter {
     constructor(config, codec) {
         this.config = config;
         this.codec = codec;
-        /// Every frame in order: encoded ones, and repeats of the frame before.
+        /** Every frame in order: encoded ones, and repeats of the frame before. */
         this.frames = [];
-        /// Encoded frames by the millisecond they appear at.
+        /** Encoded frames by the millisecond they appear at. */
         this.encoded = new Map();
         this.error = null;
         this.lastKeyMs = -Infinity;
@@ -78,8 +82,10 @@ class VideoWriter {
         this.encoder.configure(config);
     }
 
-    /// Adds the frame appearing `ms` milliseconds into the video: what `canvas` shows when
-    /// `changed`, otherwise a repeat of the frame before.
+    /**
+     * Adds the frame appearing `ms` milliseconds into the video: what `canvas` shows when
+     * `changed`, otherwise a repeat of the frame before.
+     */
     async addFrame(canvas, ms, changed) {
         this.check();
         if (!changed && this.codec.repeats && this.frames.length > 0) {
@@ -99,7 +105,7 @@ class VideoWriter {
         this.frames.push({ ms, repeat: false });
     }
 
-    /// Finishes a video lasting `durationMs` milliseconds and returns it as a file.
+    /** Finishes a video lasting `durationMs` milliseconds and returns it as a file. */
     async finish(durationMs) {
         await this.encoder.flush();
         this.encoder.close();
@@ -109,9 +115,11 @@ class VideoWriter {
         });
     }
 
-    /// Returns the data of every frame in order. A repeat shows again the reference slot
-    /// holding the picture shown last; a frame the encoder dropped, or a repeat with no slot
-    /// holding that picture, is left out, so the picture before stays a little longer.
+    /**
+     * Returns the data of every frame in order. A repeat shows again the reference slot
+     * holding the picture shown last; a frame the encoder dropped, or a repeat with no slot
+     * holding that picture, is left out, so the picture before stays a little longer.
+     */
     chunks() {
         const chunks = [];
         const slots = new Vp9Slots();
@@ -134,7 +142,7 @@ class VideoWriter {
         return chunks;
     }
 
-    /// Throws the error the encoder ran into, if any.
+    /** Throws the error the encoder ran into, if any. */
     check() {
         if (this.error) {
             throw this.error;
@@ -142,16 +150,18 @@ class VideoWriter {
     }
 }
 
-/// Follows which of the eight VP9 reference slots hold the picture shown last, by reading the
-/// headers of the encoded frames.
+/**
+ * Follows which of the eight VP9 reference slots hold the picture shown last, by reading the
+ * headers of the encoded frames.
+ */
 class Vp9Slots {
     constructor() {
-        /// Bit mask of the slots holding the picture shown last.
+        /** Bit mask of the slots holding the picture shown last. */
         this.shown = 0;
         this.profile = 0;
     }
 
-    /// Reads the frames of one encoded chunk, which may hold several in a superframe.
+    /** Reads the frames of one encoded chunk, which may hold several in a superframe. */
     decode(data) {
         for (const frame of superframeParts(data)) {
             const header = readHeader(frame);
@@ -170,7 +180,7 @@ class Vp9Slots {
         }
     }
 
-    /// Returns a frame showing the picture shown last again, or null when no slot holds it.
+    /** Returns a frame showing the picture shown last again, or null when no slot holds it. */
     showLast() {
         if (this.shown === 0 || this.profile > 2) {
             return null;
@@ -182,7 +192,7 @@ class Vp9Slots {
     }
 }
 
-/// Returns the frames of a VP9 chunk, split along its superframe index if it has one.
+/** Returns the frames of a VP9 chunk, split along its superframe index if it has one. */
 function superframeParts(data) {
     const marker = data[data.length - 1];
     if ((marker & 0xe0) !== 0xc0) {
@@ -208,9 +218,11 @@ function superframeParts(data) {
     return parts;
 }
 
-/// Reads what a VP9 frame header says about the reference slots: whether the frame is shown
-/// and which slots it refreshes, or which slot it shows again. Returns null for a header it
-/// cannot read.
+/**
+ * Reads what a VP9 frame header says about the reference slots: whether the frame is shown
+ * and which slots it refreshes, or which slot it shows again. Returns null for a header it
+ * cannot read.
+ */
 function readHeader(frame) {
     let bit = 0;
     const read = (count) => {
@@ -258,24 +270,57 @@ function readHeader(frame) {
     }
 }
 
-// Matroska element ids.
-const EBML = 0x1a45dfa3;
-const SEGMENT = 0x18538067;
-const SEEK_HEAD = 0x114d9b74;
-const SEEK = 0x4dbb;
-const INFO = 0x1549a966;
-const TRACKS = 0x1654ae6b;
-const TRACK_ENTRY = 0xae;
-const VIDEO = 0xe0;
-const CUES = 0x1c53bb6b;
-const CUE_POINT = 0xbb;
-const CUE_TRACK_POSITIONS = 0xb7;
-const CLUSTER = 0x1f43b675;
-const SIMPLE_BLOCK = 0xa3;
+/** Matroska element ids. */
+const ID = Object.freeze({
+    EBML: 0x1a45dfa3,
+    EBML_VERSION: 0x4286,
+    EBML_READ_VERSION: 0x42f7,
+    EBML_MAX_ID_LENGTH: 0x42f2,
+    EBML_MAX_SIZE_LENGTH: 0x42f3,
+    DOC_TYPE: 0x4282,
+    DOC_TYPE_VERSION: 0x4287,
+    DOC_TYPE_READ_VERSION: 0x4285,
+    SEGMENT: 0x18538067,
+    SEEK_HEAD: 0x114d9b74,
+    SEEK: 0x4dbb,
+    SEEK_ID: 0x53ab,
+    SEEK_POSITION: 0x53ac,
+    INFO: 0x1549a966,
+    TIMESTAMP_SCALE: 0x2ad7b1,
+    MUXING_APP: 0x4d80,
+    WRITING_APP: 0x5741,
+    DURATION: 0x4489,
+    TRACKS: 0x1654ae6b,
+    TRACK_ENTRY: 0xae,
+    TRACK_NUMBER: 0xd7,
+    TRACK_UID: 0x73c5,
+    TRACK_TYPE: 0x83,
+    CODEC_ID: 0x86,
+    VIDEO: 0xe0,
+    PIXEL_WIDTH: 0xb0,
+    PIXEL_HEIGHT: 0xba,
+    CUES: 0x1c53bb6b,
+    CUE_POINT: 0xbb,
+    CUE_TIME: 0xb3,
+    CUE_TRACK_POSITIONS: 0xb7,
+    CUE_TRACK: 0xf7,
+    CUE_CLUSTER_POSITION: 0xf1,
+    CLUSTER: 0x1f43b675,
+    CLUSTER_TIMESTAMP: 0xe7,
+    SIMPLE_BLOCK: 0xa3,
+});
 
-/// Builds the WebM file of `chunks`: the header, an index of where the top-level elements
-/// start, the index of keyframes, then the frames grouped in clusters. A cluster starts at
-/// every keyframe, which the index points to, and wherever the one before grew too long.
+/** The only track of the video. */
+const TRACK = 1;
+
+/** Matroska track type of a video track. */
+const VIDEO_TRACK_TYPE = 1;
+
+/**
+ * Builds the WebM file of `chunks`: the header, an index of where the top-level elements
+ * start, the index of keyframes, then the frames grouped in clusters. A cluster starts at
+ * every keyframe, which the index points to, and wherever the one before grew too long.
+ */
 function muxWebm(chunks, config, codecId, durationMs) {
     const clusters = [];
     for (const chunk of chunks) {
@@ -288,24 +333,24 @@ function muxWebm(chunks, config, codecId, durationMs) {
     }
     const cued = clusters.filter((cluster) => cluster.key);
     const clusterBytes = clusters.map((cluster) =>
-        element(CLUSTER, [uintElement(0xe7, cluster.ms), ...cluster.blocks]),
+        element(ID.CLUSTER, [uintElement(ID.CLUSTER_TIMESTAMP, cluster.ms), ...cluster.blocks]),
     );
 
-    const info = element(INFO, [
-        uintElement(0x2ad7b1, 1_000_000), // Timestamps count milliseconds.
-        stringElement(0x4d80, "ffchess"),
-        stringElement(0x5741, "ffchess"),
-        floatElement(0x4489, durationMs),
+    const info = element(ID.INFO, [
+        uintElement(ID.TIMESTAMP_SCALE, 1_000_000), // Timestamps count milliseconds.
+        stringElement(ID.MUXING_APP, "ffchess"),
+        stringElement(ID.WRITING_APP, "ffchess"),
+        floatElement(ID.DURATION, durationMs),
     ]);
-    const tracks = element(TRACKS, [
-        element(TRACK_ENTRY, [
-            uintElement(0xd7, 1), // Track number.
-            uintElement(0x73c5, 1), // Track uid.
-            uintElement(0x83, 1), // Video track.
-            stringElement(0x86, codecId),
-            element(VIDEO, [
-                uintElement(0xb0, config.width),
-                uintElement(0xba, config.height),
+    const tracks = element(ID.TRACKS, [
+        element(ID.TRACK_ENTRY, [
+            uintElement(ID.TRACK_NUMBER, TRACK),
+            uintElement(ID.TRACK_UID, TRACK),
+            uintElement(ID.TRACK_TYPE, VIDEO_TRACK_TYPE),
+            stringElement(ID.CODEC_ID, codecId),
+            element(ID.VIDEO, [
+                uintElement(ID.PIXEL_WIDTH, config.width),
+                uintElement(ID.PIXEL_HEIGHT, config.height),
             ]),
         ]),
     ]);
@@ -314,24 +359,24 @@ function muxWebm(chunks, config, codecId, durationMs) {
     // size whatever they hold, and every offset can be worked out before they are written.
     const cuesFor = (positions) =>
         element(
-            CUES,
+            ID.CUES,
             cued.map((cluster) =>
-                element(CUE_POINT, [
-                    uintElement(0xb3, cluster.ms, 8),
-                    element(CUE_TRACK_POSITIONS, [
-                        uintElement(0xf7, 1),
-                        uintElement(0xf1, positions.get(cluster) ?? 0, 8),
+                element(ID.CUE_POINT, [
+                    uintElement(ID.CUE_TIME, cluster.ms, 8),
+                    element(ID.CUE_TRACK_POSITIONS, [
+                        uintElement(ID.CUE_TRACK, TRACK),
+                        uintElement(ID.CUE_CLUSTER_POSITION, positions.get(cluster) ?? 0, 8),
                     ]),
                 ]),
             ),
         );
     const seekHeadFor = (positions) =>
         element(
-            SEEK_HEAD,
-            [INFO, TRACKS, CUES].map((id, index) =>
-                element(SEEK, [
-                    element(0x53ab, [idBytes(id)]),
-                    uintElement(0x53ac, positions[index], 8),
+            ID.SEEK_HEAD,
+            [ID.INFO, ID.TRACKS, ID.CUES].map((id, index) =>
+                element(ID.SEEK, [
+                    element(ID.SEEK_ID, [idBytes(id)]),
+                    uintElement(ID.SEEK_POSITION, positions[index], 8),
                 ]),
             ),
         );
@@ -347,18 +392,18 @@ function muxWebm(chunks, config, codecId, durationMs) {
     const cues = cuesFor(positions);
     const seekHead = seekHeadFor([seekHeadSize, seekHeadSize + info.length, cuesAt]);
 
-    const ebmlHeader = element(EBML, [
-        uintElement(0x4286, 1),
-        uintElement(0x42f7, 1),
-        uintElement(0x42f2, 4),
-        uintElement(0x42f3, 8),
-        stringElement(0x4282, "webm"),
-        uintElement(0x4287, 4),
-        uintElement(0x4285, 2),
+    const ebmlHeader = element(ID.EBML, [
+        uintElement(ID.EBML_VERSION, 1),
+        uintElement(ID.EBML_READ_VERSION, 1),
+        uintElement(ID.EBML_MAX_ID_LENGTH, 4),
+        uintElement(ID.EBML_MAX_SIZE_LENGTH, 8),
+        stringElement(ID.DOC_TYPE, "webm"),
+        uintElement(ID.DOC_TYPE_VERSION, 4),
+        uintElement(ID.DOC_TYPE_READ_VERSION, 2),
     ]);
     return [
         ebmlHeader,
-        elementHeader(SEGMENT, offset),
+        elementHeader(ID.SEGMENT, offset),
         seekHead,
         info,
         tracks,
@@ -367,27 +412,27 @@ function muxWebm(chunks, config, codecId, durationMs) {
     ];
 }
 
-/// Returns the block of one frame of track 1, `relativeMs` into its cluster.
+/** Returns the block of one frame of the track, `relativeMs` into its cluster. */
 function simpleBlock(chunk, relativeMs) {
     const header = new Uint8Array(4);
-    header[0] = 0x81; // Track 1.
+    header[0] = 0x80 | TRACK; // The track number as a one-byte variable-length integer.
     new DataView(header.buffer).setInt16(1, relativeMs);
     header[3] = chunk.key ? 0x80 : 0;
-    return element(SIMPLE_BLOCK, [header, chunk.data]);
+    return element(ID.SIMPLE_BLOCK, [header, chunk.data]);
 }
 
-/// Returns an element holding the concatenation of `children`.
+/** Returns an element holding the concatenation of `children`. */
 function element(id, children) {
     const size = children.reduce((sum, child) => sum + child.length, 0);
     return concat([elementHeader(id, size), ...children]);
 }
 
-/// Returns the id and size of an element holding `size` bytes.
+/** Returns the id and size of an element holding `size` bytes. */
 function elementHeader(id, size) {
     return concat([idBytes(id), sizeBytes(size)]);
 }
 
-/// Returns an element holding an unsigned integer, in `width` bytes or as few as it needs.
+/** Returns an element holding an unsigned integer, in `width` bytes or as few as it needs. */
 function uintElement(id, value, width) {
     const bytes = [];
     let rest = BigInt(value);
@@ -401,19 +446,19 @@ function uintElement(id, value, width) {
     return element(id, [Uint8Array.from(bytes)]);
 }
 
-/// Returns an element holding a 64-bit float.
+/** Returns an element holding a 64-bit float. */
 function floatElement(id, value) {
     const bytes = new Uint8Array(8);
     new DataView(bytes.buffer).setFloat64(0, value);
     return element(id, [bytes]);
 }
 
-/// Returns an element holding an ASCII string.
+/** Returns an element holding an ASCII string. */
 function stringElement(id, value) {
     return element(id, [new TextEncoder().encode(value)]);
 }
 
-/// Returns the bytes of an element id, which carries its own length marker.
+/** Returns the bytes of an element id, which carries its own length marker. */
 function idBytes(id) {
     const bytes = [];
     for (let rest = id; rest > 0; rest = Math.floor(rest / 256)) {
@@ -422,8 +467,10 @@ function idBytes(id) {
     return Uint8Array.from(bytes);
 }
 
-/// Returns `size` as a variable-length integer, as short as it fits in. A length whose bits are
-/// all set means an unknown size, so it is never used for a known one.
+/**
+ * Returns `size` as a variable-length integer, as short as it fits in. A length whose bits are
+ * all set means an unknown size, so it is never used for a known one.
+ */
 function sizeBytes(size) {
     let length = 1;
     while (BigInt(size) >= (1n << BigInt(7 * length)) - 1n) {
@@ -439,7 +486,7 @@ function sizeBytes(size) {
     return bytes;
 }
 
-/// Joins byte arrays.
+/** Joins byte arrays. */
 function concat(parts) {
     const out = new Uint8Array(parts.reduce((sum, part) => sum + part.length, 0));
     let offset = 0;

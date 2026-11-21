@@ -3,7 +3,8 @@
 
 use common::types::{ModeId, ReplayId};
 use uuid::Uuid;
-use web_sys::{Url, Window};
+use wasm_bindgen::JsValue;
+use web_sys::Url;
 
 /// Query parameter naming the replay to open.
 const REPLAY_PARAM: &str = "replay";
@@ -34,23 +35,18 @@ impl ReplayLink {
             return;
         };
         url.search_params().delete(REPLAY_PARAM);
-        let _ = window().and_then(|window| {
+        let _ = web_sys::window().and_then(|window| {
             window
                 .history()
                 .ok()?
-                .replace_state_with_url(&wasm_bindgen::JsValue::NULL, "", Some(&url.href()))
+                .replace_state_with_url(&JsValue::NULL, "", Some(&url.href()))
                 .ok()
         });
     }
 }
 
-/// Returns the browser window.
-fn window() -> Option<Window> {
-    web_sys::window()
-}
-
 /// Returns the address of the page.
 fn page_url() -> Option<Url> {
-    let href = window()?.location().href().ok()?;
+    let href = web_sys::window()?.location().href().ok()?;
     Url::new(&href).ok()
 }

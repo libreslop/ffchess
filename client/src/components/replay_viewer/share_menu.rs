@@ -1,11 +1,10 @@
 //! Share button of the replay panel and its menu: copy a link to the replay, download it, or
 //! render it to a video.
 
-use super::player::SharedReplay;
+use super::loaded::SharedReplay;
 use super::video::{VideoRender, VideoSettings};
 use crate::app::ReplayLink;
 use crate::utils::download;
-use common::types::{ModeId, ReplayId};
 use gloo_events::EventListener;
 use wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen_futures::{JsFuture, spawn_local};
@@ -37,16 +36,19 @@ impl ShareNotice {
     }
 }
 
-/// Properties for the share button.
-#[derive(Properties, PartialEq)]
-pub(super) struct ShareMenuProps {
-    pub(super) replay_id: ReplayId,
-    /// Mode the replay was played in, whose menu the link opens it over.
-    pub(super) mode_id: ModeId,
+/// The replay the share actions work on, and how a video of it is drawn.
+#[derive(Clone, PartialEq)]
+pub(super) struct ShareTarget {
     pub(super) replay: SharedReplay,
     /// Whether the board is shown upside down, as the video shows it too.
     pub(super) rotated_180: bool,
     pub(super) video: VideoSettings,
+}
+
+/// Properties for the share button.
+#[derive(Properties, PartialEq)]
+pub(super) struct ShareMenuProps {
+    pub(super) target: ShareTarget,
     /// Shows a notice in place of the title; `None` brings the title back.
     pub(super) on_notice: Callback<Option<ShareNotice>>,
 }
@@ -96,14 +98,16 @@ pub(super) fn share_menu(props: &ShareMenuProps) -> Html {
     let on_action = |action: ShareAction| {
         let open = open.clone();
         let rendering = rendering.clone();
-        let target = ShareTarget::of(props);
+        let target = props.target.clone();
+        let on_notice = props.on_notice.clone();
         Callback::from(move |_: MouseEvent| {
             open.set(false);
-            let target = target.clone();
             match action {
-                ShareAction::CopyLink => target.copy_link(),
+                ShareAction::CopyLink => target.copy_link(on_notice.clone()),
                 ShareAction::Download => target.download(),
-                ShareAction::RenderVideo if !*rendering => target.render_video(rendering.clone()),
+                ShareAction::RenderVideo if !*rendering => {
+                    target.render_video(on_notice.clone(), rendering.clone());
+                }
                 ShareAction::RenderVideo => {}
             }
         })
@@ -147,7 +151,9 @@ fn use_close_on_outside_press(menu_ref: &NodeRef, open: UseStateHandle<bool>) {
         let menu_ref = menu_ref.clone();
         let listener = is_open.then(|| {
             EventListener::new(&gloo_utils::document(), "pointerdown", move |event| {
-                let target = event.target().and_then(|target| target.dyn_into::<Node>().ok());
+                let target = event
+                    .target()
+                    .and_then(|target| target.dyn_into::<Node>().ok());
                 let inside = menu_ref
                     .get()
                     .is_some_and(|menu| menu.contains(target.as_ref()));
@@ -160,70 +166,49 @@ fn use_close_on_outside_press(menu_ref: &NodeRef, open: UseStateHandle<bool>) {
     });
 }
 
-/// The replay the share actions work on.
-#[derive(Clone)]
-struct ShareTarget {
-    replay_id: ReplayId,
-    mode_id: ModeId,
-    replay: SharedReplay,
-    rotated_180: bool,
-    video: VideoSettings,
-    on_notice: Callback<Option<ShareNotice>>,
-}
-
 impl ShareTarget {
-    /// Takes the replay the share button is for.
-    fn of(props: &ShareMenuProps) -> Self {
-        Self {
-            replay_id: props.replay_id,
-            mode_id: props.mode_id.clone(),
-            replay: props.replay.clone(),
-            rotated_180: props.rotated_180,
-            video: props.video,
-            on_notice: props.on_notice.clone(),
-        }
-    }
-
-    /// Returns the name of the replay's files, before their extension.
-    fn file_stem(&self) -> String {
-        format!("{}-{}", self.mode_id.as_ref(), self.replay_id)
-    }
-
-    /// Copies the link that opens the replay.
-    fn copy_link(self) {
-        let Some(link) = ReplayLink::share_url(self.replay_id, &self.mode_id) else {
+    /// Copies the link that opens the replay, telling `on_notice` once it is copied.
+    fn copy_link(&self, on_notice: Callback<Option<ShareNotice>>) {
+        let replay = &self.replay.0;
+        let Some(link) = ReplayLink::share_url(replay.id, &replay.header.mode.id) else {
             return;
         };
         spawn_local(async move {
             if copy_to_clipboard(&link).await {
-                self.on_notice.emit(Some(ShareNotice::Copied));
+                on_notice.emit(Some(ShareNotice::Copied));
             }
         });
     }
 
     /// Downloads the replay as the server sent it.
-    fn download(self) {
+    fn download(&self) {
+        let replay = &self.replay.0;
         let options = BlobPropertyBag::new();
         options.set_type("application/json");
-        let parts = js_sys::Array::of1(&JsValue::from_str(&self.replay.0.source));
+        let parts = js_sys::Array::of1(&JsValue::from_str(&replay.source));
         if let Ok(blob) = Blob::new_with_str_sequence_and_options(&parts, &options) {
-            download(&blob, &format!("{}.ffr.json", self.file_stem()));
+            download(&blob, &format!("{}.ffr.json", replay.file_stem()));
         }
     }
 
-    /// Renders the replay to a video and downloads it, with `rendering` set meanwhile.
-    fn render_video(self, rendering: UseStateHandle<bool>) {
+    /// Renders the replay to a video and downloads it, showing its progress through
+    /// `on_notice`, with `rendering` set meanwhile.
+    fn render_video(
+        &self,
+        on_notice: Callback<Option<ShareNotice>>,
+        rendering: UseStateHandle<bool>,
+    ) {
+        let replay = self.replay.0.clone();
+        let render = VideoRender::new(replay.clone(), self.rotated_180, self.video);
         rendering.set(true);
         spawn_local(async move {
-            let on_notice = self.on_notice.clone();
             on_notice.emit(Some(ShareNotice::Rendering(0)));
-            let render = VideoRender::new(self.replay.0.clone(), self.rotated_180, self.video);
             let video = render
                 .run(|percent| on_notice.emit(Some(ShareNotice::Rendering(percent))))
                 .await;
             match video {
                 Ok(video) => {
-                    download(&video, &format!("{}.webm", self.file_stem()));
+                    download(&video, &format!("{}.webm", replay.file_stem()));
                     on_notice.emit(None);
                 }
                 Err(error) => {

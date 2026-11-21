@@ -1,9 +1,6 @@
 //! Title bar of the replay panel, with the buttons that flip the board and share the replay.
 
-use super::player::SharedReplay;
-use super::share_menu::{ShareMenu, ShareNotice};
-use super::video::VideoSettings;
-use common::types::{ModeId, ReplayId};
+use super::share_menu::{ShareMenu, ShareNotice, ShareTarget};
 use gloo_timers::callback::Timeout;
 use yew::prelude::*;
 
@@ -15,13 +12,7 @@ const NOTICE_MS: u32 = 1500;
 /// Properties for the replay title bar.
 #[derive(Properties, PartialEq)]
 pub(super) struct ReplayTitleBarProps {
-    pub(super) replay_id: ReplayId,
-    /// Mode the replay was played in, whose menu the share link opens it over.
-    pub(super) mode_id: ModeId,
-    pub(super) replay: SharedReplay,
-    /// Whether the board is shown upside down.
-    pub(super) rotated_180: bool,
-    pub(super) video: VideoSettings,
+    pub(super) share: ShareTarget,
     pub(super) on_flip: Callback<()>,
 }
 
@@ -56,14 +47,7 @@ pub(super) fn replay_title_bar(props: &ReplayTitleBarProps) -> Html {
             >
                 <span class="replay-icon replay-icon-flip"></span>
             </button>
-            <ShareMenu
-                replay_id={props.replay_id}
-                mode_id={props.mode_id.clone()}
-                replay={props.replay.clone()}
-                rotated_180={props.rotated_180}
-                video={props.video}
-                on_notice={on_notice}
-            />
+            <ShareMenu target={props.share.clone()} on_notice={on_notice} />
         </div>
     }
 }

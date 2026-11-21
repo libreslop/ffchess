@@ -3,24 +3,16 @@
 use super::move_blurs::MoveBlurs;
 use super::shop_context::ActiveShop;
 use super::trail_flashes::TrailFlashes;
-use crate::canvas::{BoardWipes, DraggedPiece, RenderParams, Renderer, WipeTiming};
+use crate::canvas::{BoardSwitchTiming, BoardSwitches, DraggedPiece, RenderParams, Renderer};
 use crate::math::Vec2;
 use crate::premoves::Projection;
 use crate::reducer::GameStateReducer;
 use crate::utils::performance_now;
-use common::types::{ModeId, PieceId};
+use common::types::PieceId;
 use std::cell::RefCell;
 use std::rc::Rc;
 use yew::hook;
 use yew::prelude::*;
-
-/// Board switches of a view: the game mode of the board it last drew, and the switches away
-/// from the boards of other modes while they run.
-#[derive(Default)]
-pub(super) struct BoardSwitch {
-    shown_mode: Option<ModeId>,
-    wipes: BoardWipes,
-}
 
 /// Everything one frame of the board needs.
 pub(super) struct BoardFrame {
@@ -36,8 +28,8 @@ pub(super) struct BoardFrame {
     pub(super) zoom: f64,
     pub(super) canvas_size: Vec2,
     pub(super) tile_size_px: f64,
-    pub(super) switch: Rc<RefCell<BoardSwitch>>,
-    pub(super) wipe_timing: WipeTiming,
+    pub(super) board_switches: Rc<RefCell<BoardSwitches>>,
+    pub(super) board_switch_timing: BoardSwitchTiming,
 }
 
 /// Starts speed lines whenever the authoritative pieces move.
@@ -86,21 +78,14 @@ pub(super) fn use_board_render(frame: BoardFrame) {
 
 impl BoardFrame {
     /// Draws this frame with `renderer`, covered by the board switches while they run.
-    ///
-    /// A switch starts whenever the board shown belongs to another game mode than the board
-    /// on the last frame; the first board a view shows, and boards of the same mode, such as
-    /// a match and the menu of its mode, appear without one.
     fn draw(&self, renderer: &Renderer) {
         let now = performance_now();
-        let mut switch = self.switch.borrow_mut();
+        let mut switches = self.board_switches.borrow_mut();
         if let Some(mode) = &self.reducer.mode {
-            let previous = switch.shown_mode.replace(mode.id.clone());
-            if previous.is_some_and(|previous| previous != mode.id) {
-                switch.wipes.start(renderer, now);
-            }
+            switches.show_mode(&mode.id, renderer, now);
         }
         self.draw_board(renderer, now);
-        switch.wipes.cover(renderer, self.wipe_timing, now);
+        switches.cover(renderer, self.board_switch_timing, now);
     }
 
     /// Draws the board as it stands at `now`.

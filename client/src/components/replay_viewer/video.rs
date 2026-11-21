@@ -6,7 +6,8 @@
 //! themselves. The browser encodes the frames, and the script muxing them into a WebM file is
 //! only loaded once a video is first rendered.
 
-use super::player::LoadedReplay;
+use super::loaded::LoadedReplay;
+use super::timeline::ReplayTimeline;
 use crate::app::GlobalClientConfig;
 use crate::camera::board_center;
 use crate::canvas::{RenderParams, Renderer};
@@ -22,10 +23,10 @@ use wasm_bindgen_futures::JsFuture;
 use web_sys::{Blob, HtmlCanvasElement};
 
 /// Side of the video the largest board is fitted into, in pixels.
-const VIDEO_SIDE_PX: i32 = 1080;
+const VIDEO_SIDE_PX: u32 = 1080;
 /// Squares of room left around the board, half on each side, so names over the kings on its
 /// edge stay in the picture.
-const MARGIN_SQUARES: i32 = 1;
+const MARGIN_SQUARES: u32 = 1;
 /// How long to wait for piece sprites to load before drawing a frame again, in milliseconds.
 const SPRITE_WAIT_MS: u32 = 50;
 /// How many times a frame waits for its sprites before it is drawn without them.
@@ -60,6 +61,32 @@ extern "C" {
     fn finish(this: &VideoWriter, duration_ms: f64) -> Promise;
 }
 
+impl VideoWriter {
+    /// Starts a video of the size of `layout`.
+    async fn start(layout: VideoLayout) -> Result<Self, JsValue> {
+        let writer = JsFuture::from(create_video_writer(layout.side_px, layout.side_px)).await?;
+        Ok(writer.unchecked_into())
+    }
+
+    /// Adds the frame appearing `elapsed` into the video: what `canvas` shows when `changed`,
+    /// otherwise a repeat of the frame before.
+    async fn write_frame(
+        &self,
+        canvas: &HtmlCanvasElement,
+        elapsed: DurationMs,
+        changed: bool,
+    ) -> Result<(), JsValue> {
+        JsFuture::from(self.add_frame(canvas, elapsed.as_i64() as f64, changed)).await?;
+        Ok(())
+    }
+
+    /// Finishes a video lasting `duration` and returns its file.
+    async fn into_file(self, duration: DurationMs) -> Result<Blob, JsValue> {
+        let file = JsFuture::from(self.finish(duration.as_i64() as f64)).await?;
+        Ok(file.unchecked_into())
+    }
+}
+
 /// How videos are drawn, from the client config.
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub(super) struct VideoSettings {
@@ -67,7 +94,7 @@ pub(super) struct VideoSettings {
     /// the squares.
     tile_size_px: f64,
     /// Time between frames: one server tick, the finest step the board changes in.
-    frame_ms: i64,
+    frame: DurationMs,
     /// How much of the board before the match starts the video opens with.
     lead: DurationMs,
     /// How much of the board after the match ends the video closes with.
@@ -78,7 +105,7 @@ impl From<&GlobalClientConfig> for VideoSettings {
     fn from(globals: &GlobalClientConfig) -> Self {
         Self {
             tile_size_px: globals.tile_size_px,
-            frame_ms: i64::from(globals.tick_interval_ms.max(1)),
+            frame: DurationMs::from_millis(i64::from(globals.tick_interval_ms.max(1))),
             lead: DurationMs::from_millis(i64::from(globals.replay_video_lead_ms)),
             tail: DurationMs::from_millis(i64::from(globals.replay_video_tail_ms)),
         }
@@ -90,22 +117,112 @@ impl From<&GlobalClientConfig> for VideoSettings {
 struct VideoLayout {
     /// Side of the square video, in pixels: a whole, even number of pixels per square of the
     /// largest board and its margin, as encoders need even sides.
-    side: i32,
+    side_px: u32,
 }
 
 impl VideoLayout {
     /// Fits a board of `board_size` and its margin into the video.
     fn fitting(board_size: BoardSize) -> Self {
         let squares = Self::squares_across(board_size);
-        let tile = (VIDEO_SIDE_PX / squares).max(2) & !1;
+        let tile_px = (VIDEO_SIDE_PX / squares).max(2) & !1;
         Self {
-            side: tile * squares,
+            side_px: tile_px * squares,
         }
     }
 
+    /// Returns the zoom that fits a board of `board_size` and its margin into the video, when
+    /// a square spans `tile_size_px` at zoom 1.
+    fn zoom_for(self, board_size: BoardSize, tile_size_px: f64) -> f64 {
+        f64::from(self.side_px) / (f64::from(Self::squares_across(board_size)) * tile_size_px)
+    }
+
     /// Returns how many squares a board of `board_size` and its margin span.
-    fn squares_across(board_size: BoardSize) -> i32 {
-        board_size.as_i32().max(1) + MARGIN_SQUARES
+    fn squares_across(board_size: BoardSize) -> u32 {
+        board_size.as_i32().max(1).unsigned_abs() + MARGIN_SQUARES
+    }
+
+    /// Returns a canvas of the size of the video.
+    fn canvas(self) -> Result<HtmlCanvasElement, JsValue> {
+        let canvas: HtmlCanvasElement = gloo_utils::document()
+            .create_element("canvas")?
+            .unchecked_into();
+        canvas.set_width(self.side_px);
+        canvas.set_height(self.side_px);
+        Ok(canvas)
+    }
+}
+
+/// When the frames of a video appear: one every frame interval, from a little before the
+/// match starts to a little after it ends.
+struct FrameSchedule {
+    /// Server time the first frame shows.
+    first: TimestampMs,
+    duration: DurationMs,
+    frame: DurationMs,
+}
+
+impl FrameSchedule {
+    /// Schedules the frames of a video of `timeline`.
+    fn new(timeline: &ReplayTimeline, settings: VideoSettings) -> Self {
+        let first = timeline.start() - settings.lead;
+        Self {
+            first,
+            duration: timeline.end() + settings.tail - first,
+            frame: settings.frame,
+        }
+    }
+
+    /// Returns the number of the last frame, which shows the very end of the video.
+    fn last_frame(&self) -> i64 {
+        let (duration, frame) = (self.duration.as_i64(), self.frame.as_i64());
+        (duration + frame - 1) / frame
+    }
+
+    /// Returns how far into the video each frame appears.
+    fn frames(&self) -> impl Iterator<Item = DurationMs> {
+        let (duration, frame) = (self.duration.as_i64(), self.frame.as_i64());
+        (0..=self.last_frame())
+            .map(move |number| DurationMs::from_millis((number * frame).min(duration)))
+    }
+}
+
+/// A board drawn on the video: its index on the timeline, and the moment drawn.
+#[derive(Clone, Copy)]
+struct DrawnBoard {
+    index: usize,
+    at: TimestampMs,
+}
+
+impl DrawnBoard {
+    /// Returns true when the board with `index` at `at` looks just like this one.
+    fn looks_like(self, timeline: &ReplayTimeline, index: usize, at: TimestampMs) -> bool {
+        self.index == index && !Renderer::cooldown_rings_change(timeline.board(index), self.at, at)
+    }
+}
+
+/// Tells a callback the whole percentage of frames done, whenever it grows.
+struct Progress<F> {
+    on_progress: F,
+    last_frame: i64,
+    reported: Option<u32>,
+}
+
+impl<F: Fn(u32)> Progress<F> {
+    /// Reports frames of a video whose last frame is `last_frame` to `on_progress`.
+    fn new(last_frame: i64, on_progress: F) -> Self {
+        Self {
+            on_progress,
+            last_frame: last_frame.max(1),
+            reported: None,
+        }
+    }
+
+    /// Notes that the frame `number` is done.
+    fn reach(&mut self, number: i64) {
+        let percent = (number * 100 / self.last_frame) as u32;
+        if self.reported.replace(percent) != Some(percent) {
+            (self.on_progress)(percent);
+        }
     }
 }
 
@@ -118,7 +235,11 @@ pub(super) struct VideoRender {
 
 impl VideoRender {
     /// Prepares the video of `replay`, upside down when `rotated_180`.
-    pub(super) fn new(replay: Rc<LoadedReplay>, rotated_180: bool, settings: VideoSettings) -> Self {
+    pub(super) fn new(
+        replay: Rc<LoadedReplay>,
+        rotated_180: bool,
+        settings: VideoSettings,
+    ) -> Self {
         Self {
             replay,
             rotated_180,
@@ -134,52 +255,38 @@ impl VideoRender {
     /// costs the file a few bytes.
     pub(super) async fn run(self, on_progress: impl Fn(u32)) -> Result<Blob, JsValue> {
         let timeline = &self.replay.timeline;
-        let largest = timeline
+        let layout = VideoLayout::fitting(self.largest_board());
+        let canvas = layout.canvas()?;
+        let renderer = Renderer::new(canvas.clone(), Rc::new(self.replay.header.catalog.clone()))
+            .ok_or("Canvas unavailable")?;
+        let writer = VideoWriter::start(layout).await?;
+        let schedule = FrameSchedule::new(timeline, self.settings);
+        let mut progress = Progress::new(schedule.last_frame(), on_progress);
+        let mut drawn: Option<DrawnBoard> = None;
+        for (number, elapsed) in (0..).zip(schedule.frames()) {
+            let at = schedule.first + elapsed;
+            let index = timeline.index_at(at);
+            let changed = drawn.is_none_or(|drawn| !drawn.looks_like(timeline, index, at));
+            if changed {
+                let state = timeline.board(index);
+                self.draw_when_ready(&renderer, state, at, layout).await;
+                drawn = Some(DrawnBoard { index, at });
+            }
+            writer.write_frame(&canvas, elapsed, changed).await?;
+            progress.reach(number);
+        }
+        writer.into_file(schedule.duration).await
+    }
+
+    /// Returns the size of the largest board of the replay.
+    fn largest_board(&self) -> BoardSize {
+        self.replay
+            .timeline
             .keyframes_from_start()
             .iter()
             .map(|keyframe| keyframe.state.board_size)
             .max()
-            .unwrap_or_default();
-        let layout = VideoLayout::fitting(largest);
-        let canvas: HtmlCanvasElement = gloo_utils::document()
-            .create_element("canvas")?
-            .unchecked_into();
-        canvas.set_width(layout.side as u32);
-        canvas.set_height(layout.side as u32);
-        let renderer = Renderer::new(canvas.clone(), Rc::new(self.replay.header.catalog.clone()))
-            .ok_or("Canvas unavailable")?;
-        let writer: VideoWriter =
-            JsFuture::from(create_video_writer(layout.side as u32, layout.side as u32))
-                .await?
-                .unchecked_into();
-
-        // The video runs from a little before the match starts to a little after it ends.
-        let first = timeline.start() - self.settings.lead;
-        let duration = (timeline.end() + self.settings.tail - first).as_i64();
-        let frame_ms = self.settings.frame_ms;
-        let last_frame = (duration + frame_ms - 1) / frame_ms;
-        let mut shown: Option<(usize, TimestampMs)> = None;
-        let mut percent = None;
-        for frame in 0..=last_frame {
-            let elapsed = DurationMs::from_millis((frame * frame_ms).min(duration));
-            let at = first + elapsed;
-            let index = timeline.index_at(at);
-            let state = timeline.board(index);
-            let changed = shown.is_none_or(|(shown_index, shown_at)| {
-                shown_index != index || rings_change(state, shown_at, at)
-            });
-            if changed {
-                self.draw_when_ready(&renderer, state, at, layout).await;
-            }
-            JsFuture::from(writer.add_frame(&canvas, millis(elapsed), changed)).await?;
-            shown = Some((index, at));
-            let done = (frame * 100 / last_frame.max(1)) as u32;
-            if percent.replace(done) != Some(done) {
-                on_progress(done);
-            }
-        }
-        let video = JsFuture::from(writer.finish(duration as f64)).await?;
-        Ok(video.unchecked_into())
+            .unwrap_or_default()
     }
 
     /// Draws `state` at `at`, again until its piece sprites have loaded or the wait runs out.
@@ -203,9 +310,8 @@ impl VideoRender {
     /// Draws `state` at `at` fitted to the video, as a spectator sees it, with every player's
     /// cooldowns.
     fn draw(&self, renderer: &Renderer, state: &GameState, at: TimestampMs, layout: VideoLayout) {
-        let squares = VideoLayout::squares_across(state.board_size);
         let tile_size_px = self.settings.tile_size_px;
-        let zoom = layout.side as f64 / (squares as f64 * tile_size_px);
+        let zoom = layout.zoom_for(state.board_size, tile_size_px);
         renderer.draw(RenderParams {
             state,
             player_id: PlayerId::nil(),
@@ -215,7 +321,7 @@ impl VideoRender {
             failed_trails: &[],
             move_blurs: &[],
             camera_pos: board_center(state.board_size) * tile_size_px * zoom,
-            canvas_size: Vec2::splat(layout.side as f64),
+            canvas_size: Vec2::splat(f64::from(layout.side_px)),
             zoom,
             tile_size_px,
             mode: Some(&self.replay.header.mode),
@@ -226,20 +332,4 @@ impl VideoRender {
             show_all_cooldowns: true,
         });
     }
-}
-
-/// Returns true when the cooldown ring of a player's piece on `state` looks different at `to`
-/// than at `from`.
-fn rings_change(state: &GameState, from: TimestampMs, to: TimestampMs) -> bool {
-    state
-        .pieces
-        .values()
-        .filter(|piece| piece.owner_id.is_some())
-        .flat_map(Renderer::cooldown_ring_changes)
-        .any(|at| from < at && at <= to)
-}
-
-/// Returns `duration` in milliseconds, as the encoder script counts time.
-fn millis(duration: DurationMs) -> f64 {
-    duration.as_i64() as f64
 }

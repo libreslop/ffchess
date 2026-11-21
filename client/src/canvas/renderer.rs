@@ -495,9 +495,9 @@ impl Renderer {
         alpha: f64,
         is_ghost: bool,
     ) -> PieceDrawParams<'a> {
-        let owned_by_shown_player = piece.owner_id.is_some_and(|owner| {
-            params.show_all_cooldowns || owner == params.player_id
-        });
+        let owned_by_shown_player = piece
+            .owner_id
+            .is_some_and(|owner| params.show_all_cooldowns || owner == params.player_id);
         PieceDrawParams {
             piece,
             geometry: *geometry,

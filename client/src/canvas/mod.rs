@@ -1,16 +1,15 @@
 //! Canvas rendering utilities for the game board and pieces.
 
+mod board_switch;
 pub(crate) mod color;
 mod fog;
 mod move_blurs;
 mod move_hints;
-pub mod pieces;
+mod pieces;
 mod premove_arrows;
 mod renderer;
 mod shading;
-pub mod types;
-mod wipe;
+mod types;
 
-pub use types::Renderer;
-pub use wipe::{BoardWipes, WipeTiming};
+pub use board_switch::{BoardSwitchTiming, BoardSwitches};
 pub use types::*;

@@ -6,9 +6,9 @@ mod quick_play;
 mod spectate;
 mod view;
 
+use crate::app::ReplayLink;
 use crate::app::browser::PageMetadata;
 use crate::app::config::{GlobalClientConfig, load_global_config, order_modes, quick_play_modes};
-use crate::app::ReplayLink;
 use crate::app::focus::{ModeFocus, PerSlot, Slot};
 use crate::components::NestedQueue;
 use crate::reducer::{ClientPhase, GameStateReducer, MsgSender};

@@ -47,16 +47,15 @@ impl Renderer {
         }
     }
 
-    /// Returns the moments the cooldown ring of `piece` changes how it looks, from its last
-    /// move until the ring disappears: just past each step it charges up in, then when the
-    /// cooldown is over.
-    pub fn cooldown_ring_changes(piece: &Piece) -> impl Iterator<Item = TimestampMs> {
-        let (start, cooldown) = (piece.last_move_time, piece.cooldown_ms.as_i64());
-        (0..COOLDOWN_STEPS)
-            .filter(move |_| cooldown > 0)
-            .map(move |step| step * cooldown / COOLDOWN_STEPS + 1)
-            .chain(std::iter::once(cooldown))
-            .map(move |elapsed| start + DurationMs::from_millis(elapsed))
+    /// Returns true when a cooldown ring on `state`, drawn for every player's pieces, looks
+    /// different at `to` than at `from`.
+    pub fn cooldown_rings_change(state: &GameState, from: TimestampMs, to: TimestampMs) -> bool {
+        state
+            .pieces
+            .values()
+            .filter(|piece| piece.owner_id.is_some())
+            .flat_map(cooldown_ring_changes)
+            .any(|at| from < at && at <= to)
     }
 
     /// Returns true once every piece on `state` can be drawn with its sprite, starting the
@@ -75,7 +74,9 @@ impl Renderer {
         self.catalog
             .pieces
             .get(&piece.piece_type)
-            .and_then(|config| self.resolve_piece_icon(&piece.piece_type, &config.svg_path, &colors))
+            .and_then(|config| {
+                self.resolve_piece_icon(&piece.piece_type, &config.svg_path, &colors)
+            })
             .filter(|handle| handle.image.complete() && handle.image.natural_width() > 0)
     }
 
@@ -309,6 +310,18 @@ impl Renderer {
 
 /// Number of steps the whole cooldown ring charges up in.
 const COOLDOWN_STEPS: i64 = 4 * COOLDOWN_PARTS_PER_SIDE as i64;
+
+/// Returns the moments the cooldown ring of `piece` changes how it looks, from its last move
+/// until the ring disappears: just past each step it charges up in, then when the cooldown is
+/// over.
+fn cooldown_ring_changes(piece: &Piece) -> impl Iterator<Item = TimestampMs> {
+    let (start, cooldown) = (piece.last_move_time, piece.cooldown_ms.as_i64());
+    let steps = if cooldown > 0 { COOLDOWN_STEPS } else { 0 };
+    (0..steps)
+        .map(move |step| step * cooldown / COOLDOWN_STEPS + 1)
+        .chain(std::iter::once(cooldown))
+        .map(move |elapsed| start + DurationMs::from_millis(elapsed))
+}
 
 /// Returns the elapsed share of a ring around the rim of `square`, clockwise from the top
 /// center, in whole parts of a side so the ring charges up in steps.
