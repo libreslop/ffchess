@@ -2,6 +2,7 @@
 
 use super::actions::{InitPayload, UpdateStatePayload};
 use super::types::{ChatLog, GameStateReducer, MatchStats};
+use crate::orientation::Orientation;
 use std::rc::Rc;
 
 impl GameStateReducer {
@@ -18,12 +19,19 @@ impl GameStateReducer {
             chat_history,
             spectators,
         } = payload;
+        // Players see the board their way; anyone else keeps the view they had.
+        let orientation = state
+            .players
+            .get(&player_id)
+            .map_or(self.orientation, Orientation::of_player);
+        self.reorient(orientation);
+        let size = state.board_size;
         self.player_id = Some(player_id);
         self.session_secret = Some(session_secret);
         self.move_unlock_at = move_unlock_at;
-        self.state = state;
-        self.mode = Some(mode);
-        self.catalog = Rc::new(catalog);
+        self.state = orientation.show(state, size);
+        self.mode = Some(orientation.show(mode, size));
+        self.catalog = Rc::new(orientation.show(catalog, size));
         self.spectators = spectators;
         self.chat = ChatLog {
             room_key: Some(chat_room_key),
@@ -45,17 +53,19 @@ impl GameStateReducer {
             if let Some(player) = self.state.players.get(&player_id) {
                 self.stats.score = player.score;
             }
-            self.adopt_perspective_of(player_id);
         }
     }
 
     /// Replaces the world with a per-tick snapshot and reconciles local predictions.
     pub(super) fn apply_update_state(&mut self, payload: UpdateStatePayload) {
         self.connection.disconnected = false;
-        self.state.board_size = payload.board_size;
+        let size = payload.board_size;
+        self.state.board_size = size;
         self.state.players = payload.players.into_iter().map(|p| (p.id, p)).collect();
-        self.state.pieces = payload.pieces.into_iter().map(|p| (p.id, p)).collect();
-        self.state.shops = payload.shops;
+        self.state.pieces = (payload.pieces.into_iter())
+            .map(|piece| (piece.id, self.orientation.show(piece, size)))
+            .collect();
+        self.state.shops = self.orientation.show(payload.shops, size);
         self.spectators = payload.spectators;
 
         let Some(player_id) = self.active_player_id() else {

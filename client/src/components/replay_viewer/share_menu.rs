@@ -4,6 +4,7 @@
 use super::loaded::SharedReplay;
 use super::video::{VideoRender, VideoSettings};
 use crate::app::ReplayLink;
+use crate::orientation::Orientation;
 use crate::utils::download;
 use gloo_events::EventListener;
 use wasm_bindgen::{JsCast, JsValue};
@@ -40,8 +41,8 @@ impl ShareNotice {
 #[derive(Clone, PartialEq)]
 pub(super) struct ShareTarget {
     pub(super) replay: SharedReplay,
-    /// Whether the board is shown upside down, as the video shows it too.
-    pub(super) rotated_180: bool,
+    /// Which way up the board is shown, as the video shows it too.
+    pub(super) orientation: Orientation,
     pub(super) video: VideoSettings,
 }
 
@@ -199,7 +200,7 @@ impl ShareTarget {
         rendering: UseStateHandle<bool>,
     ) {
         let replay = self.replay.0.clone();
-        let render = VideoRender::new(replay.clone(), self.rotated_180, self.video);
+        let render = VideoRender::new(replay.clone(), self.orientation, self.video);
         rendering.set(true);
         spawn_local(async move {
             on_notice.emit(Some(ShareNotice::Rendering(0)));

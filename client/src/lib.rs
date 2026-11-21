@@ -6,6 +6,7 @@ mod camera;
 mod canvas;
 mod components;
 mod math;
+mod orientation;
 mod premoves;
 mod reducer;
 #[cfg(feature = "ssr")]

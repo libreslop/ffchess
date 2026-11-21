@@ -118,7 +118,7 @@ the panel along the bottom, on narrow screens). The panel holds:
   zooms the board,
 - the playback bar: play and pause (Space), a scrub bar marking every capture, and a speed button
   cycling 1x, 2x, 4x and 8x,
-- in the title bar, a button flipping the board, and a share button opening a menu that:
+- in the title bar, a button turning the board half a turn, and a share button opening a menu that:
   - copies the share link, `/?replay=<replay id>#<mode id>`, which opens the viewer over the
     mode's menu as soon as the page loads (closing the viewer drops `replay` from the address),
   - downloads the replay as the server sent it, as `<mode id>-<replay id>.ffr.json`,

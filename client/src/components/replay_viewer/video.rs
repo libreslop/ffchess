@@ -12,6 +12,7 @@ use crate::app::GlobalClientConfig;
 use crate::camera::board_center;
 use crate::canvas::{RenderParams, Renderer};
 use crate::math::Vec2;
+use crate::orientation::Orientation;
 use crate::premoves::Projection;
 use common::models::GameState;
 use common::types::{BoardSize, DurationMs, PlayerId, TimestampMs};
@@ -229,20 +230,20 @@ impl<F: Fn(u32)> Progress<F> {
 /// A replay being rendered to video, seen from one side of the board.
 pub(super) struct VideoRender {
     replay: Rc<LoadedReplay>,
-    rotated_180: bool,
+    orientation: Orientation,
     settings: VideoSettings,
 }
 
 impl VideoRender {
-    /// Prepares the video of `replay`, upside down when `rotated_180`.
+    /// Prepares the video of `replay`, with the board turned to `orientation`.
     pub(super) fn new(
         replay: Rc<LoadedReplay>,
-        rotated_180: bool,
+        orientation: Orientation,
         settings: VideoSettings,
     ) -> Self {
         Self {
             replay,
-            rotated_180,
+            orientation,
             settings,
         }
     }
@@ -255,10 +256,12 @@ impl VideoRender {
     /// costs the file a few bytes.
     pub(super) async fn run(self, on_progress: impl Fn(u32)) -> Result<Blob, JsValue> {
         let timeline = &self.replay.timeline;
-        let layout = VideoLayout::fitting(self.largest_board());
+        let largest_board = self.largest_board();
+        let layout = VideoLayout::fitting(largest_board);
         let canvas = layout.canvas()?;
-        let renderer = Renderer::new(canvas.clone(), Rc::new(self.replay.header.catalog.clone()))
-            .ok_or("Canvas unavailable")?;
+        let catalog = (self.orientation).show(self.replay.header.catalog.clone(), largest_board);
+        let renderer =
+            Renderer::new(canvas.clone(), Rc::new(catalog)).ok_or("Canvas unavailable")?;
         let writer = VideoWriter::start(layout).await?;
         let schedule = FrameSchedule::new(timeline, self.settings);
         let mut progress = Progress::new(schedule.last_frame(), on_progress);
@@ -269,7 +272,8 @@ impl VideoRender {
             let changed = drawn.is_none_or(|drawn| !drawn.looks_like(timeline, index, at));
             if changed {
                 let state = timeline.board(index);
-                self.draw_when_ready(&renderer, state, at, layout).await;
+                let state = (self.orientation).show(state.clone(), state.board_size);
+                self.draw_when_ready(&renderer, &state, at, layout).await;
                 drawn = Some(DrawnBoard { index, at });
             }
             writer.write_frame(&canvas, elapsed, changed).await?;
@@ -325,7 +329,6 @@ impl VideoRender {
             zoom,
             tile_size_px,
             mode: Some(&self.replay.header.mode),
-            board_rotated_180: self.rotated_180,
             active_shop_highlight_pos: None,
             disable_fog_of_war: true,
             now: at,

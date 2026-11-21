@@ -114,7 +114,6 @@ pub struct RenderParams<'a> {
     pub zoom: f64,
     pub tile_size_px: f64,
     pub mode: Option<&'a GameModeClientConfig>,
-    pub board_rotated_180: bool,
     pub active_shop_highlight_pos: Option<BoardCoord>,
     pub disable_fog_of_war: bool,
     /// Server time the board is drawn at, which cooldowns are measured against.

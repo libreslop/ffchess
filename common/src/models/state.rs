@@ -61,9 +61,11 @@ pub struct Player {
 }
 
 impl Player {
-    /// Returns true when this player views the board upside down.
-    pub fn is_board_rotated_180(&self) -> bool {
-        self.board_rotation_deg.rem_euclid(360) == 180
+    /// Returns how many quarter turns clockwise this player views the board turned by.
+    ///
+    /// Mode configs only allow rotations by whole quarter turns.
+    pub fn board_quarter_turns(&self) -> u8 {
+        (self.board_rotation_deg.rem_euclid(360) / 90) as u8
     }
 }
 

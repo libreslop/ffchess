@@ -71,13 +71,11 @@ fn visible_extent(canvas_ref: &NodeRef) -> Option<Vec2> {
     Some((center - low).min(high - center) * 2.0)
 }
 
-/// Returns the offset of the client position `pos` from the centre of `canvas`, in pixels of
-/// the board as drawn, which is turned around when `rotated`.
-pub fn view_offset(canvas: &HtmlCanvasElement, pos: Vec2, rotated: bool) -> Vec2 {
+/// Returns the offset of the client position `pos` from the centre of `canvas`, in pixels.
+pub fn view_offset(canvas: &HtmlCanvasElement, pos: Vec2) -> Vec2 {
     let rect = canvas.get_bounding_client_rect();
     let canvas_center = Vec2::new(canvas.width() as f64, canvas.height() as f64) / 2.0;
-    let offset = pos - Vec2::new(rect.left(), rect.top()) - canvas_center;
-    if rotated { -offset } else { offset }
+    pos - Vec2::new(rect.left(), rect.top()) - canvas_center
 }
 
 /// Returns the center of `square`, in squares from the board origin.

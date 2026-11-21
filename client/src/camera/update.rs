@@ -154,7 +154,7 @@ impl CameraManager {
             (self.target_zoom - self.zoom) * lerp_factor(params.tuning.zoom_lerp, params.steps);
         let anchor = match params.canvas_ref.cast::<HtmlCanvasElement>() {
             Some(canvas) if params.reducer.phase != ClientPhase::Dead => {
-                view_offset(&canvas, self.mouse_pos, params.reducer.board_rotated_180())
+                view_offset(&canvas, self.mouse_pos)
             }
             _ => Vec2::ZERO,
         };

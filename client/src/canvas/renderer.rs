@@ -5,7 +5,6 @@ use crate::math::Vec2;
 use common::models::{GameModeClientConfig, Piece};
 use common::rules::Catalog;
 use common::types::BoardCoord;
-use glam::IVec2;
 use std::cell::RefCell;
 use std::rc::Rc;
 use wasm_bindgen::JsCast;
@@ -55,38 +54,17 @@ pub(super) struct FrameGeometry {
     pub(super) tile: f64,
     pub(super) zoom: f64,
     offset: Vec2,
-    rotated: bool,
 }
 
 impl FrameGeometry {
-    /// Maps a square to its on-screen square, flipping the board when rotated.
-    fn map_square(&self, square: IVec2) -> IVec2 {
-        if self.rotated {
-            -square - IVec2::ONE
-        } else {
-            square
-        }
-    }
-
-    /// Maps a fractional square position, flipping the board when rotated.
-    fn map_pos(&self, pos: Vec2) -> Vec2 {
-        if self.rotated { -pos - Vec2::ONE } else { pos }
-    }
-
-    /// Returns the fractional square position, already mapped for drawing, of a square
-    /// centered on `pixel`.
+    /// Returns the fractional square position of a square centered on `pixel`.
     fn pixel_pos(&self, pixel: Vec2) -> Vec2 {
         (pixel - self.offset) / self.tile - 0.5
     }
 
-    /// Returns the top-left pixel of a fractional square position already mapped for drawing.
-    pub(super) fn mapped_origin(&self, mapped: Vec2) -> Vec2 {
-        mapped * self.tile + self.offset
-    }
-
     /// Returns the top-left pixel of a fractional square position.
     pub(super) fn pos_origin(&self, pos: Vec2) -> Vec2 {
-        self.mapped_origin(self.map_pos(pos))
+        pos * self.tile + self.offset
     }
 
     /// Returns the center pixel of a fractional square position.
@@ -99,21 +77,15 @@ impl FrameGeometry {
     /// Squares span whole art pixels, so shapes built from them never depend on the zoom
     /// level.
     pub(super) fn square_art_origin(&self, square: BoardCoord) -> Vec2 {
-        self.map_square(square.0).as_dvec2() * ART_PIXELS_PER_TILE
-    }
-
-    /// Returns the top-left corner of a fractional square position, already mapped for
-    /// drawing, rounded to whole art pixels counted from the board origin.
-    ///
-    /// Things drawn there, such as sliding pieces, stay on the art pixel grid.
-    pub(super) fn mapped_art_origin(&self, mapped: Vec2) -> Vec2 {
-        (mapped * ART_PIXELS_PER_TILE).round()
+        square.0.as_dvec2() * ART_PIXELS_PER_TILE
     }
 
     /// Returns the top-left corner of a fractional square position, rounded to whole art
     /// pixels counted from the board origin.
+    ///
+    /// Things drawn there, such as sliding pieces, stay on the art pixel grid.
     pub(super) fn pos_art_origin(&self, pos: Vec2) -> Vec2 {
-        self.mapped_art_origin(self.map_pos(pos))
+        (pos * ART_PIXELS_PER_TILE).round()
     }
 
     /// Returns the center of a square, in art pixels counted from the board origin.
@@ -233,6 +205,17 @@ impl Renderer {
         })
     }
 
+    /// Returns the renderer drawing pieces with the sprites `previous` already loaded.
+    ///
+    /// Sprites belong to piece types, which mean the same in every catalog, so a renderer
+    /// replacing another, such as for the catalog of a turned board, shows its pieces at once.
+    pub fn keeping_sprites_of(self, previous: Option<&Renderer>) -> Self {
+        Self {
+            svg_cache: previous.map_or(self.svg_cache, |previous| previous.svg_cache.clone()),
+            ..self
+        }
+    }
+
     /// Renders a full frame including board, shops, pieces, and fog of war.
     pub fn draw(&self, params: RenderParams<'_>) {
         let tile = params.tile_size_px * params.zoom;
@@ -240,12 +223,7 @@ impl Renderer {
         let geometry = FrameGeometry {
             tile,
             zoom: params.zoom,
-            offset: if params.board_rotated_180 {
-                canvas_center + params.camera_pos
-            } else {
-                canvas_center - params.camera_pos
-            },
-            rotated: params.board_rotated_180,
+            offset: canvas_center - params.camera_pos,
         };
         let visibility = self.visibility(&params);
 
@@ -503,7 +481,7 @@ impl Renderer {
             geometry: *geometry,
             alpha,
             state: params.state,
-            pos: geometry.map_pos(piece.position.0.as_dvec2()),
+            pos: piece.position.0.as_dvec2(),
             now: params.now,
             shows_cooldown: owned_by_shown_player && !is_ghost,
         }
@@ -524,7 +502,7 @@ impl Renderer {
                 piece: king,
                 geometry: *geometry,
                 state: params.state,
-                pos: geometry.map_pos(king.position.0.as_dvec2()),
+                pos: king.position.0.as_dvec2(),
             });
         }
     }

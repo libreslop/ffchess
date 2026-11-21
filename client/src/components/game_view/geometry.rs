@@ -34,9 +34,8 @@ pub(super) fn screen_to_grid_point(
     canvas: &HtmlCanvasElement,
     camera: Vec2,
     tile_size: f64,
-    board_rotated_180: bool,
 ) -> Vec2 {
-    (camera + view_offset(canvas, pos, board_rotated_180)) / tile_size
+    (camera + view_offset(canvas, pos)) / tile_size
 }
 
 /// Returns the square containing a point in grid units.

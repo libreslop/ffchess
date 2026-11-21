@@ -1,5 +1,6 @@
 //! Reducer actions and payloads for client state updates.
 
+use crate::orientation::Orientation;
 use crate::reducer::types::{DisconnectNotice, MsgSender, QueueStatus};
 use common::models::{
     CameraCue, GameModeClientConfig, GameState, MatchSummary, Piece, PieceAction, Player, Shop,
@@ -91,6 +92,6 @@ pub enum GameAction {
     ShowReplayFrame(Box<GameState>),
     /// Moves the clock of a replay, which its cooldowns are measured against.
     SetReplayTime(TimestampMs),
-    /// Views the board upside down, or the right way up.
-    SetBoardRotated(bool),
+    /// Shows the board turned another way.
+    SetOrientation(Orientation),
 }

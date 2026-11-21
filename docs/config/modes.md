@@ -71,7 +71,7 @@ The filename stem becomes the runtime `GameModeConfig.id`.
 
 | Field | Type | Required | Default | Notes |
 | --- | --- | --- | --- | --- |
-| `board_rotation_deg` | integer (`i32`) | No | `0` | The client only gives special meaning to `180`; other values are preserved but not interpreted differently. |
+| `board_rotation_deg` | integer (`i32`) | No | `0` | How far clockwise the player of this slot sees the board turned: `0`, `90`, `180` or `270` (any multiple of 90; other values fail validation). |
 | `pieces` | `QueuePresetPiece[]` | Yes | none | Exact pieces placed for this player slot. |
 
 ### `QueuePresetPiece`

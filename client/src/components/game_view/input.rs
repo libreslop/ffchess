@@ -102,7 +102,6 @@ impl PointerContext {
             &canvas,
             camera.position(),
             self.tile_size_px * camera.zoom(),
-            self.reducer.board_rotated_180(),
         ))
     }
 
@@ -184,7 +183,7 @@ impl PointerContext {
         }
 
         *self.handles.did_pan.borrow_mut() = true;
-        camera.drag(delta, self.reducer.board_rotated_180());
+        camera.drag(delta);
         self.handles.cam_state.set(camera.position());
         self.handles.drag_start.set(Some(DragStart {
             pos: input.pos,

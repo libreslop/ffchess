@@ -1,6 +1,7 @@
 //! Speed lines left behind by pieces that jump between squares when snapshots move them.
 
 use crate::canvas::MoveBlur;
+use crate::orientation::Orientation;
 use common::models::Piece;
 use common::types::{BoardCoord, PieceId};
 use std::collections::HashMap;
@@ -35,12 +36,24 @@ impl ActiveBlur {
 #[derive(Default)]
 pub(super) struct MoveBlurs {
     last_positions: HashMap<PieceId, BoardCoord>,
+    /// Which way up the board was shown at the last snapshot.
+    last_orientation: Orientation,
     active: HashMap<PieceId, ActiveBlur>,
 }
 
 impl MoveBlurs {
-    /// Starts blurs for pieces whose square changed since the previous snapshot.
-    pub(super) fn observe(&mut self, pieces: &HashMap<PieceId, Piece>, now: f64) {
+    /// Starts blurs for pieces whose square changed since the previous snapshot, shown in
+    /// `orientation`; turning the board moves every piece without blurring any.
+    pub(super) fn observe(
+        &mut self,
+        pieces: &HashMap<PieceId, Piece>,
+        orientation: Orientation,
+        now: f64,
+    ) {
+        if std::mem::replace(&mut self.last_orientation, orientation) != orientation {
+            self.last_positions.clear();
+            self.active.clear();
+        }
         self.active.retain(|id, _| pieces.contains_key(id));
         for (id, piece) in pieces {
             if let Some(previous) = self.last_positions.get(id)

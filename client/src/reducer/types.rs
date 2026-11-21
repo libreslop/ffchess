@@ -1,5 +1,6 @@
 //! Reducer state types used by the client UI.
 
+use crate::orientation::Orientation;
 use crate::premoves::PremoveQueue;
 use crate::utils::DEFAULT_RESPAWN_COOLDOWN;
 use common::models::{CameraCue, GameModeClientConfig, GameState, MatchSummary, Player};
@@ -210,11 +211,13 @@ pub struct GameStateReducer {
     /// Latest camera move a hook made for the local player; the camera makes each one once,
     /// telling them apart by allocation.
     pub camera_cue: Option<Rc<CameraCue>>,
-    /// Whether the board is viewed upside down: the way the local player last saw it.
+    /// Which way up the board is shown: the way the local player last saw it. Everything on
+    /// the board, from pieces to move offsets in the catalog, is kept turned this way, so
+    /// nothing else needs to know the board is turned.
     ///
-    /// It is kept after the player leaves or dies, so the view does not flip around while the
+    /// It is kept after the player leaves or dies, so the view does not turn around while the
     /// camera flies back to the menu, and only changes with the next player's perspective.
-    pub(super) rotated_180: bool,
+    pub(super) orientation: Orientation,
     /// Moment of the replay on screen, when the board is a replay.
     pub(super) replay_time: Option<TimestampMs>,
 }
@@ -289,16 +292,25 @@ impl GameStateReducer {
             .map_or(DEFAULT_RESPAWN_COOLDOWN, |mode| mode.respawn_cooldown_ms)
     }
 
-    /// Returns true when the board should be viewed rotated by 180 degrees.
-    pub fn board_rotated_180(&self) -> bool {
-        self.rotated_180
+    /// Returns which way up the board is shown.
+    pub fn orientation(&self) -> Orientation {
+        self.orientation
     }
 
-    /// Views the board from the perspective of `player_id`, when they are on it.
-    pub(super) fn adopt_perspective_of(&mut self, player_id: PlayerId) {
-        if let Some(player) = self.state.players.get(&player_id) {
-            self.rotated_180 = player.is_board_rotated_180();
-        }
+    /// Shows the board turned to `to`, turning everything kept of it there.
+    pub(super) fn reorient(&mut self, to: Orientation) {
+        let turn = self.orientation.towards(to);
+        self.orientation = to;
+        let size = self.state.board_size;
+        self.state = turn.show(std::mem::take(&mut self.state), size);
+        self.menu_preview_state = self.menu_preview_state.take().map(|preview| {
+            let size = preview.board_size;
+            turn.show(preview, size)
+        });
+        self.catalog = turn.show(self.catalog.clone(), size);
+        self.mode = turn.show(self.mode.take(), size);
+        self.premoves = turn.show(std::mem::take(&mut self.premoves), size);
+        self.camera_cue = turn.show(self.camera_cue.take(), size);
     }
 
     /// Returns true when a lost connection interrupts something the player is in: a match,

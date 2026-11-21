@@ -84,8 +84,17 @@ player straight back out of the match.
 If a queue mode defines `queue_layout`, private matches spawn players from exact preset slots instead
 of the random kit-cluster spawn used by sandbox modes.
 
-Each slot can also set `board_rotation_deg`, which is how bullet and blitz give both players opposite
-perspectives on the same board.
+Each slot can also set `board_rotation_deg`, a multiple of 90, which is how bullet and blitz give
+both players opposite perspectives on the same board; a four-player layout could seat players on
+every side with `0`, `90`, `180` and `270`.
+
+The server always describes the board the right way up. The client keeps its copy of the board
+turned the player's way: as pieces, shops, the catalog's move offsets, and camera cues arrive, it
+turns them clockwise about the board centre, and it turns the targets of the player's moves back
+before sending them. The renderer, the camera, and input handling only ever see the board as
+shown, so a new match seen from another side starts the camera from where it was, rather than
+jumping to the other side of the board first. The view keeps the last player's orientation while
+returning to the menu and spectating.
 
 ## Queue Countdown
 

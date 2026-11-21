@@ -163,13 +163,7 @@ impl TouchContext {
         let canvas = self.handles.canvas_ref.cast::<HtmlCanvasElement>();
         let mut camera = self.handles.camera.borrow_mut();
         let locked = self.reducer.camera_movement_disabled() || camera.input_locked();
-        camera.pinch_to(
-            a,
-            b,
-            canvas.as_ref(),
-            locked,
-            self.reducer.board_rotated_180(),
-        );
+        camera.pinch_to(a, b, canvas.as_ref(), locked);
         let (position, zoom) = (camera.position(), camera.zoom());
         drop(camera);
         self.handles.cam_state.set(position);

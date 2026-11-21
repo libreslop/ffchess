@@ -1,6 +1,7 @@
 //! Replay time: the boards along a replay and the position of playback within it.
 
-use common::models::{GameState, Player, Replay, ReplayKeyframe};
+use crate::orientation::Orientation;
+use common::models::{GameState, Replay, ReplayKeyframe};
 use common::types::{DurationMs, PlayerId, TimestampMs};
 
 /// Every board of a replay, ready to be shown at any moment of it.
@@ -65,13 +66,13 @@ impl ReplayTimeline {
         &self.keyframes[self.index_at(self.start)..]
     }
 
-    /// Returns true when `player_id` played the replay with the board upside down, or `None`
-    /// when they did not play it.
-    pub(super) fn rotated_180_for(&self, player_id: PlayerId) -> Option<bool> {
+    /// Returns which way up `player_id` saw the board in the replay, or `None` when they did
+    /// not play it.
+    pub(super) fn orientation_for(&self, player_id: PlayerId) -> Option<Orientation> {
         self.keyframes
             .iter()
             .find_map(|keyframe| keyframe.state.players.get(&player_id))
-            .map(Player::is_board_rotated_180)
+            .map(Orientation::of_player)
     }
 
     /// Returns the board with the given index.

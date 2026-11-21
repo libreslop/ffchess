@@ -32,7 +32,8 @@ pub(super) struct BoardFrame {
     pub(super) board_switch_timing: BoardSwitchTiming,
 }
 
-/// Starts speed lines whenever the authoritative pieces move.
+/// Starts speed lines whenever the authoritative pieces move, but not when the whole board
+/// turns.
 #[hook]
 pub(super) fn use_move_blurs(
     reducer: &UseReducerHandle<GameStateReducer>,
@@ -40,9 +41,12 @@ pub(super) fn use_move_blurs(
     let move_blurs = use_mut_ref(MoveBlurs::default);
     {
         let move_blurs = move_blurs.clone();
-        use_effect_with(reducer.state.pieces.clone(), move |pieces| {
-            move_blurs.borrow_mut().observe(pieces, performance_now());
-        });
+        use_effect_with(
+            (reducer.state.pieces.clone(), reducer.orientation()),
+            move |(pieces, orientation)| {
+                (move_blurs.borrow_mut()).observe(pieces, *orientation, performance_now());
+            },
+        );
     }
     move_blurs
 }
@@ -107,7 +111,6 @@ impl BoardFrame {
             zoom: self.zoom,
             tile_size_px: self.tile_size_px,
             mode: reducer.mode.as_ref(),
-            board_rotated_180: reducer.board_rotated_180(),
             active_shop_highlight_pos: self.active_shop.as_ref().map(|shop| shop.position),
             disable_fog_of_war: has_match_result,
             now: reducer.board_time(),

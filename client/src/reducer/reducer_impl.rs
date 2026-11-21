@@ -5,7 +5,7 @@ use super::types::{
     ClientPhase, DisconnectNotice, ErrorNotice, FinishedMatch, GameStateReducer, MatchStats,
     SpectateStatus, Victory,
 };
-use common::protocol::{ChatLine, ClientMessage, GameError};
+use common::protocol::{ActionRequest, ChatLine, ClientMessage, GameError};
 use common::types::{PlayerId, TimestampMs};
 use std::rc::Rc;
 use yew::prelude::*;
@@ -41,7 +41,11 @@ impl Reducible for GameStateReducer {
                 tx,
             } => {
                 let request = next.premoves.enqueue(piece_id, action);
-                if !tx.send(ClientMessage::QueueAction(request)) {
+                let upright = ActionRequest {
+                    action: next.orientation.upright(action, next.state.board_size),
+                    ..request
+                };
+                if !tx.send(ClientMessage::QueueAction(upright)) {
                     next.premoves
                         .resolve(request.id, Err(GameError::ActionCancelled), Vec::new());
                 }
@@ -55,6 +59,7 @@ impl Reducible for GameStateReducer {
                 result,
                 culprits,
             } => {
+                let culprits = next.orientation.show(culprits, next.state.board_size);
                 if let Some(error) = next.premoves.resolve(id, result, culprits) {
                     next.show_error(error);
                 }
@@ -87,7 +92,10 @@ impl Reducible for GameStateReducer {
                     message: msg,
                 });
             }
-            GameAction::SetCamera(cue) => next.camera_cue = Some(Rc::new(cue)),
+            GameAction::SetCamera(cue) => {
+                let cue = next.orientation.show(cue, next.state.board_size);
+                next.camera_cue = Some(Rc::new(cue));
+            }
             // A session the client already left has no end screen to show.
             GameAction::GameOver(_) if next.active_player_id().is_none() => {}
             GameAction::GameOver(stats) => {
@@ -138,8 +146,11 @@ impl Reducible for GameStateReducer {
                 next.apply_init(*payload);
                 next.spectate = Some(SpectateStatus::Watching);
             }
-            GameAction::ShowReplayFrame(state) => next.state = *state,
-            GameAction::SetBoardRotated(rotated) => next.rotated_180 = rotated,
+            GameAction::ShowReplayFrame(state) => {
+                let size = state.board_size;
+                next.state = next.orientation.show(*state, size);
+            }
+            GameAction::SetOrientation(orientation) => next.reorient(orientation),
             GameAction::SetReplayTime(at) => next.replay_time = Some(at),
         }
         next.phase = compute_phase(&next);

@@ -149,8 +149,8 @@ impl CameraManager {
     }
 
     /// Drags the board by `delta` client pixels, measuring the momentum it keeps when let go.
-    pub fn drag(&mut self, delta: Vec2, rotated: bool) {
-        let movement = self.drag_view(delta, rotated);
+    pub fn drag(&mut self, delta: Vec2) {
+        let movement = self.drag_view(delta);
         // Pointer moves arrive once per displayed frame, so the momentum is scaled to a
         // camera step to carry the same speed on any refresh rate.
         let now = performance_now();
@@ -180,14 +180,7 @@ impl CameraManager {
     /// Moves the fingers of the pinch to client positions `a` and `b`: unless the camera is
     /// `locked`, pans by the moved midpoint and zooms by the changed distance, keeping the
     /// board under the midpoint still.
-    pub fn pinch_to(
-        &mut self,
-        a: Vec2,
-        b: Vec2,
-        canvas: Option<&HtmlCanvasElement>,
-        locked: bool,
-        rotated: bool,
-    ) {
+    pub fn pinch_to(&mut self, a: Vec2, b: Vec2, canvas: Option<&HtmlCanvasElement>, locked: bool) {
         let pinch = Pinch::of(a, b);
         self.mouse_pos = pinch.center;
         self.velocity = Vec2::ZERO;
@@ -197,11 +190,11 @@ impl CameraManager {
         if locked {
             return;
         }
-        self.drag_view(pinch.center - previous.center, rotated);
+        self.drag_view(pinch.center - previous.center);
         let factor = (pinch.distance / previous.distance).powf(PINCH_DAMPING);
         let zoom = self.zoom_range.clamp(self.zoom * factor);
         if let Some(canvas) = canvas {
-            self.rescale_about(zoom / self.zoom, view_offset(canvas, pinch.center, rotated));
+            self.rescale_about(zoom / self.zoom, view_offset(canvas, pinch.center));
         }
         self.zoom = zoom;
         self.target_zoom = zoom;
@@ -210,8 +203,8 @@ impl CameraManager {
 
     /// Moves the camera as if the board was dragged `delta` client pixels, and returns the
     /// camera movement.
-    fn drag_view(&mut self, delta: Vec2, rotated: bool) -> Vec2 {
-        let movement = if rotated { delta } else { -delta };
+    fn drag_view(&mut self, delta: Vec2) -> Vec2 {
+        let movement = -delta;
         self.camera += movement;
         self.target_camera = self.camera;
         movement

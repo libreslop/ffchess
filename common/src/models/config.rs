@@ -222,9 +222,24 @@ impl QueuePresetPieceConfig {
 /// Piece placement set for a single queued player slot.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct QueuePresetPlayerConfig {
+    /// How far clockwise the player of this slot sees the board turned, a multiple of 90.
     #[serde(default)]
     pub board_rotation_deg: i32,
     pub pieces: Vec<QueuePresetPieceConfig>,
+}
+
+impl QueuePresetPlayerConfig {
+    /// Checks that the board is turned by whole quarter turns.
+    fn validate(&self) -> Result<(), String> {
+        if self.board_rotation_deg.rem_euclid(90) == 0 {
+            Ok(())
+        } else {
+            Err(format!(
+                "queue_layout board_rotation_deg: {} is not a multiple of 90",
+                self.board_rotation_deg
+            ))
+        }
+    }
 }
 
 /// Fixed queue spawn layout embedded in a mode config.
@@ -294,12 +309,17 @@ impl GameModeConfig {
         self.kits.iter().find(|kit| &kit.name == name)
     }
 
-    /// Checks the camera expressions of the mode and its hooks.
+    /// Checks the camera expressions of the mode and its hooks, and the board rotations of
+    /// its queue layout.
     ///
     /// Returns a message naming the offending entry otherwise.
     pub fn validate(&self) -> Result<(), String> {
         self.starting_camera.validate()?;
-        self.hooks.iter().try_for_each(HookConfig::validate)
+        self.hooks.iter().try_for_each(HookConfig::validate)?;
+        self.queue_layout
+            .iter()
+            .flat_map(|layout| &layout.players)
+            .try_for_each(QueuePresetPlayerConfig::validate)
     }
 
     /// Builds a client-safe projection of this mode configuration.

@@ -5,6 +5,7 @@
 //! snapshot (which already contains it) arrives; a failure drops it together with every later
 //! action of the same piece, mirroring the server's chain cancellation.
 
+use crate::orientation::{Turn, Turnable};
 use common::models::{GameState, MoveTiming, Piece, PieceAction};
 use common::protocol::{ActionRequest, GameError};
 use common::rules::{Catalog, PieceMove, Simulation};
@@ -103,6 +104,15 @@ impl Projection {
     }
 }
 
+impl Turnable for FailedMove {
+    fn turned(self, turn: Turn) -> Self {
+        Self {
+            culprits: self.culprits.turned(turn),
+            ..self
+        }
+    }
+}
+
 /// Ordered queue of the local player's unresolved actions.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct PremoveQueue {
@@ -110,6 +120,23 @@ pub struct PremoveQueue {
     next_id: ActionId,
     /// Recently failed actions, oldest first, as in [`Projection::failed`].
     failed: VecDeque<(ActionId, Option<FailedMove>)>,
+}
+
+impl Turnable for PremoveQueue {
+    fn turned(self, turn: Turn) -> Self {
+        Self {
+            items: (self.items.into_iter())
+                .map(|premove| Premove {
+                    action: premove.action.turned(turn),
+                    ..premove
+                })
+                .collect(),
+            failed: (self.failed.into_iter())
+                .map(|(id, failed)| (id, failed.turned(turn)))
+                .collect(),
+            ..self
+        }
+    }
 }
 
 impl PremoveQueue {

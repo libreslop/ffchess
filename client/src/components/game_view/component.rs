@@ -306,7 +306,9 @@ fn use_renderer(
             (canvas_ref.clone(), reducer.catalog.clone()),
             move |(canvas_ref, catalog)| {
                 if let Some(canvas) = canvas_ref.cast::<HtmlCanvasElement>() {
-                    renderer.set(Renderer::new(canvas, catalog.clone()));
+                    let next = Renderer::new(canvas, catalog.clone())
+                        .map(|next| next.keeping_sprites_of((*renderer).as_ref()));
+                    renderer.set(next);
                 }
             },
         );

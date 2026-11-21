@@ -109,12 +109,12 @@ pub(super) fn replay_player(props: &ReplayPlayerProps) -> Html {
     let on_flip = {
         let board = board.clone();
         Callback::from(move |_| {
-            board.dispatch(GameAction::SetBoardRotated(!board.board_rotated_180()));
+            board.dispatch(GameAction::SetOrientation(board.orientation().flipped()));
         })
     };
     let share = ShareTarget {
         replay: props.replay.clone(),
-        rotated_180: board.board_rotated_180(),
+        orientation: board.orientation(),
         video: VideoSettings::from(&props.globals),
     };
     // Kept across renders, so the move list only re-renders when the shown move changes.
@@ -192,8 +192,9 @@ fn use_replay_board(board: &UseReducerHandle<GameStateReducer>, replay: &Rc<Load
             spectators: Vec::new(),
         })));
         let (player_id, _) = SessionStore::new(&replay.header.mode.id).load();
-        let rotated = player_id.and_then(|player_id| replay.timeline.rotated_180_for(player_id));
-        board.dispatch(GameAction::SetBoardRotated(rotated.unwrap_or_default()));
+        let orientation =
+            player_id.and_then(|player_id| replay.timeline.orientation_for(player_id));
+        board.dispatch(GameAction::SetOrientation(orientation.unwrap_or_default()));
     });
 }
 

@@ -29,7 +29,7 @@ impl PieceDrawParams<'_> {
     /// Returns the art pixels of the piece's square, snapped to the art pixel grid even
     /// while the piece slides.
     fn square(&self) -> ArtRect {
-        ArtRect::square(self.geometry.mapped_art_origin(self.pos))
+        ArtRect::square(self.geometry.pos_art_origin(self.pos))
     }
 }
 
@@ -92,7 +92,7 @@ impl Renderer {
     /// Draws a "?" disc for pieces whose icon is unavailable.
     fn draw_piece_fallback(&self, base_color: &str, params: PieceDrawParams<'_>) {
         let (tile, zoom) = (params.geometry.tile, params.geometry.zoom);
-        let center = params.geometry.mapped_origin(params.pos) + tile / 2.0;
+        let center = params.geometry.pos_origin(params.pos) + tile / 2.0;
         self.ctx.set_fill_style_str(base_color);
         self.ctx.set_global_alpha(params.alpha);
         self.ctx.begin_path();
@@ -240,7 +240,7 @@ impl Renderer {
         let Ok(metrics) = self.ctx.measure_text(name) else {
             return;
         };
-        let anchor = params.geometry.mapped_origin(params.pos);
+        let anchor = params.geometry.pos_origin(params.pos);
         let x = anchor.x + tile / 2.0 - metrics.width() / 2.0;
         let y = anchor.y - 5.0 * zoom;
 
